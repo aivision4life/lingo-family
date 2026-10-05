@@ -1,0 +1,70 @@
+{
+  "app": {
+    "name": "Lingo Family"
+  },
+  "nav": {
+    "main": "주요 메뉴",
+    "home": "홈",
+    "words": "단어",
+    "decks": "덱",
+    "settings": "설정",
+    "switchProfile": "프로필 변경",
+    "uiLanguage": "화면 언어"
+  },
+  "common": {
+    "comingSoon": "이 화면은 {{milestone}}에서 완성됩니다.",
+    "back": "뒤로"
+  },
+  "pages": {
+    "profiles": {
+      "title": "누가 공부하나요?",
+      "continue": "계속"
+    },
+    "home": {
+      "title": "홈",
+      "startReview": "복습 시작",
+      "practiceSpeaking": "발음 연습",
+      "stats": "통계"
+    },
+    "review": {
+      "title": "복습",
+      "endSession": "세션 종료"
+    },
+    "words": {
+      "title": "단어장",
+      "addWord": "단어 추가",
+      "sampleWord": "예시 단어 보기"
+    },
+    "wordNew": {
+      "title": "새 단어 추가"
+    },
+    "wordEdit": {
+      "title": "단어 수정"
+    },
+    "wordDetail": {
+      "title": "단어 상세",
+      "edit": "수정",
+      "practice": "발음 연습",
+      "character": "한자 보기"
+    },
+    "practice": {
+      "title": "발음 연습"
+    },
+    "character": {
+      "title": "한자"
+    },
+    "decks": {
+      "title": "덱"
+    },
+    "settings": {
+      "title": "설정"
+    },
+    "stats": {
+      "title": "통계"
+    },
+    "notFound": {
+      "title": "페이지를 찾을 수 없습니다",
+      "goHome": "홈으로"
+    }
+  }
+}

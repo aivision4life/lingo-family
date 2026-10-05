@@ -1,0 +1,70 @@
+{
+  "app": {
+    "name": "Lingo Family"
+  },
+  "nav": {
+    "main": "Điều hướng chính",
+    "home": "Trang chủ",
+    "words": "Từ vựng",
+    "decks": "Bộ thẻ",
+    "settings": "Cài đặt",
+    "switchProfile": "Đổi hồ sơ",
+    "uiLanguage": "Ngôn ngữ giao diện"
+  },
+  "common": {
+    "comingSoon": "Màn hình này sẽ được hoàn thiện ở {{milestone}}.",
+    "back": "Quay lại"
+  },
+  "pages": {
+    "profiles": {
+      "title": "Ai đang học?",
+      "continue": "Tiếp tục"
+    },
+    "home": {
+      "title": "Trang chủ",
+      "startReview": "Bắt đầu ôn tập",
+      "practiceSpeaking": "Luyện phát âm",
+      "stats": "Thống kê"
+    },
+    "review": {
+      "title": "Ôn tập",
+      "endSession": "Kết thúc phiên"
+    },
+    "words": {
+      "title": "Thư viện từ",
+      "addWord": "Thêm từ",
+      "sampleWord": "Xem từ mẫu"
+    },
+    "wordNew": {
+      "title": "Thêm từ mới"
+    },
+    "wordEdit": {
+      "title": "Sửa từ"
+    },
+    "wordDetail": {
+      "title": "Chi tiết từ",
+      "edit": "Sửa",
+      "practice": "Luyện phát âm",
+      "character": "Xem chữ Hán"
+    },
+    "practice": {
+      "title": "Luyện phát âm"
+    },
+    "character": {
+      "title": "Chữ Hán"
+    },
+    "decks": {
+      "title": "Bộ thẻ"
+    },
+    "settings": {
+      "title": "Cài đặt"
+    },
+    "stats": {
+      "title": "Thống kê"
+    },
+    "notFound": {
+      "title": "Không tìm thấy trang",
+      "goHome": "Về trang chủ"
+    }
+  }
+}

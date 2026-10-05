@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lingo-family",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "assets": {
+    // Unknown paths return index.html so React Router can handle them.
+    "not_found_handling": "single-page-application",
+    // /api/* always goes to the Worker, never to static assets.
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lingo-family",
+      // Placeholder: local dev does not need a real id. Replace with the id from
+      // `wrangler d1 create lingo-family` before the first remote deploy (M2).
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "db/migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "lingo-family-media"
+    }
+  ]
+  // Secrets (AZURE_SPEECH_KEY, LLM_API_KEY, ...) live in .dev.vars / `wrangler secret`, never here.
+}

@@ -1,0 +1,70 @@
+{
+  "app": {
+    "name": "Lingo Family"
+  },
+  "nav": {
+    "main": "Main navigation",
+    "home": "Home",
+    "words": "Words",
+    "decks": "Decks",
+    "settings": "Settings",
+    "switchProfile": "Switch profile",
+    "uiLanguage": "Interface language"
+  },
+  "common": {
+    "comingSoon": "This screen will be completed in {{milestone}}.",
+    "back": "Back"
+  },
+  "pages": {
+    "profiles": {
+      "title": "Who's learning?",
+      "continue": "Continue"
+    },
+    "home": {
+      "title": "Home",
+      "startReview": "Start review",
+      "practiceSpeaking": "Practice speaking",
+      "stats": "Stats"
+    },
+    "review": {
+      "title": "Review",
+      "endSession": "End session"
+    },
+    "words": {
+      "title": "Word library",
+      "addWord": "Add word",
+      "sampleWord": "Open sample word"
+    },
+    "wordNew": {
+      "title": "Add a new word"
+    },
+    "wordEdit": {
+      "title": "Edit word"
+    },
+    "wordDetail": {
+      "title": "Word detail",
+      "edit": "Edit",
+      "practice": "Practice pronunciation",
+      "character": "View character"
+    },
+    "practice": {
+      "title": "Pronunciation practice"
+    },
+    "character": {
+      "title": "Character"
+    },
+    "decks": {
+      "title": "Decks"
+    },
+    "settings": {
+      "title": "Settings"
+    },
+    "stats": {
+      "title": "Stats"
+    },
+    "notFound": {
+      "title": "Page not found",
+      "goHome": "Go home"
+    }
+  }
+}
