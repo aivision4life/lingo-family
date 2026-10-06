@@ -11,12 +11,6 @@ export function DecksPage() {
   return <PageShell title={t("pages.decks.title")} milestone="M1" />;
 }
 
-/** Screen 10 — profile and app settings. */
-export function SettingsPage() {
-  const { t } = useTranslation();
-  return <PageShell title={t("pages.settings.title")} milestone="M1" />;
-}
-
 /** Screen 11 (P2) — streak, reviews per day, retention. */
 export function StatsPage() {
   const { t } = useTranslation();

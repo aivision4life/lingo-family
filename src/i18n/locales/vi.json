@@ -13,12 +13,72 @@
   },
   "common": {
     "comingSoon": "Màn hình này sẽ được hoàn thiện ở {{milestone}}.",
-    "back": "Quay lại"
+    "back": "Quay lại",
+    "close": "Đóng",
+    "cancel": "Huỷ",
+    "loading": "Đang tải…",
+    "loadError": "Không tải được dữ liệu.",
+    "retry": "Thử lại"
+  },
+  "langs": {
+    "ko": "Tiếng Hàn",
+    "zh": "Tiếng Trung",
+    "en": "Tiếng Anh"
+  },
+  "profiles": {
+    "add": "Thêm hồ sơ",
+    "manage": "Quản lý hồ sơ",
+    "doneManaging": "Xong",
+    "edit": "Sửa hồ sơ {{name}}",
+    "kidBadge": "Trẻ em",
+    "hasPin": "Có PIN",
+    "newTitle": "Tạo hồ sơ",
+    "firstTitle": "Chào mừng! Tạo hồ sơ đầu tiên",
+    "firstHint": "Hồ sơ đầu tiên là của người lớn, để quản lý cả nhà.",
+    "editTitle": "Sửa hồ sơ",
+    "notFound": "Không tìm thấy hồ sơ này.",
+    "kidNotAllowed": "Hồ sơ trẻ em không thể thay đổi cài đặt. Hãy nhờ bố mẹ nhé!",
+    "pin": {
+      "title": "Nhập PIN của {{name}}",
+      "label": "PIN 4 chữ số",
+      "wrong": "PIN không đúng, thử lại nhé."
+    },
+    "form": {
+      "name": "Tên",
+      "avatar": "Hình đại diện",
+      "uiLang": "Ngôn ngữ giao diện",
+      "glossLang": "Ngôn ngữ nghĩa của từ",
+      "glossLangHint": "Nghĩa trên thẻ học sẽ hiện bằng ngôn ngữ này.",
+      "studyLangs": "Ngôn ngữ đang học",
+      "dailyNewLimit": "Số thẻ mới mỗi ngày",
+      "isKid": "Chế độ trẻ em",
+      "isKidHint": "Giao diện đơn giản, không sửa/xoá được nội dung, không có PIN.",
+      "pinOptional": "PIN (tuỳ chọn, 4 chữ số)",
+      "pinNew": "PIN mới (để trống để giữ nguyên)",
+      "removePin": "Xoá PIN",
+      "create": "Tạo hồ sơ",
+      "save": "Lưu",
+      "saving": "Đang lưu…",
+      "saved": "Đã lưu."
+    },
+    "errors": {
+      "name": "Tên cần từ 1 đến 30 ký tự.",
+      "pin": "PIN gồm đúng 4 chữ số.",
+      "study_langs": "Chọn ít nhất một ngôn ngữ.",
+      "daily_new_limit": "Nhập một số từ 0 đến 100.",
+      "last_adult": "Phải luôn còn ít nhất một hồ sơ người lớn.",
+      "generic": "Có lỗi xảy ra, vui lòng thử lại."
+    },
+    "delete": {
+      "button": "Xoá hồ sơ",
+      "title": "Xoá hồ sơ {{name}}?",
+      "description": "Toàn bộ tiến độ học của hồ sơ này sẽ bị xoá vĩnh viễn.",
+      "confirm": "Xoá"
+    }
   },
   "pages": {
     "profiles": {
-      "title": "Ai đang học?",
-      "continue": "Tiếp tục"
+      "title": "Ai đang học?"
     },
     "home": {
       "title": "Trang chủ",
@@ -57,7 +117,8 @@
       "title": "Bộ thẻ"
     },
     "settings": {
-      "title": "Cài đặt"
+      "title": "Cài đặt",
+      "manageProfiles": "Quản lý hồ sơ"
     },
     "stats": {
       "title": "Thống kê"

@@ -40,11 +40,11 @@ The app is used by **one family** on shared or personal devices.
 | Kid | Young children | **Kid mode**: big images, audio-first, few buttons, no text-heavy screens, cannot edit/delete shared content |
 
 Requirements:
-- [ ] Netflix-style **profile picker** on app start (avatar + name).
-- [ ] Each profile has its own: learning languages, SRS progress, pronunciation history, settings.
-- [ ] Per-profile settings: `ui_lang` (vi / ko / en), `gloss_lang` (meaning language shown on cards: vi / ko / en), daily new-card limit, kid mode on/off.
+- [x] Netflix-style **profile picker** (avatar + name). Decision (M1.1): the app opens the last used profile directly; the picker is opened from the top bar or on first run.
+- [~] Each profile has its own: learning languages, SRS progress, pronunciation history, settings.
+- [x] Per-profile settings: `ui_lang` (vi / ko / en), `gloss_lang` (meaning language shown on cards: vi / ko / en), daily new-card limit, kid mode on/off.
   - Rationale: kids living in Korea may read Korean better than Vietnamese, so they may learn English with Korean glosses.
-- [ ] Optional 4-digit PIN on adult profiles (to stop kids from changing settings; not real security).
+- [x] Optional 4-digit PIN on adult profiles (to stop kids from changing settings; not real security).
 - [ ] Access to the whole app is protected by Cloudflare Access (family email allow-list). There is no in-app password system.
 
 ---
@@ -77,11 +77,12 @@ Example of a fully enriched entry:
 Priority: **P0** = MVP, **P1** = next, **P2** = later.
 
 ### F1. Profiles — P0
-- [ ] Create / edit / delete profile (adult only can delete).
-- [ ] Profile picker, remember last profile per device.
-- [ ] Per-profile settings listed in §2.
+- [x] Create / edit / delete profile (adult only can delete).
+- [x] Profile picker, remember last profile per device.
+- [x] Per-profile settings listed in §2.
 
 **Done when:** two profiles on the same device have completely separate review queues.
+(All per-profile data is keyed by `profile_id`; this check is completed together with F4.)
 
 ### F2. Word library & decks — P0
 - [ ] Add a word: choose language, type the term → **AI enrich** fills reading, glosses (vi/en/ko), part of speech, Hanja/Hanzi, Hán-Việt, 2–3 example sentences with translations, and an emoji suggestion.
@@ -256,7 +257,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | # | Milestone | Contents | Status |
 |---|---|---|---|
 | M0 | Scaffold | Project setup, DB schema + migrations, i18n, empty screens, runs locally | [x] |
-| M1 | MVP (local) | F1 profiles, F2 add word + AI enrich, F3 TTS audio, F4 recognition + listening review | [ ] |
+| M1 | MVP (local) | F1 profiles, F2 add word + AI enrich, F3 TTS audio, F4 recognition + listening review | [~] |
 | M2 | Online | Deploy to Cloudflare, Access login, F11 PWA + offline sync | [ ] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & characters | F8 kid mode, F7 character links, F9 import + starter decks, F3 images | [ ] |

@@ -13,12 +13,72 @@
   },
   "common": {
     "comingSoon": "This screen will be completed in {{milestone}}.",
-    "back": "Back"
+    "back": "Back",
+    "close": "Close",
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "loadError": "Could not load data.",
+    "retry": "Try again"
+  },
+  "langs": {
+    "ko": "Korean",
+    "zh": "Chinese",
+    "en": "English"
+  },
+  "profiles": {
+    "add": "Add profile",
+    "manage": "Manage profiles",
+    "doneManaging": "Done",
+    "edit": "Edit profile {{name}}",
+    "kidBadge": "Kid",
+    "hasPin": "Has PIN",
+    "newTitle": "Create profile",
+    "firstTitle": "Welcome! Create the first profile",
+    "firstHint": "The first profile belongs to an adult who manages the family.",
+    "editTitle": "Edit profile",
+    "notFound": "Profile not found.",
+    "kidNotAllowed": "Kid profiles can't change settings. Ask a parent!",
+    "pin": {
+      "title": "Enter {{name}}'s PIN",
+      "label": "4-digit PIN",
+      "wrong": "Wrong PIN, try again."
+    },
+    "form": {
+      "name": "Name",
+      "avatar": "Avatar",
+      "uiLang": "Interface language",
+      "glossLang": "Meaning language",
+      "glossLangHint": "Word meanings on cards are shown in this language.",
+      "studyLangs": "Learning languages",
+      "dailyNewLimit": "New cards per day",
+      "isKid": "Kid mode",
+      "isKidHint": "Simple screens, cannot edit or delete content, no PIN.",
+      "pinOptional": "PIN (optional, 4 digits)",
+      "pinNew": "New PIN (leave empty to keep)",
+      "removePin": "Remove PIN",
+      "create": "Create profile",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved."
+    },
+    "errors": {
+      "name": "Name must be 1 to 30 characters.",
+      "pin": "PIN must be exactly 4 digits.",
+      "study_langs": "Choose at least one language.",
+      "daily_new_limit": "Enter a number from 0 to 100.",
+      "last_adult": "There must always be at least one adult profile.",
+      "generic": "Something went wrong, please try again."
+    },
+    "delete": {
+      "button": "Delete profile",
+      "title": "Delete profile {{name}}?",
+      "description": "All learning progress of this profile will be deleted permanently.",
+      "confirm": "Delete"
+    }
   },
   "pages": {
     "profiles": {
-      "title": "Who's learning?",
-      "continue": "Continue"
+      "title": "Who's learning?"
     },
     "home": {
       "title": "Home",
@@ -57,7 +117,8 @@
       "title": "Decks"
     },
     "settings": {
-      "title": "Settings"
+      "title": "Settings",
+      "manageProfiles": "Manage profiles"
     },
     "stats": {
       "title": "Stats"

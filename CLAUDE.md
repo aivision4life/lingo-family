@@ -61,6 +61,9 @@ SPEC.md  CLAUDE.md  README.md
 - i18n: `src/i18n/locales/{vi,ko,en}.json`; `vi` is the source of truth for key types. A unit test enforces identical keys and placeholders.
 - npm 11 blocks install scripts by default; allowed packages are listed in `package.json` → `allowScripts` (`esbuild`, `workerd`).
 - shadcn/ui uses the `cn` package (from shadcn-ui) instead of `clsx` + `tailwind-merge`.
+- API: validate with `zv(target, schema)` from `worker/lib/validate.ts`; errors are `{ error, issues? }` (`shared/api/error.ts`). Client calls go through `api()` in `src/lib/api.ts` (validates responses with zod) and TanStack Query hooks in `src/features/<feature>/api.ts`.
+- API tests run the Hono app against a real in-memory local D1 via `createTestEnv()` (`worker/test/testEnv.ts`, uses wrangler's `getPlatformProxy`; `@cloudflare/vitest-pool-workers` does not support Vitest 5).
+- Active profile: `useActiveProfile()` (`src/features/profiles/activeProfile.ts`); the UI language follows the active profile's `ui_lang`. Use `canManageProfiles()` to hide edit/delete/settings for kid profiles.
 
 ## Workflow for every task
 1. Read the relevant section of `SPEC.md`. Restate the plan in a few bullet points (in Vietnamese) before large changes.
@@ -111,5 +114,7 @@ SPEC.md  CLAUDE.md  README.md
 - Don't write large files in one go. Split them into components or modules (< ~250 lines each).
 
 ## Lessons learned
+- `npx shadcn add <x>` may ask to overwrite `button.tsx`: answer **no** (`echo n | npx shadcn add <x>`), it has custom 44px sizes. Check new components for hard-coded English strings (e.g. "Close" in `dialog.tsx`).
+- Don't `disable` an input while checking it asynchronously (it loses focus); use `readOnly`.
 <!-- Add a line here whenever the AI repeats a mistake, e.g.:
 - Always use `lang="ko"` on Korean text (fixed glyph bug on 2026-10-xx). -->
