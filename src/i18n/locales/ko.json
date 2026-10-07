@@ -92,18 +92,10 @@
     },
     "words": {
       "title": "단어장",
-      "addWord": "단어 추가",
-      "sampleWord": "예시 단어 보기"
-    },
-    "wordNew": {
-      "title": "새 단어 추가"
-    },
-    "wordEdit": {
-      "title": "단어 수정"
+      "addWord": "단어 추가"
     },
     "wordDetail": {
       "title": "단어 상세",
-      "edit": "수정",
       "practice": "발음 연습",
       "character": "한자 보기"
     },
@@ -126,6 +118,82 @@
     "notFound": {
       "title": "페이지를 찾을 수 없습니다",
       "goHome": "홈으로"
+    }
+  },
+  "words": {
+    "searchPlaceholder": "단어, 발음, 뜻으로 검색…",
+    "filterAll": "전체",
+    "empty": "단어장에 아직 단어가 없습니다.",
+    "noResults": "맞는 단어가 없습니다.",
+    "aiBadge": "AI",
+    "aiBadgeHint": "AI가 채운 내용입니다. 확인해 주세요",
+    "add": {
+      "title": "새 단어 추가",
+      "lang": "언어",
+      "term": "단어",
+      "level": "예문 수준",
+      "aiFill": "AI로 채우기",
+      "aiFilling": "AI가 채우는 중…",
+      "manual": "직접 입력",
+      "cached": "캐시에서 가져왔습니다. AI 사용 횟수가 차감되지 않습니다.",
+      "changeTerm": "다른 단어",
+      "save": "단어 저장",
+      "saving": "저장 중…",
+      "aiReview": "저장하기 전에 내용을 확인하고 수정하세요."
+    },
+    "levels": {
+      "kid": "어린이",
+      "beginner": "초급",
+      "intermediate": "중급 (직장/IT)"
+    },
+    "fields": {
+      "reading": "발음",
+      "pos": "품사",
+      "gloss_vi": "베트남어 뜻",
+      "gloss_en": "영어 뜻",
+      "gloss_ko": "한국어 뜻",
+      "hanja": "한자",
+      "hanzi_traditional": "번체자",
+      "hanzi_simplified": "간체자",
+      "han_viet": "한월음",
+      "emoji": "이모지",
+      "examples": "예문",
+      "sentence": "예문 {{n}}",
+      "translation_vi": "베트남어 번역",
+      "translation_en": "영어 번역",
+      "translation_ko": "한국어 번역",
+      "addExample": "예문 추가",
+      "removeExample": "예문 {{n}} 삭제"
+    },
+    "pos": {
+      "noun": "명사",
+      "verb": "동사",
+      "adjective": "형용사",
+      "adverb": "부사",
+      "pronoun": "대명사",
+      "numeral": "수사",
+      "particle": "조사",
+      "conjunction": "접속사",
+      "interjection": "감탄사",
+      "phrase": "구",
+      "other": "기타"
+    },
+    "errors": {
+      "term": "단어를 입력하세요 (최대 60자).",
+      "required": "비워 둘 수 없습니다.",
+      "duplicate": "이미 단어장에 있는 단어입니다.",
+      "openExisting": "기존 단어 열기",
+      "quota": "오늘 AI 사용 횟수를 모두 썼습니다. 직접 입력할 수 있습니다.",
+      "aiUnavailable": "AI가 바쁩니다. 잠시 후 다시 시도하거나 직접 입력하세요.",
+      "aiInvalid": "AI 결과가 올바르지 않습니다. 다시 시도하세요.",
+      "aiNotConfigured": "AI가 설정되지 않았습니다 (LLM_API_KEY 없음).",
+      "generic": "오류가 발생했습니다. 다시 시도해 주세요."
+    },
+    "detail": {
+      "glosses": "뜻",
+      "examples": "예문",
+      "notVerified": "일부 정보는 AI가 만들었고 아직 어른이 확인하지 않았습니다.",
+      "notFound": "단어를 찾을 수 없습니다."
     }
   }
 }

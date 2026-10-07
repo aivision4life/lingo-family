@@ -5,11 +5,14 @@ import { apiErrorSchema } from "@shared/api/error";
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /** Full error body, for endpoints that add details (e.g. `existing_id`). */
+  readonly body: unknown;
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, body: unknown = null) {
     super(`API ${status}: ${code}`);
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -31,7 +34,7 @@ export async function api(method: Method, path: string, schema: z.ZodType | null
 
   if (!res.ok) {
     const parsed = apiErrorSchema.safeParse(json);
-    throw new ApiError(res.status, parsed.success ? parsed.data.error : "unknown");
+    throw new ApiError(res.status, parsed.success ? parsed.data.error : "unknown", json);
   }
   return schema ? schema.parse(json) : undefined;
 }

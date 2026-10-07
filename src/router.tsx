@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RequireProfile, RootRedirect } from "@/features/profiles/guards";
+import { AddWordPage } from "@/pages/AddWordPage";
 import { CharacterPage } from "@/pages/CharacterPage";
 import { HomePage } from "@/pages/HomePage";
 import { PracticePage } from "@/pages/PracticePage";
@@ -10,7 +11,6 @@ import { ReviewPage } from "@/pages/ReviewPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { DecksPage, NotFoundPage, StatsPage } from "@/pages/SimplePages";
 import { WordDetailPage } from "@/pages/WordDetailPage";
-import { WordEditorPage } from "@/pages/WordEditorPage";
 import { WordLibraryPage } from "@/pages/WordLibraryPage";
 
 // Screen numbers refer to SPEC §6.
@@ -29,9 +29,8 @@ export const router = createBrowserRouter([
           { path: "home", element: <HomePage /> }, // 2
           { path: "review", element: <ReviewPage /> }, // 3
           { path: "words", element: <WordLibraryPage /> }, // 4
-          { path: "words/new", element: <WordEditorPage /> }, // 5
+          { path: "words/new", element: <AddWordPage /> }, // 5
           { path: "words/:id", element: <WordDetailPage /> }, // 6
-          { path: "words/:id/edit", element: <WordEditorPage /> }, // 5
           { path: "practice/:wordId?", element: <PracticePage /> }, // 7
           { path: "chars/:char", element: <CharacterPage /> }, // 8
           { path: "decks", element: <DecksPage /> }, // 9

@@ -3,11 +3,15 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { getPlatformProxy, type PlatformProxy } from "wrangler";
-import app from "../index";
+import { createApp } from "../app";
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../../db/migrations");
 
-export async function createTestEnv() {
+/**
+ * getPlatformProxy also loads .dev.vars (real API keys), so the default app has no LLM:
+ * tests never call a paid API. Pass `createApp({ makeLlm })` with a fake to test AI routes.
+ */
+export async function createTestEnv(app = createApp({ makeLlm: () => null })) {
   const proxy: PlatformProxy<Env> = await getPlatformProxy<Env>({ persist: false });
   const env = proxy.env;
 

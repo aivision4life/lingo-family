@@ -85,12 +85,19 @@ Priority: **P0** = MVP, **P1** = next, **P2** = later.
 (All per-profile data is keyed by `profile_id`; this check is completed together with F4.)
 
 ### F2. Word library & decks — P0
-- [ ] Add a word: choose language, type the term → **AI enrich** fills reading, glosses (vi/en/ko), part of speech, Hanja/Hanzi, Hán-Việt, 2–3 example sentences with translations, and an emoji suggestion.
-- [ ] Preview and edit before saving.
-- [ ] Words are a **shared family library**. Decks group words (e.g. "IT Korean", "Animals for kids").
-- [ ] Search/filter by language, deck, tag.
-- [ ] Duplicate detection (same language + same term).
+- [x] Add a word: choose language, type the term → **AI enrich** fills reading, glosses (vi/en/ko), part of speech, Hanja/Hanzi, Hán-Việt, 2–3 example sentences with translations, and an emoji suggestion.
+- [x] Preview and edit before saving.
+- [~] Words are a **shared family library**. Decks group words (e.g. "IT Korean", "Animals for kids"). (M1.2: shared library done; decks come with F4.)
+- [~] Search/filter by language, deck, tag. (M1.2: language + text search done; deck/tag filters later.)
+- [x] Duplicate detection (same language + same term).
 - [ ] Adding a word to a deck creates cards for every profile that studies that deck.
+
+Decisions (M1.2):
+- Only adult profiles can add words or call AI enrichment; kid profiles only browse the library.
+- Terms are normalized before saving and duplicate checks (trim, collapse spaces, Unicode NFC). English duplicates are case-insensitive ("Apple" = "apple").
+- The duplicate check runs **before** the AI call, so an existing word costs nothing and links to the existing entry.
+- Words can also be entered by hand (no AI); then `ai_generated = false`. Saved AI entries keep `ai_generated = true, verified = false` even after edits, until an adult confirms them.
+- After saving, the app opens a simple read-only **Word detail** screen (§6 screen 6). Editing a saved word comes later.
 
 **Done when:** typing `학생` and pressing "Add" produces a complete entry like the example in §3 within ~5 seconds, with audio playable.
 
@@ -126,10 +133,18 @@ Priority: **P0** = MVP, **P1** = next, **P2** = later.
 **Done when:** recording `사과` with a clearly wrong vowel shows a red syllable and a lower score than a correct recording.
 
 ### F6. AI examples & explanations — P0 (enrich), P1 (explain)
-- [ ] Enrichment (used by F2) returns **strict JSON** validated by a schema; invalid output → one retry → error message.
-- [ ] Example sentences match the profile's level: kid → very short and concrete; beginner → simple; Korean (owner) → workplace/IT context allowed.
+- [x] Enrichment (used by F2) returns **strict JSON** validated by a schema; invalid output → one retry → error message.
+- [x] Example sentences match the profile's level: kid → very short and concrete; beginner → simple; Korean (owner) → workplace/IT context allowed.
 - [ ] "Explain" button on a card: short explanation in the profile's `gloss_lang` (nuance, common collocations, confusing look-alikes).
-- [ ] All AI output is cached in the database. The same request is never paid for twice.
+- [~] All AI output is cached in the database. The same request is never paid for twice. (M1.2: enrichment cached; "Explain" comes with P1.)
+
+Decisions (M1.2):
+- Provider: **Gemini** (`LLM_PROVIDER=gemini`), default model **`gemini-3.8-flash`** (override with `LLM_MODEL`). The LLM client is behind an interface so Claude can be added later.
+- Example level is chosen on the Add word screen: kid / beginner / intermediate (workplace/IT allowed). Default: kid for kid profiles, beginner for adults. The level is part of the cache key.
+- Cache key = hash of task + prompt version + model + language + term + level. Only valid (schema-checked) output is cached.
+- Daily quota: **50 LLM calls per profile per day** (`usage_daily`, service `llm`). Cache hits do not count.
+- Field conventions: `ko` → Revised Romanization, Hanja in `hanzi_traditional` (+ simplified form), Hán-Việt for Sino-Korean words; `zh` → pinyin with tone marks, `hanzi_simplified` = the term, traditional form, Hán-Việt; `en` → US IPA, no Hanzi/Hán-Việt. A gloss in the word's own language is a short definition; an example's translation into its own language is left empty.
+- Privacy note: on the Gemini free tier Google may use submitted content to improve its products. Only vocabulary is sent (no personal data).
 
 ### F7. Chinese-character links (Hanja / Hanzi / Hán-Việt) — P1
 - [ ] Each Sino-Korean / Chinese word is split into its characters. Each character stores: simplified, traditional, Hán-Việt reading, Vietnamese meaning.
@@ -267,7 +282,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 
 ## 10. Open questions
 
-- Which LLM provider to use as default (Gemini free tier vs Claude)? Keep it switchable by env var.
+- ~~Which LLM provider to use as default (Gemini free tier vs Claude)?~~ **Decided (M1.2):** Gemini, model `gemini-3.8-flash` by default; switchable by `LLM_PROVIDER` / `LLM_MODEL`.
 - Is the Hán-Việt quality from the LLM good enough, or should we import an open Hán-Việt dictionary dataset?
 - Should kids' profiles get an English or a Korean UI by default?
 - Should the wife's profile have specific goals/levels? (Not yet specified.)

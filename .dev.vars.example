@@ -1,6 +1,7 @@
 # Copy to .dev.vars (git-ignored) and fill in real values for local development.
 # In production set them with `npx wrangler secret put <NAME>`.
 LLM_PROVIDER=gemini
+LLM_MODEL=gemini-3.8-flash
 LLM_API_KEY=..
 AZURE_SPEECH_KEY=..
 AZURE_SPEECH_REGION=koreacentral

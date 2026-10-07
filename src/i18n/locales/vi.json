@@ -92,18 +92,10 @@
     },
     "words": {
       "title": "Thư viện từ",
-      "addWord": "Thêm từ",
-      "sampleWord": "Xem từ mẫu"
-    },
-    "wordNew": {
-      "title": "Thêm từ mới"
-    },
-    "wordEdit": {
-      "title": "Sửa từ"
+      "addWord": "Thêm từ"
     },
     "wordDetail": {
       "title": "Chi tiết từ",
-      "edit": "Sửa",
       "practice": "Luyện phát âm",
       "character": "Xem chữ Hán"
     },
@@ -126,6 +118,82 @@
     "notFound": {
       "title": "Không tìm thấy trang",
       "goHome": "Về trang chủ"
+    }
+  },
+  "words": {
+    "searchPlaceholder": "Tìm theo từ, phiên âm hoặc nghĩa…",
+    "filterAll": "Tất cả",
+    "empty": "Thư viện chưa có từ nào.",
+    "noResults": "Không có từ phù hợp.",
+    "aiBadge": "AI",
+    "aiBadgeHint": "Do AI điền, hãy kiểm tra lại",
+    "add": {
+      "title": "Thêm từ mới",
+      "lang": "Ngôn ngữ",
+      "term": "Từ",
+      "level": "Mức câu ví dụ",
+      "aiFill": "AI điền",
+      "aiFilling": "AI đang điền…",
+      "manual": "Tự điền",
+      "cached": "Lấy từ bộ nhớ đệm, không tốn lượt AI.",
+      "changeTerm": "Đổi từ khác",
+      "save": "Lưu từ",
+      "saving": "Đang lưu…",
+      "aiReview": "Kiểm tra và sửa các trường trước khi lưu."
+    },
+    "levels": {
+      "kid": "Trẻ em",
+      "beginner": "Cơ bản",
+      "intermediate": "Trung cấp (công sở/IT)"
+    },
+    "fields": {
+      "reading": "Phiên âm",
+      "pos": "Từ loại",
+      "gloss_vi": "Nghĩa tiếng Việt",
+      "gloss_en": "Nghĩa tiếng Anh",
+      "gloss_ko": "Nghĩa tiếng Hàn",
+      "hanja": "Hanja",
+      "hanzi_traditional": "Chữ phồn thể",
+      "hanzi_simplified": "Chữ giản thể",
+      "han_viet": "Âm Hán-Việt",
+      "emoji": "Emoji",
+      "examples": "Câu ví dụ",
+      "sentence": "Câu {{n}}",
+      "translation_vi": "Dịch tiếng Việt",
+      "translation_en": "Dịch tiếng Anh",
+      "translation_ko": "Dịch tiếng Hàn",
+      "addExample": "Thêm câu ví dụ",
+      "removeExample": "Xoá câu {{n}}"
+    },
+    "pos": {
+      "noun": "Danh từ",
+      "verb": "Động từ",
+      "adjective": "Tính từ",
+      "adverb": "Trạng từ",
+      "pronoun": "Đại từ",
+      "numeral": "Số từ",
+      "particle": "Trợ từ",
+      "conjunction": "Liên từ",
+      "interjection": "Thán từ",
+      "phrase": "Cụm từ",
+      "other": "Khác"
+    },
+    "errors": {
+      "term": "Nhập từ (tối đa 60 ký tự).",
+      "required": "Không được để trống.",
+      "duplicate": "Từ này đã có trong thư viện.",
+      "openExisting": "Mở từ đã có",
+      "quota": "Hôm nay đã hết lượt AI. Bạn vẫn có thể tự điền.",
+      "aiUnavailable": "AI đang bận, thử lại sau ít phút hoặc tự điền.",
+      "aiInvalid": "AI trả kết quả không hợp lệ, hãy thử lại.",
+      "aiNotConfigured": "Chưa cấu hình AI (thiếu LLM_API_KEY).",
+      "generic": "Có lỗi xảy ra, vui lòng thử lại."
+    },
+    "detail": {
+      "glosses": "Nghĩa",
+      "examples": "Câu ví dụ",
+      "notVerified": "Một số thông tin do AI tạo và chưa được người lớn kiểm tra.",
+      "notFound": "Không tìm thấy từ này."
     }
   }
 }
