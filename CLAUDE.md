@@ -4,9 +4,10 @@ This file is read automatically at the start of every session. Follow it strictl
 **What** to build is in `SPEC.md`. **How** to build it is described here.
 
 ## Project in one paragraph
-A family-only PWA for learning Korean, Chinese (Simplified) and English vocabulary and pronunciation.
+A family-only PWA for learning **Korean and English** vocabulary, phrases and pronunciation, picture-first (every word, phrase and example sentence has an image).
+Chinese was removed from the product on 2026-10-08; the remaining `zh` code is cleaned up in M1.6 — don't add new `zh` code.
 Frontend: React + TypeScript. Backend: one Cloudflare Worker (serves the SPA and `/api`), D1 database, R2 media storage.
-External: Azure Speech (TTS + Pronunciation Assessment), an LLM API for word enrichment. Hosting must stay on free tiers.
+External: Azure Speech (TTS + Pronunciation Assessment), an LLM API (Gemini) for enrichment, Cloudflare Workers AI (FLUX) for images. Hosting must stay on free tiers.
 
 ## Communication
 - The owner is an experienced programmer (Python / Computer Vision) who is new to web development.
@@ -28,6 +29,7 @@ External: Azure Speech (TTS + Pronunciation Assessment), an LLM API for word enr
 | Database | Cloudflare D1 + Drizzle ORM + drizzle-kit migrations |
 | Validation | `zod`, schemas shared between client and server |
 | Speech | `microsoft-cognitiveservices-speech-sdk` (browser) with token from `/api/speech-token` |
+| Images | Cloudflare Workers AI (FLUX, `env.AI` binding) for AI drawings; client-side resize of uploads with Canvas (no image library) |
 | Tests | Vitest (unit), Playwright (e2e, from M2) |
 | Scripts | Python 3.11+ in `scripts/` (batch TTS, imports, data prep) |
 
@@ -69,6 +71,7 @@ SPEC.md  CLAUDE.md  README.md
 - Daily quotas: `consumeQuota()` in `worker/lib/quota.ts` (atomic upsert on `usage_daily`, UTC day).
 - Review/FSRS: pure rules in `shared/scheduling.ts` (`scheduler` with fuzz off, `applyReview`, `previewIntervals`, `buildQueue`, `localDayStart`), used by both the Worker (authority) and the client (previews). `worker/services/review.ts` → `syncProfileCards()` (idempotent: default decks `default-{lang}`, deck_words, profile_decks, missing cards) runs on every `/api/review/summary|queue` call.
 - Dev time travel: client `src/lib/devClock.ts` (only when `import.meta.env.DEV`) sends `X-Dev-Now`; the Worker reads it via `resolveNow()` only when `DEV_TIME_TRAVEL=1` in `.dev.vars`. `createTestEnv(app, vars)` forces `DEV_TIME_TRAVEL=0` unless a test passes it.
+- Navigation (M1.5): items in `src/components/layout/navItems.ts` (a slot is reserved for a later "Hanja" item). Desktop (≥ 768px, `md:`): collapsible left sidebar with the profile avatar at the top; phones: bottom tab bar + top bar with the avatar, and a floating "+" (add word) button. Screens that need focus (review) use `FocusLayout` (no navigation; the page has its own Exit button); the profile picker is outside the app layout.
 - Active profile: `useActiveProfile()` (`src/features/profiles/activeProfile.ts`); the UI language follows the active profile's `ui_lang`. Use `canManageProfiles()` to hide edit/delete/settings for kid profiles.
 
 ## Workflow for every task
@@ -84,7 +87,8 @@ SPEC.md  CLAUDE.md  README.md
 - TypeScript `strict`; no `any` (use `unknown` + zod parsing).
 - Validate every API input and every LLM output with zod. LLM output must be strict JSON. On invalid output: retry once, then return an error.
 - **No hard-coded UI strings.** Everything goes through i18n (`vi`, `ko`, `en`).
-- Put CJK text in elements with the right `lang` attribute (`ko`, `zh-CN`) and use Noto Sans KR / Noto Sans SC.
+- Put Korean text (incl. Hanja) in elements with `lang="ko"` and use Noto Sans KR. (Noto Sans SC / `zh-CN` are removed in M1.6.)
+- Every `<img>` of a study item has alt text (its gloss) and is lazy-loaded in lists; show the item's emoji while `image_status` is `pending` or `failed`.
 - Mobile-first layout; tap targets ≥ 44 px; check every screen at 375 px width.
 - Feature code lives in `src/features/<feature>/`; shared UI goes in `src/components/`.
 - Keep the Worker stateless; all state lives in D1/R2.
@@ -105,6 +109,10 @@ SPEC.md  CLAUDE.md  README.md
 ## Cost rules (free tiers)
 - **Cache first** for every paid call: TTS audio (R2 key = hash of lang + voice + text), LLM responses (`ai_cache`).
 - Never regenerate media that already exists.
+- **Images (Workers AI):** content-addressed R2 key = sha1(model + full prompt + style version + seed + size). Check R2 before calling `env.AI`. The fixed style suffix (`flat vector illustration, bright colors, simple shapes, plain background, no text, no letters`) lives in one constant with a `STYLE_VERSION`; changing it means bumping the version, never silently redrawing existing images.
+- Image generation runs in the background (never inside the save request) and must be idempotent: a retried job finds the existing R2 object and only updates the row.
+- Image quota: `usage_daily` service `image`, 60/profile/day **and** a family-wide daily cap (sum over profiles; provisional 150, measure Neurons in the dashboard before changing). Count only real `env.AI` calls; R2 hits are free.
+- Uploads ("My photo") are resized in the browser to ≤ 512 px WebP before upload; the Worker re-checks type and size and never re-encodes.
 - Enforce daily quotas per profile through `usage_daily` (pronunciation, LLM, TTS).
 - Batch jobs (e.g. TTS for a whole deck) go through Python scripts in `scripts/`, not through the UI.
 
