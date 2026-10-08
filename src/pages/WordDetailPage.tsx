@@ -5,6 +5,8 @@ import type { WordDetail } from "@shared/word";
 import { LangText } from "@/components/LangText";
 import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
+import { SpeakButton, SpeedToggle } from "@/features/audio/AudioButtons";
+import { AudioStatus } from "@/features/audio/AudioStatus";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useWord } from "@/features/words/api";
 import { AiBadge } from "@/features/words/bits";
@@ -42,14 +44,22 @@ function Detail({ w }: { w: WordDetail }) {
           </span>
         )}
         <div className="flex min-w-0 flex-col">
-          <LangText lang={w.lang} className="text-5xl font-bold">
-            {w.term}
-          </LangText>
+          <span className="flex items-center gap-1">
+            <LangText lang={w.lang} className="text-5xl font-bold">
+              {w.term}
+            </LangText>
+            <SpeakButton audioKey={w.audio_key} label={t("audio.play")} />
+          </span>
           <span className="text-lg text-muted-foreground">
             {w.reading} · {t(`words.pos.${w.pos}`)}
           </span>
         </div>
       </div>
+
+      <div className="flex justify-end">
+        <SpeedToggle />
+      </div>
+      <AudioStatus word={w} />
 
       {unverified && (
         <p className="text-sm text-muted-foreground">
@@ -100,11 +110,14 @@ function Detail({ w }: { w: WordDetail }) {
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold">{t("words.detail.examples")}</h2>
           <ul className="flex flex-col gap-3">
-            {w.examples.map((ex) => (
+            {w.examples.map((ex, i) => (
               <li key={ex.id} className="rounded-lg border p-3">
-                <LangText lang={w.lang} className="block text-xl">
-                  {ex.sentence}
-                </LangText>
+                <div className="flex items-start justify-between gap-2">
+                  <LangText lang={w.lang} className="block text-xl">
+                    {ex.sentence}
+                  </LangText>
+                  <SpeakButton audioKey={ex.audio_key} label={t("audio.playExample", { n: i + 1 })} />
+                </div>
                 {UI_LANGS.filter((l) => ex[`translation_${l}`]).map((l) => (
                   <p key={l} lang={l} className="text-sm text-muted-foreground">
                     {ex[`translation_${l}`]}

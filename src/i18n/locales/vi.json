@@ -139,7 +139,9 @@
       "changeTerm": "Đổi từ khác",
       "save": "Lưu từ",
       "saving": "Đang lưu…",
-      "aiReview": "Kiểm tra và sửa các trường trước khi lưu."
+      "aiReview": "Kiểm tra và sửa các trường trước khi lưu.",
+      "langMismatch": "Từ này có vẻ là {{lang}}, nhưng bạn đang chọn {{selected}}.",
+      "switchLang": "Chuyển sang {{lang}}"
     },
     "levels": {
       "kid": "Trẻ em",
@@ -194,6 +196,62 @@
       "examples": "Câu ví dụ",
       "notVerified": "Một số thông tin do AI tạo và chưa được người lớn kiểm tra.",
       "notFound": "Không tìm thấy từ này."
+    }
+  },
+  "audio": {
+    "play": "Nghe phát âm",
+    "playExample": "Nghe câu {{n}}",
+    "rate": "{{rate}}×",
+    "rateHint": "Tốc độ phát {{rate}}×, bấm để đổi",
+    "generate": "Tạo lại audio",
+    "generating": "Đang tạo audio…",
+    "missing": "Từ này còn thiếu audio.",
+    "savedWithoutAudio": "Đã lưu từ, nhưng chưa tạo được audio (dịch vụ giọng đọc lỗi hoặc hết lượt hôm nay). Bạn có thể bấm “Tạo lại audio” sau.",
+    "stillMissing": "Vẫn còn {{count}} mục chưa có audio. Hãy thử lại sau.",
+    "done": "Đã tạo xong audio.",
+    "notConfigured": "Chưa cấu hình giọng đọc (thiếu AZURE_SPEECH_KEY / AZURE_SPEECH_REGION)."
+  },
+  "review": {
+    "chooseLang": "Chọn ngôn ngữ để ôn",
+    "counts": "{{due}} đến hạn · {{new}} mới",
+    "start": "Bắt đầu ôn",
+    "nothingToday": "Hôm nay không còn thẻ nào. Giỏi lắm!",
+    "noLangs": "Hồ sơ chưa chọn ngôn ngữ học. Vào Cài đặt để chọn.",
+    "exit": "Thoát",
+    "showAnswer": "Hiện đáp án",
+    "progress": "{{done}} / {{total}}",
+    "listenPrompt": "Nghe và nhớ lại từ",
+    "playAgain": "Nghe lại",
+    "noAudio": "Thẻ này chưa có audio.",
+    "shortcuts": "Phím tắt: Space lật thẻ, 1–4 chấm điểm",
+    "done": "Xong! Số thẻ đã ôn: {{count}}",
+    "backHome": "Về trang chủ",
+    "saveError": "Không lưu được kết quả, hãy thử lại.",
+    "ratings": {
+      "again": "Lại",
+      "hard": "Khó",
+      "good": "Được",
+      "easy": "Dễ"
+    },
+    "cardType": {
+      "recognition": "Nhận diện",
+      "listening": "Nghe",
+      "speaking": "Nói"
+    },
+    "interval": {
+      "lessThanMinute": "<1 phút",
+      "minutes": "{{count}} phút",
+      "hours": "{{count}} giờ",
+      "days": "{{count}} ngày",
+      "months": "{{count}} tháng",
+      "years": "{{count}} năm"
+    },
+    "dev": {
+      "title": "Dev: giả lập ngày",
+      "today": "Hôm nay: {{date}}",
+      "plus1": "+1 ngày",
+      "plus7": "+7 ngày",
+      "reset": "Về hôm nay"
     }
   }
 }

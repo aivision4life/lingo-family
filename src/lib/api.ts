@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { apiErrorSchema } from "@shared/api/error";
+import { devNowHeaders } from "./devClock";
 
 /** Thrown for non-2xx responses; `code` is the API's `error` field (e.g. "last_adult"). */
 export class ApiError extends Error {
@@ -27,7 +28,11 @@ export async function api(method: Method, path: string, schema: null, body?: unk
 export async function api(method: Method, path: string, schema: z.ZodType | null, body?: unknown): Promise<unknown> {
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      // Dev time travel (empty in production builds).
+      ...devNowHeaders(),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json: unknown = res.status === 204 ? null : await res.json().catch(() => null);

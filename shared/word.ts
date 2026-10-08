@@ -123,6 +123,8 @@ export const exampleSchema = z.object({
   translation_ko: z.string(),
   level: exampleLevelSchema,
   ai_generated: z.boolean(),
+  /** R2 key of the sentence audio; null until generated. Play via `/api/media/{audio_key}`. */
+  audio_key: z.string().nullable(),
 });
 
 export const wordSummarySchema = z.object({
@@ -134,6 +136,8 @@ export const wordSummarySchema = z.object({
   gloss_en: z.string(),
   gloss_ko: z.string(),
   emoji: z.string().nullable(),
+  /** R2 key of the word audio; null until generated. Play via `/api/media/{audio_key}`. */
+  audio_key: z.string().nullable(),
   ai_generated: z.boolean(),
   verified: z.boolean(),
 });
@@ -164,6 +168,7 @@ export const WORD_ERRORS = {
   aiNotConfigured: "ai_not_configured",
   aiUnavailable: "ai_unavailable",
   aiInvalidOutput: "ai_invalid_output",
+  ttsNotConfigured: "tts_not_configured",
 } as const;
 
 export const duplicateErrorSchema = z.object({
@@ -173,3 +178,15 @@ export const duplicateErrorSchema = z.object({
 
 /** Daily LLM calls per profile (SPEC F6). Cache hits do not count. */
 export const LLM_DAILY_QUOTA = 50;
+
+/** Daily Azure TTS calls per profile (SPEC F3). Files already in R2 do not count. */
+export const TTS_DAILY_QUOTA = 200;
+
+/** Result of generating audio for a word: how many items (word + examples) still lack audio. */
+export const audioResultSchema = z.object({ missing: z.number().int().nonnegative() });
+
+/** POST /api/words response. */
+export const wordCreatedSchema = z.object({ id: z.string(), audio: audioResultSchema });
+
+/** POST /api/words/:id/audio */
+export const generateAudioRequestSchema = z.object({ profile_id: z.string().min(1) });

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { duplicateIdOf, useCreateWord, useEnrichWord } from "@/features/words/api";
 import { wordErrorMessage } from "@/features/words/format";
+import { readLastAddLang, saveLastAddLang } from "@/features/words/langGuess";
 import { draftFromEnrichment, draftToCreateInput, emptyDraft, type DraftErrors, type WordDraft } from "@/features/words/draft";
 import { DraftFields } from "@/features/words/DraftFields";
 import { ExamplesEditor } from "@/features/words/ExamplesEditor";
@@ -44,7 +45,8 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
   const enrich = useEnrichWord();
   const create = useCreateWord();
 
-  const [lang, setLang] = useState<LearnLang>(defaultLang);
+  // The last language chosen on this device wins over the profile default.
+  const [lang, setLang] = useState<LearnLang>(() => readLastAddLang() ?? defaultLang);
   const [term, setTerm] = useState("");
   const [level, setLevel] = useState<ExampleLevel>(defaultLevel);
   const [termError, setTermError] = useState(false);
@@ -53,6 +55,11 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
   const [aiFilled, setAiFilled] = useState(false);
   const [cached, setCached] = useState(false);
   const [errors, setErrors] = useState<DraftErrors>({});
+
+  const changeLang = (l: LearnLang) => {
+    setLang(l);
+    saveLastAddLang(l);
+  };
 
   const request = () => {
     const parsed = enrichRequestSchema.safeParse({ profile_id: profileId, lang, term, level });
@@ -87,7 +94,12 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
     if (!draft) return;
     const result = draftToCreateInput(draft, { profileId, lang, term, level, aiFilled });
     setErrors(result.errors ?? {});
-    if (result.input) create.mutate(result.input, { onSuccess: ({ id }) => void navigate(`/words/${id}`) });
+    if (result.input) {
+      create.mutate(result.input, {
+        // Word detail shows a light notice when some audio could not be generated.
+        onSuccess: ({ id, audio }) => void navigate(`/words/${id}`, { state: { audioMissing: audio.missing } }),
+      });
+    }
   };
 
   const errorNotice = (error: unknown) => {
@@ -113,7 +125,7 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
           lang={lang}
           term={term}
           level={level}
-          onLangChange={setLang}
+          onLangChange={changeLang}
           onTermChange={setTerm}
           onLevelChange={setLevel}
           onAiFill={aiFill}

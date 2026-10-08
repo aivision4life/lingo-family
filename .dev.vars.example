@@ -7,3 +7,6 @@ AZURE_SPEECH_KEY=..
 AZURE_SPEECH_REGION=koreacentral
 
 CLOUDFLARE_SUBDOMAIN=ai4life
+
+# Local only: lets the review screen fake "today" (X-Dev-Now header). Never set in production.
+DEV_TIME_TRAVEL=1

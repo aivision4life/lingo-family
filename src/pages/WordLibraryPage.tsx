@@ -6,6 +6,7 @@ import type { LearnLang } from "@shared/enums";
 import { LangText } from "@/components/LangText";
 import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
+import { SpeakButton } from "@/features/audio/AudioButtons";
 import { Input } from "@/components/ui/input";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useWords } from "@/features/words/api";
@@ -54,8 +55,9 @@ export function WordLibraryPage() {
       {!!words.data?.length && (
       <ul className="flex flex-col divide-y rounded-lg border">
         {words.data.map((w) => (
-          <li key={w.id}>
-            <Link to={`/words/${w.id}`} className="flex min-h-16 items-center gap-3 px-3 py-2 hover:bg-accent">
+          // The speaker is a sibling of the link: a button cannot be nested inside <a>.
+          <li key={w.id} className="flex items-center pr-1">
+            <Link to={`/words/${w.id}`} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-3 py-2 hover:bg-accent">
               <span className="w-10 text-center text-3xl" aria-hidden>
                 {w.emoji}
               </span>
@@ -72,6 +74,7 @@ export function WordLibraryPage() {
               </span>
               {w.ai_generated && !w.verified && <AiBadge />}
             </Link>
+            <SpeakButton audioKey={w.audio_key} label={t("audio.play")} />
           </li>
         ))}
       </ul>

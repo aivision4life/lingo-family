@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ProfileCreate } from "../../shared/profile";
 import { LLM_DAILY_QUOTA, wordDetailSchema, wordListSchema, type WordCreate } from "../../shared/word";
-import { createApp } from "../app";
 import { fakeLlm } from "../test/fakeLlm";
-import { createTestEnv } from "../test/testEnv";
+import { createTestEnv, testApp } from "../test/testEnv";
 
 const llm = fakeLlm();
 let t: Awaited<ReturnType<typeof createTestEnv>>;
@@ -22,7 +21,7 @@ const profile = (over: Partial<ProfileCreate>): ProfileCreate => ({
 });
 
 beforeAll(async () => {
-  t = await createTestEnv(createApp({ makeLlm: () => llm.client }));
+  t = await createTestEnv(testApp({ makeLlm: () => llm.client }));
 }, 60_000);
 afterAll(() => t.dispose());
 

@@ -3,17 +3,24 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { getPlatformProxy, type PlatformProxy } from "wrangler";
-import { createApp } from "../app";
+import { createApp, type AppDeps } from "../app";
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../../db/migrations");
 
 /**
- * getPlatformProxy also loads .dev.vars (real API keys), so the default app has no LLM:
- * tests never call a paid API. Pass `createApp({ makeLlm })` with a fake to test AI routes.
+ * App for tests. getPlatformProxy also loads .dev.vars (real API keys), so paid clients are
+ * disabled unless a test passes a fake: tests must never call a paid API.
  */
-export async function createTestEnv(app = createApp({ makeLlm: () => null })) {
+export const testApp = (deps: AppDeps = {}) => createApp({ makeLlm: () => null, makeTts: () => null, ...deps });
+
+/**
+ * `vars` override env values from .dev.vars so tests do not depend on the developer's local
+ * settings (e.g. DEV_TIME_TRAVEL is off unless a test turns it on).
+ */
+export async function createTestEnv(app = testApp(), vars: Record<string, string> = {}) {
   const proxy: PlatformProxy<Env> = await getPlatformProxy<Env>({ persist: false });
-  const env = proxy.env;
+  // Bindings on proxy.env are not enumerable, so inherit them instead of copying them.
+  const env: Env = Object.assign(Object.create(proxy.env) as Env, { DEV_TIME_TRAVEL: "0" }, vars);
 
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
   for (const file of files) {
@@ -38,5 +45,8 @@ export async function createTestEnv(app = createApp({ makeLlm: () => null })) {
     return { status: res.status, body: (text ? JSON.parse(text) : null) as unknown };
   };
 
-  return { env, api, dispose: () => proxy.dispose() };
+  /** Raw GET returning the Response (for headers / binary bodies). */
+  const raw = (url: string, headers: Record<string, string> = {}) => app.request(url, { headers }, env);
+
+  return { env, api, raw, dispose: () => proxy.dispose() };
 }

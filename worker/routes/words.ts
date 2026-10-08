@@ -5,6 +5,7 @@ import type { LearnLang } from "../../shared/enums";
 import {
   duplicateKey,
   enrichRequestSchema,
+  generateAudioRequestSchema,
   LLM_DAILY_QUOTA,
   posSchema,
   WORD_ERRORS,
@@ -17,12 +18,15 @@ import { examples, profiles, words } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { consumeQuota } from "../lib/quota";
 import { zv } from "../lib/validate";
+import { generateWordAudio } from "../services/audio";
 import { enrichWithCache } from "../services/enrich";
 import { LlmError, type LlmClient } from "../services/llm";
+import type { TtsClient } from "../services/tts";
 
 type Db = ReturnType<typeof getDb>;
 type WordRow = typeof words.$inferSelect;
 export type MakeLlm = (env: Env) => LlmClient | null;
+export type MakeTts = (env: Env) => TtsClient | null;
 
 class QuotaExceeded extends Error {}
 
@@ -55,6 +59,7 @@ const toSummary = (w: WordRow): WordSummary => ({
   gloss_en: w.gloss_en,
   gloss_ko: w.gloss_ko,
   emoji: w.emoji,
+  audio_key: w.audio_key,
   ai_generated: w.ai_generated,
   verified: w.verified,
 });
@@ -62,7 +67,9 @@ const toSummary = (w: WordRow): WordSummary => ({
 /** Escapes LIKE wildcards so user input is matched literally. */
 const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
-export const wordRoutes = (makeLlm: MakeLlm) =>
+const idParam = zv("param", z.object({ id: z.string().min(1) }));
+
+export const wordRoutes = ({ makeLlm, makeTts }: { makeLlm: MakeLlm; makeTts: MakeTts }) =>
   new Hono<AppEnv>()
     .post("/enrich", zv("json", enrichRequestSchema), async (c) => {
       const db = getDb(c.env);
@@ -118,7 +125,31 @@ export const wordRoutes = (makeLlm: MakeLlm) =>
       } else {
         await insertWord;
       }
-      return c.json({ id }, 201);
+
+      // Audio for the word + examples. TTS problems never fail the save: items stay
+      // without audio and the client offers "Generate audio" later.
+      const audio = await generateWordAudio(
+        { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
+        id,
+      );
+      return c.json({ id, audio }, 201);
+    })
+
+    .post("/:id/audio", idParam, zv("json", generateAudioRequestSchema), async (c) => {
+      const db = getDb(c.env);
+      const { id } = c.req.valid("param");
+      const { profile_id } = c.req.valid("json");
+
+      const who = await checkAdult(db, profile_id);
+      if (who === "not_found") return c.json({ error: "not_found" }, 404);
+      if (who === "kid") return c.json({ error: WORD_ERRORS.kidForbidden }, 403);
+      if (!(await db.select({ id: words.id }).from(words).where(eq(words.id, id)).get())) {
+        return c.json({ error: "not_found" }, 404);
+      }
+
+      const tts = makeTts(c.env);
+      if (!tts) return c.json({ error: WORD_ERRORS.ttsNotConfigured }, 503);
+      return c.json(await generateWordAudio({ db, bucket: c.env.MEDIA, tts, env: c.env, profileId: profile_id }, id));
     })
 
     .get("/", zv("query", wordListQuerySchema), async (c) => {
@@ -139,7 +170,7 @@ export const wordRoutes = (makeLlm: MakeLlm) =>
       return c.json(rows.map(toSummary));
     })
 
-    .get("/:id", zv("param", z.object({ id: z.string().min(1) })), async (c) => {
+    .get("/:id", idParam, async (c) => {
       const db = getDb(c.env);
       const { id } = c.req.valid("param");
       const w = await db.select().from(words).where(eq(words.id, id)).get();
@@ -154,7 +185,7 @@ export const wordRoutes = (makeLlm: MakeLlm) =>
         han_viet: w.han_viet,
         notes: w.notes,
         created_at: w.created_at.getTime(),
-        examples: exs.map(({ word_id: _w, audio_key: _a, ...ex }) => ex),
+        examples: exs.map(({ word_id: _w, ...ex }) => ex),
       };
       return c.json(detail);
     });

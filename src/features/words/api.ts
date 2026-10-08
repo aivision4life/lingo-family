@@ -1,10 +1,11 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { z } from "zod";
 import type { LearnLang } from "@shared/enums";
 import {
+  audioResultSchema,
   duplicateErrorSchema,
   enrichResponseSchema,
   wordDetailSchema,
+  wordCreatedSchema,
   wordListSchema,
   type EnrichRequest,
   type WordCreate,
@@ -39,7 +40,17 @@ export const useEnrichWord = () =>
 export function useCreateWord() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: WordCreate) => api("POST", "/words", z.object({ id: z.string() }), input),
+    mutationFn: (input: WordCreate) => api("POST", "/words", wordCreatedSchema, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: WORDS_KEY }),
+  });
+}
+
+/** Generates the missing audio of a saved word; returns how many items are still missing. */
+export function useGenerateAudio(wordId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (profileId: string) =>
+      api("POST", `/words/${wordId}/audio`, audioResultSchema, { profile_id: profileId }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: WORDS_KEY }),
   });
 }

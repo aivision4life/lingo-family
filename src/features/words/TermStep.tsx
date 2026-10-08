@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { Sparkles, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { EXAMPLE_LEVELS, exampleLevelSchema, type ExampleLevel, type LearnLang } from "@shared/enums";
@@ -9,6 +9,7 @@ import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LangChips } from "./bits";
+import { guessLangFromScript } from "./langGuess";
 
 type Props = {
   lang: LearnLang;
@@ -28,6 +29,9 @@ type Props = {
 /** Step 1 of "Add word": language, term, example level, then AI fill or manual entry. */
 export function TermStep(props: Props) {
   const { t } = useTranslation();
+  // Non-blocking hint when the script of the term does not match the chosen language.
+  const guessed = guessLangFromScript(props.term);
+  const mismatch = guessed !== null && guessed !== props.lang ? guessed : null;
 
   return (
     <form
@@ -58,6 +62,17 @@ export function TermStep(props: Props) {
           onChange={(e) => props.onTermChange(e.target.value)}
           className="h-14 text-2xl"
         />
+        {mismatch && (
+          <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+            <TriangleAlert className="size-4 shrink-0" aria-hidden />
+            <span className="flex-1">
+              {t("words.add.langMismatch", { lang: t(`langs.${mismatch}`), selected: t(`langs.${props.lang}`) })}
+            </span>
+            <Button type="button" variant="outline" onClick={() => props.onLangChange(mismatch)}>
+              {t("words.add.switchLang", { lang: t(`langs.${mismatch}`) })}
+            </Button>
+          </div>
+        )}
       </FormField>
 
       <FormField id="w-level" label={t("words.add.level")}>
