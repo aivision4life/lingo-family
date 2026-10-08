@@ -46,8 +46,7 @@ const word = (over: Partial<WordCreate> = {}): WordCreate => ({
   gloss_vi: "học sinh",
   gloss_en: "student",
   gloss_ko: "배우는 사람",
-  hanzi_simplified: "学生",
-  hanzi_traditional: "學生",
+  hanja: "學生",
   han_viet: "học sinh",
   emoji: "🧑‍🎓",
   ai_generated: true,
@@ -121,25 +120,25 @@ describe("words CRUD", () => {
     const id = (created.body as { id: string }).id;
 
     const detail = wordDetailSchema.parse((await t.api("GET", `/words/${id}`)).body);
-    expect(detail).toMatchObject({ term: "학생", ai_generated: true, verified: false, hanzi_traditional: "學生" });
+    expect(detail).toMatchObject({ term: "학생", ai_generated: true, verified: false, hanja: "學生" });
     expect(detail.examples).toHaveLength(1);
   });
 
   it("rejects duplicates, case-insensitive for English", async () => {
-    await t.api("POST", "/words", word({ lang: "en", term: "Apple", hanzi_simplified: null, examples: [] }));
+    await t.api("POST", "/words", word({ lang: "en", term: "Apple", hanja: null, examples: [] }));
     const res = await t.api("POST", "/words", word({ lang: "en", term: "apple ", examples: [] }));
     expect(res.status).toBe(409);
   });
 
   it("lists and searches by term, reading or gloss, filtered by language", async () => {
     await t.api("POST", "/words", word());
-    await t.api("POST", "/words", word({ lang: "zh", term: "学习", reading: "xuéxí", gloss_vi: "học tập", examples: [] }));
+    await t.api("POST", "/words", word({ lang: "en", term: "study", reading: "/ˈstʌd.i/", gloss_vi: "học tập", gloss_en: "to learn", hanja: null, han_viet: null, examples: [] }));
 
     const all = wordListSchema.parse((await t.api("GET", "/words")).body);
     expect(all).toHaveLength(2);
-    expect(wordListSchema.parse((await t.api("GET", "/words?lang=zh")).body).map((w) => w.term)).toEqual(["学习"]);
-    expect(wordListSchema.parse((await t.api("GET", "/words?q=xuéxí")).body)).toHaveLength(1);
-    expect(wordListSchema.parse((await t.api("GET", "/words?q=student")).body)).toHaveLength(2);
+    expect(wordListSchema.parse((await t.api("GET", "/words?lang=en")).body).map((w) => w.term)).toEqual(["study"]);
+    expect(wordListSchema.parse((await t.api("GET", "/words?q=ˈstʌd")).body)).toHaveLength(1);
+    expect(wordListSchema.parse((await t.api("GET", "/words?q=học")).body)).toHaveLength(2); // học sinh + học tập
     // LIKE wildcards are matched literally.
     expect(wordListSchema.parse((await t.api("GET", "/words?q=%25")).body)).toHaveLength(0);
   });

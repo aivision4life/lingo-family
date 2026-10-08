@@ -4,19 +4,14 @@ import { enrichCacheKey, finalizeEnrichment } from "./enrich";
 
 describe("finalizeEnrichment", () => {
   it("Korean: keeps Hanja/Hán-Việt and empties the Korean translation of examples", () => {
-    const e = finalizeEnrichment("ko", "학생", sampleEnrichment);
-    expect(e).toMatchObject({ hanzi_traditional: "學生", hanzi_simplified: "学生", han_viet: "học sinh" });
+    const e = finalizeEnrichment("ko", sampleEnrichment);
+    expect(e).toMatchObject({ hanja: "學生", han_viet: "học sinh" });
     expect(e.examples.every((ex) => ex.translation_ko === "")).toBe(true);
   });
 
-  it("Chinese: hanzi_simplified is always the term itself", () => {
-    const e = finalizeEnrichment("zh", "学习", { ...sampleEnrichment, hanzi_simplified: "學習" });
-    expect(e.hanzi_simplified).toBe("学习");
-  });
-
-  it("English: no Hanzi / Hán-Việt, empty strings become null", () => {
-    const e = finalizeEnrichment("en", "apple", { ...sampleEnrichment, emoji: " " });
-    expect(e).toMatchObject({ hanzi_simplified: null, hanzi_traditional: null, han_viet: null, emoji: null });
+  it("English: no Hanja / Hán-Việt, empty strings become null", () => {
+    const e = finalizeEnrichment("en", { ...sampleEnrichment, emoji: " " });
+    expect(e).toMatchObject({ hanja: null, han_viet: null, emoji: null });
     expect(e.examples.every((ex) => ex.translation_en === "")).toBe(true);
   });
 });

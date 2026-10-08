@@ -25,7 +25,6 @@
   },
   "langs": {
     "ko": "Tiếng Hàn",
-    "zh": "Tiếng Trung",
     "en": "Tiếng Anh"
   },
   "profiles": {
@@ -158,8 +157,6 @@
       "gloss_en": "Nghĩa tiếng Anh",
       "gloss_ko": "Nghĩa tiếng Hàn",
       "hanja": "Hanja",
-      "hanzi_traditional": "Chữ phồn thể",
-      "hanzi_simplified": "Chữ giản thể",
       "han_viet": "Âm Hán-Việt",
       "emoji": "Emoji",
       "examples": "Câu ví dụ",

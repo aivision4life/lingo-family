@@ -26,7 +26,7 @@ const item = (id: string): QueueItem => ({
     gloss_en: "",
     gloss_ko: "",
     emoji: null,
-    hanzi_traditional: null,
+    hanja: null,
     han_viet: null,
     audio_key: null,
   },

@@ -5,10 +5,9 @@ import { sha1Hex } from "../lib/hash";
 
 export const DEFAULT_VOICES: Record<LearnLang, string> = {
   ko: "ko-KR-SunHiNeural",
-  zh: "zh-CN-XiaoxiaoNeural",
   en: "en-US-JennyNeural",
 };
-const LOCALES: Record<LearnLang, string> = { ko: "ko-KR", zh: "zh-CN", en: "en-US" };
+const LOCALES: Record<LearnLang, string> = { ko: "ko-KR", en: "en-US" };
 
 /** mp3, mono, 24 kHz (SPEC F3). */
 export const AZURE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
@@ -24,7 +23,6 @@ export interface TtsClient {
 // Optional `vars` in wrangler.jsonc; parsed instead of typed because they may be absent.
 const voiceEnvSchema = z.object({
   TTS_VOICE_KO: z.string().optional(),
-  TTS_VOICE_ZH: z.string().optional(),
   TTS_VOICE_EN: z.string().optional(),
 });
 
@@ -32,7 +30,7 @@ const voiceEnvSchema = z.object({
 export function voiceFor(env: unknown, lang: LearnLang): string {
   const parsed = voiceEnvSchema.safeParse(env);
   const vars = parsed.success ? parsed.data : {};
-  const override = { ko: vars.TTS_VOICE_KO, zh: vars.TTS_VOICE_ZH, en: vars.TTS_VOICE_EN }[lang];
+  const override = { ko: vars.TTS_VOICE_KO, en: vars.TTS_VOICE_EN }[lang];
   return override?.trim() || DEFAULT_VOICES[lang];
 }
 
@@ -45,7 +43,7 @@ export async function audioKey(lang: LearnLang, voice: string, text: string): Pr
 }
 
 // Voice names can contain ":" (e.g. "DragonHD" voices).
-export const AUDIO_KEY_PATTERN = /^audio\/(ko|zh|en)\/[A-Za-z0-9:-]+\/[0-9a-f]{40}\.mp3$/;
+export const AUDIO_KEY_PATTERN = /^audio\/(ko|en)\/[A-Za-z0-9:-]+\/[0-9a-f]{40}\.mp3$/;
 
 const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
 export const escapeXml = (s: string) => s.replace(/[&<>"']/g, (c) => XML_ESCAPES[c]!);

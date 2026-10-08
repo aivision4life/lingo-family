@@ -18,8 +18,7 @@ export type WordDraft = {
   gloss_vi: string;
   gloss_en: string;
   gloss_ko: string;
-  hanzi_simplified: string;
-  hanzi_traditional: string;
+  hanja: string;
   han_viet: string;
   emoji: string;
   examples: ExampleDraft[];
@@ -48,8 +47,7 @@ export const emptyDraft = (): WordDraft => ({
   gloss_vi: "",
   gloss_en: "",
   gloss_ko: "",
-  hanzi_simplified: "",
-  hanzi_traditional: "",
+  hanja: "",
   han_viet: "",
   emoji: "",
   examples: [emptyExample()],
@@ -62,17 +60,15 @@ export function draftFromEnrichment(e: Enrichment): WordDraft {
     gloss_vi: e.gloss_vi,
     gloss_en: e.gloss_en,
     gloss_ko: e.gloss_ko,
-    hanzi_simplified: e.hanzi_simplified ?? "",
-    hanzi_traditional: e.hanzi_traditional ?? "",
+    hanja: e.hanja ?? "",
     han_viet: e.han_viet ?? "",
     emoji: e.emoji ?? "",
     examples: e.examples.map((ex) => ({ ...ex, key: newKey(), ai_generated: true })),
   };
 }
 
-/** Which Han-character fields apply to a language (English has none; Chinese uses the term itself). */
-export const hanFieldsFor = (lang: LearnLang): DraftTextField[] =>
-  lang === "ko" ? ["hanzi_traditional", "hanzi_simplified", "han_viet"] : lang === "zh" ? ["hanzi_traditional", "han_viet"] : [];
+/** Hanja fields only apply to Korean words. */
+export const hanFieldsFor = (lang: LearnLang): DraftTextField[] => (lang === "ko" ? ["hanja", "han_viet"] : []);
 
 type Meta = { profileId: string; lang: LearnLang; term: string; level: ExampleLevel; aiFilled: boolean };
 
@@ -92,8 +88,7 @@ export function draftToCreateInput(
     gloss_vi: d.gloss_vi,
     gloss_en: d.gloss_en,
     gloss_ko: d.gloss_ko,
-    hanzi_simplified: m.lang === "zh" ? m.term : pick("hanzi_simplified"),
-    hanzi_traditional: pick("hanzi_traditional"),
+    hanja: pick("hanja"),
     han_viet: pick("han_viet"),
     emoji: d.emoji,
     ai_generated: m.aiFilled,

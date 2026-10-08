@@ -16,12 +16,11 @@ export const enrichCacheKey = (model: string, { lang, term, level }: Input) =>
 const orNull = (s: string) => (s.trim() === "" ? null : s.trim());
 
 /** Applies per-language rules the model might not follow exactly, and "" → null. */
-export function finalizeEnrichment(lang: LearnLang, term: string, raw: LlmEnrichment): Enrichment {
+export function finalizeEnrichment(lang: LearnLang, raw: LlmEnrichment): Enrichment {
   const isEnglish = lang === "en";
   return {
     ...raw,
-    hanzi_simplified: isEnglish ? null : lang === "zh" ? term : orNull(raw.hanzi_simplified),
-    hanzi_traditional: isEnglish ? null : orNull(raw.hanzi_traditional),
+    hanja: isEnglish ? null : orNull(raw.hanja),
     han_viet: isEnglish ? null : orNull(raw.han_viet),
     emoji: orNull(raw.emoji),
     examples: raw.examples.map((ex) => ({
@@ -51,7 +50,7 @@ export async function enrichWithCache({ db, llm, input, beforeLlmCall }: Options
 
   await beforeLlmCall();
   const raw = await generateStructured(llm, llmEnrichmentSchema, buildEnrichPrompt(input.lang, input.term, input.level));
-  const enrichment = finalizeEnrichment(input.lang, input.term, raw);
+  const enrichment = finalizeEnrichment(input.lang, raw);
 
   await db
     .insert(ai_cache)

@@ -5,7 +5,7 @@ This file is read automatically at the start of every session. Follow it strictl
 
 ## Project in one paragraph
 A family-only PWA for learning **Korean and English** vocabulary, phrases and pronunciation, picture-first (every word, phrase and example sentence has an image).
-Chinese was removed from the product on 2026-10-08; the remaining `zh` code is cleaned up in M1.6 — don't add new `zh` code.
+Chinese was removed from the product on 2026-10-08 and from the code/DB in M1.6 — don't add `zh` code back.
 Frontend: React + TypeScript. Backend: one Cloudflare Worker (serves the SPA and `/api`), D1 database, R2 media storage.
 External: Azure Speech (TTS + Pronunciation Assessment), an LLM API (Gemini) for enrichment, Cloudflare Workers AI (FLUX) for images. Hosting must stay on free tiers.
 
@@ -87,7 +87,7 @@ SPEC.md  CLAUDE.md  README.md
 - TypeScript `strict`; no `any` (use `unknown` + zod parsing).
 - Validate every API input and every LLM output with zod. LLM output must be strict JSON. On invalid output: retry once, then return an error.
 - **No hard-coded UI strings.** Everything goes through i18n (`vi`, `ko`, `en`).
-- Put Korean text (incl. Hanja) in elements with `lang="ko"` and use Noto Sans KR. (Noto Sans SC / `zh-CN` are removed in M1.6.)
+- Put Korean text (incl. Hanja) in elements with `lang="ko"` and use Noto Sans KR.
 - Every `<img>` of a study item has alt text (its gloss) and is lazy-loaded in lists; show the item's emoji while `image_status` is `pending` or `failed`.
 - Mobile-first layout; tap targets ≥ 44 px; check every screen at 375 px width.
 - Feature code lives in `src/features/<feature>/`; shared UI goes in `src/components/`.
@@ -133,6 +133,7 @@ SPEC.md  CLAUDE.md  README.md
 - Gemini can return 503 "high demand" or take 30s+ under load; the client retries 500/503 once and times out after 45s. If the default model stays overloaded, set `LLM_MODEL=gemini-3.5-flash-lite` in `.dev.vars`.
 - Homonyms (e.g. 사과 = apple / apology) made the LLM mix meanings with one Hanja; the prompt now asks for the most common meaning only.
 - drizzle's `db.batch()` on D1 cannot run raw `db.run(sql\`...\`)` statements with parameters (`stmt` is undefined). For raw SQL batches use the D1 API: `env.DB.batch([env.DB.prepare(...).bind(...)])`.
+- `drizzle-kit generate` asks interactively when a column is renamed (it cannot be answered here). Write a custom migration instead: `npx drizzle-kit generate --custom --name <x>`, put the SQL in it, then copy the table definitions of a reference snapshot (generate the current schema into a temp `out` dir) into the new `meta/000N_snapshot.json`, keeping its `id`/`prevId`; `npm run db:generate` must then report "No schema changes". Test the migration in `db/migrations.test.ts`.
 - `getPlatformProxy().env` bindings are not enumerable: `{...env}` / `Object.assign({}, env)` drops them; use `Object.create(env)` to add overrides.
 <!-- Add a line here whenever the AI repeats a mistake, e.g.:
 - Always use `lang="ko"` on Korean text (fixed glyph bug on 2026-10-xx). -->

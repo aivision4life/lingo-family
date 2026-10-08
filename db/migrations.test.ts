@@ -1,0 +1,110 @@
+// Runs the real migration files in order against an in-memory local D1 and checks that
+// 0001_remove_zh deletes Chinese data (FK-safe), keeps everything else and renames Hanja.
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { getPlatformProxy, type PlatformProxy } from "wrangler";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+const dir = path.resolve(import.meta.dirname, "migrations");
+let proxy: PlatformProxy<Env>;
+let DB: D1Database;
+
+async function apply(file: string) {
+  for (const stmt of readFileSync(path.join(dir, file), "utf8").split("--> statement-breakpoint")) {
+    if (stmt.trim()) await DB.prepare(stmt).run();
+  }
+}
+
+const count = async (sql: string) => (await DB.prepare(sql).first<{ n: number }>())?.n;
+
+beforeAll(async () => {
+  proxy = await getPlatformProxy<Env>({ persist: false });
+  DB = proxy.env.DB;
+  await apply("0000_init.sql");
+
+  const now = Date.now();
+  const word = (id: string, lang: string, term: string, simplified: string | null, traditional: string | null) =>
+    DB.prepare(
+      `INSERT INTO words (id, lang, term, reading, pos, gloss_vi, gloss_en, gloss_ko, hanzi_simplified, hanzi_traditional,
+         ai_generated, verified, created_at, updated_at) VALUES (?, ?, ?, '', 'noun', 'x', 'x', 'x', ?, ?, 0, 0, ?, ?)`,
+    ).bind(id, lang, term, simplified, traditional, now, now);
+  const card = (id: string, wordId: string) =>
+    DB.prepare(
+      `INSERT INTO cards (id, profile_id, word_id, card_type, due, stability, difficulty, elapsed_days, scheduled_days,
+         learning_steps, reps, lapses, state, updated_at) VALUES (?, 'p-zh', ?, 'recognition', ?, 0, 0, 0, 0, 0, 1, 0, 1, ?)`,
+    ).bind(id, wordId, now, now);
+
+  await DB.batch([
+    DB.prepare(
+      `INSERT INTO profiles (id, name, avatar, ui_lang, gloss_lang, is_kid, daily_new_limit, study_langs, created_at)
+       VALUES ('p-zh', 'A', '🐻', 'vi', 'vi', 0, 10, '["zh"]', ?), ('p-mix', 'B', '🐼', 'vi', 'vi', 0, 10, '["ko","zh","en"]', ?),
+              ('p-ko', 'C', '🦊', 'vi', 'vi', 0, 10, '["ko"]', ?)`,
+    ).bind(now, now, now),
+    word("w-ko", "ko", "학생", "学生", "學生"),
+    word("w-zh", "zh", "学习", "学习", "學習"),
+    DB.prepare(
+      `INSERT INTO examples (id, word_id, sentence, translation_vi, translation_en, translation_ko, level, ai_generated)
+       VALUES ('e-ko', 'w-ko', 's', '', '', '', 'beginner', 0), ('e-zh', 'w-zh', 's', '', '', '', 'beginner', 0)`,
+    ),
+    DB.prepare(
+      `INSERT INTO decks (id, name, lang, is_kid_deck, created_at)
+       VALUES ('default-ko', 'default-ko', 'ko', 0, ?), ('default-zh', 'default-zh', 'zh', 0, ?)`,
+    ).bind(now, now),
+    DB.prepare("INSERT INTO deck_words (deck_id, word_id) VALUES ('default-ko', 'w-ko'), ('default-zh', 'w-zh')"),
+    DB.prepare("INSERT INTO profile_decks (profile_id, deck_id) VALUES ('p-zh', 'default-zh'), ('p-mix', 'default-ko')"),
+    card("c-ko", "w-ko"),
+    card("c-zh", "w-zh"),
+    DB.prepare(
+      `INSERT INTO review_logs (id, card_id, profile_id, rating, reviewed_at, state, due, stability, difficulty,
+         elapsed_days, last_elapsed_days, scheduled_days, learning_steps)
+       VALUES ('l-ko', 'c-ko', 'p-zh', 3, ?, 0, ?, 0, 0, 0, 0, 0, 0), ('l-zh', 'c-zh', 'p-zh', 3, ?, 0, ?, 0, 0, 0, 0, 0, 0)`,
+    ).bind(now, now, now, now),
+    DB.prepare("INSERT INTO ai_cache (key, response_json, created_at) VALUES ('k', '{}', ?)").bind(now),
+  ]);
+
+  await apply("0001_remove_zh.sql");
+}, 60_000);
+
+afterAll(() => proxy.dispose());
+
+describe("migration 0001_remove_zh", () => {
+  it("deletes zh rows and nothing else", async () => {
+    expect(await count("SELECT count(*) AS n FROM words WHERE lang = 'zh'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM decks WHERE id = 'default-zh'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM examples WHERE id = 'e-zh'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM cards WHERE id = 'c-zh'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM review_logs WHERE id = 'l-zh'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM deck_words WHERE deck_id = 'default-zh'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM profile_decks WHERE deck_id = 'default-zh'")).toBe(0);
+    // Korean data is untouched.
+    expect(await count("SELECT count(*) AS n FROM words WHERE id = 'w-ko'")).toBe(1);
+    expect(await count("SELECT count(*) AS n FROM review_logs WHERE id = 'l-ko'")).toBe(1);
+    expect(await count("SELECT count(*) AS n FROM examples WHERE id = 'e-ko'")).toBe(1);
+    expect(await count("SELECT count(*) AS n FROM ai_cache")).toBe(0);
+  });
+
+  it("removes zh from study_langs (a profile left empty gets Korean)", async () => {
+    const rows = await DB.prepare("SELECT id, study_langs FROM profiles ORDER BY id").all<{ id: string; study_langs: string }>();
+    expect(Object.fromEntries(rows.results.map((r) => [r.id, JSON.parse(r.study_langs)]))).toEqual({
+      "p-ko": ["ko"],
+      "p-mix": ["ko", "en"],
+      "p-zh": ["ko"],
+    });
+  });
+
+  it("renames hanzi_traditional to hanja and drops hanzi_simplified", async () => {
+    const cols = await DB.prepare("SELECT name FROM pragma_table_info('words')").all<{ name: string }>();
+    const names = cols.results.map((c) => c.name);
+    expect(names).toContain("hanja");
+    expect(names).not.toContain("hanzi_traditional");
+    expect(names).not.toContain("hanzi_simplified");
+    expect(await DB.prepare("SELECT hanja FROM words WHERE id = 'w-ko'").first("hanja")).toBe("學生");
+  });
+
+  it("keys han_chars by Hanja", async () => {
+    const cols = await DB.prepare("SELECT name, pk FROM pragma_table_info('han_chars')").all<{ name: string; pk: number }>();
+    expect(cols.results.find((c) => c.pk === 1)?.name).toBe("hanja");
+    const wc = await DB.prepare("SELECT name FROM pragma_table_info('word_chars')").all<{ name: string }>();
+    expect(wc.results.map((c) => c.name)).toEqual(["word_id", "position", "hanja"]);
+  });
+});

@@ -19,7 +19,7 @@ describe("TTS helpers", () => {
   });
 
   it("uses default voices unless vars override them", () => {
-    expect(voiceFor({}, "zh")).toBe("zh-CN-XiaoxiaoNeural");
+    expect(voiceFor({}, "en")).toBe("en-US-JennyNeural");
     expect(voiceFor({ TTS_VOICE_KO: "ko-KR-InJoonNeural" }, "ko")).toBe("ko-KR-InJoonNeural");
     expect(voiceFor({ TTS_VOICE_EN: " " }, "en")).toBe("en-US-JennyNeural");
   });

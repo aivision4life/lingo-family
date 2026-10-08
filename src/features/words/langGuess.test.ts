@@ -6,8 +6,6 @@ describe("guessLangFromScript", () => {
     ["학생", "ko"],
     ["사과나무", "ko"],
     ["학교 學校", "ko"], // Hangul wins over Hanja
-    ["学习", "zh"],
-    ["學習", "zh"],
     ["family", "en"],
     ["ice cream", "en"],
     ["mother-in-law", "en"],
@@ -17,7 +15,7 @@ describe("guessLangFromScript", () => {
     expect(guessLangFromScript(term)).toBe(lang);
   });
 
-  it.each(["", "   ", "123", "😀", "abc123"])("%j has no clear guess", (term) => {
+  it.each(["", "   ", "123", "😀", "abc123", "學習", "学习"])("%j has no clear guess (Hanja only included)", (term) => {
     expect(guessLangFromScript(term)).toBeNull();
   });
 });

@@ -7,8 +7,7 @@ export const sampleEnrichment: LlmEnrichment = {
   gloss_vi: "học sinh",
   gloss_en: "student",
   gloss_ko: "배우는 사람",
-  hanzi_simplified: "学生",
-  hanzi_traditional: "學生",
+  hanja: "學生",
   han_viet: "học sinh",
   emoji: "🧑‍🎓",
   examples: [

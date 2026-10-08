@@ -2,15 +2,13 @@
 import { learnLangSchema, type LearnLang } from "@shared/enums";
 
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
-const HAN = /\p{Script=Han}/u;
 const LATIN_ONLY = /^[\p{Script=Latin}\s'’.-]+$/u;
 
-/** Language suggested by the script of the term, or null when unclear (empty, digits, mixed). */
+/** Language suggested by the script of the term, or null when unclear (empty, digits, Hanja only, mixed). */
 export function guessLangFromScript(term: string): LearnLang | null {
   const t = term.trim();
   if (!t) return null;
   if (HANGUL.test(t)) return "ko";
-  if (HAN.test(t)) return "zh";
   if (LATIN_ONLY.test(t) && /\p{Letter}/u.test(t)) return "en";
   return null;
 }

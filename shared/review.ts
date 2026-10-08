@@ -38,7 +38,7 @@ export const reviewWordSchema = z.object({
   gloss_en: z.string(),
   gloss_ko: z.string(),
   emoji: z.string().nullable(),
-  hanzi_traditional: z.string().nullable(),
+  hanja: z.string().nullable(),
   han_viet: z.string().nullable(),
   audio_key: z.string().nullable(),
 });

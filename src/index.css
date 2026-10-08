@@ -121,11 +121,8 @@
   body {
     @apply bg-background text-foreground antialiased;
     }
-  /* CJK text must carry lang="ko" / lang="zh-CN" so the right glyphs are used. */
+  /* Korean text (incl. Hanja) must carry lang="ko" so the right glyphs are used. */
   :lang(ko) {
     font-family: "Noto Sans KR", var(--font-sans);
-  }
-  :lang(zh-CN) {
-    font-family: "Noto Sans SC", var(--font-sans);
   }
 }

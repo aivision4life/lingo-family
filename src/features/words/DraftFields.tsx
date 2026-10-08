@@ -20,8 +20,7 @@ type Props = {
 /** Which language a field's content is written in (for the `lang` attribute / fonts). */
 const fieldLang = (field: DraftTextField, lang: LearnLang): string | undefined => {
   if (field === "reading") return lang === "en" ? "en" : undefined;
-  if (field === "hanzi_simplified") return "zh-CN";
-  if (field === "hanzi_traditional") return lang === "ko" ? "ko" : "zh-TW";
+  if (field === "hanja") return "ko";
   if (field === "gloss_ko") return "ko";
   return undefined;
 };
@@ -29,10 +28,7 @@ const fieldLang = (field: DraftTextField, lang: LearnLang): string | undefined =
 export function DraftFields({ lang, draft, errors, aiFilled, onChange }: Props) {
   const { t } = useTranslation();
 
-  const label = (field: DraftTextField) => {
-    if (field === "hanzi_traditional" && lang === "ko") return t("words.fields.hanja");
-    return t(`words.fields.${field}`);
-  };
+  const label = (field: DraftTextField) => t(`words.fields.${field}`);
 
   const text = (field: DraftTextField) => {
     const id = `wd-${field}`;

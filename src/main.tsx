@@ -4,8 +4,6 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router/dom";
 import "@fontsource/noto-sans-kr/400.css";
 import "@fontsource/noto-sans-kr/700.css";
-import "@fontsource/noto-sans-sc/400.css";
-import "@fontsource/noto-sans-sc/700.css";
 import "./i18n";
 import "./index.css";
 import { ProfileProvider } from "./features/profiles/ProfileProvider";

@@ -19,7 +19,7 @@ const adult: ProfileCreate = {
   gloss_lang: "vi",
   is_kid: false,
   daily_new_limit: 15,
-  study_langs: ["ko", "zh"],
+  study_langs: ["ko", "en"],
 };
 const kid: ProfileCreate = { ...adult, name: "Bé", avatar: "🐰", is_kid: true, gloss_lang: "ko" };
 
@@ -32,7 +32,7 @@ const create = async (input: ProfileCreate) => {
 describe("profiles API", () => {
   it("creates and lists profiles without leaking the PIN hash", async () => {
     const p = await create({ ...adult, pin: "1234" });
-    expect(p).toMatchObject({ name: "Bố", has_pin: true, study_langs: ["ko", "zh"] });
+    expect(p).toMatchObject({ name: "Bố", has_pin: true, study_langs: ["ko", "en"] });
 
     const list = await t.api("GET", "/profiles");
     expect(list.status).toBe(200);

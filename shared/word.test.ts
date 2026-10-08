@@ -31,13 +31,12 @@ describe("wordCreateSchema", () => {
       gloss_vi: "quả táo",
       gloss_en: "a round fruit",
       gloss_ko: "사과",
-      hanzi_simplified: " ",
-      hanzi_traditional: null,
+      hanja: " ",
       han_viet: "",
       emoji: "🍎",
       ai_generated: true,
       examples: [],
     });
-    expect(parsed).toMatchObject({ hanzi_simplified: null, han_viet: null, emoji: "🍎" });
+    expect(parsed).toMatchObject({ hanja: null, han_viet: null, emoji: "🍎" });
   });
 });

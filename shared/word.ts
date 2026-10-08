@@ -38,8 +38,7 @@ export const llmEnrichmentSchema = z.object({
   gloss_vi: z.string().min(1),
   gloss_en: z.string().min(1),
   gloss_ko: z.string().min(1),
-  hanzi_simplified: z.string(),
-  hanzi_traditional: z.string(),
+  hanja: z.string(),
   han_viet: z.string(),
   emoji: z.string(),
   examples: z
@@ -58,8 +57,7 @@ export type LlmEnrichment = z.infer<typeof llmEnrichmentSchema>;
 
 /** Enrichment as returned to the client (not-applicable fields are null). */
 export const enrichmentSchema = llmEnrichmentSchema.extend({
-  hanzi_simplified: z.string().nullable(),
-  hanzi_traditional: z.string().nullable(),
+  hanja: z.string().nullable(),
   han_viet: z.string().nullable(),
   emoji: z.string().nullable(),
 });
@@ -106,8 +104,7 @@ export const wordCreateSchema = z.object({
   gloss_vi: z.string().trim().min(1),
   gloss_en: z.string().trim().min(1),
   gloss_ko: z.string().trim().min(1),
-  hanzi_simplified: optionalText,
-  hanzi_traditional: optionalText,
+  hanja: optionalText,
   han_viet: optionalText,
   emoji: optionalText,
   ai_generated: z.boolean(),
@@ -146,8 +143,7 @@ export const wordListSchema = z.array(wordSummarySchema);
 
 export const wordDetailSchema = wordSummarySchema.extend({
   pos: posSchema,
-  hanzi_simplified: z.string().nullable(),
-  hanzi_traditional: z.string().nullable(),
+  hanja: z.string().nullable(),
   han_viet: z.string().nullable(),
   notes: z.string().nullable(),
   created_at: z.number(),

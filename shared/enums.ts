@@ -2,7 +2,8 @@ import { z } from "zod";
 
 // Enum values shared by the DB schema, the API and the UI.
 
-export const LEARN_LANGS = ["ko", "zh", "en"] as const;
+// Chinese (zh) was removed from the product in M1.6.
+export const LEARN_LANGS = ["ko", "en"] as const;
 export const learnLangSchema = z.enum(LEARN_LANGS);
 export type LearnLang = z.infer<typeof learnLangSchema>;
 

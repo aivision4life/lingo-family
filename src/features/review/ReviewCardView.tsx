@@ -55,10 +55,10 @@ export function ReviewCardView({ item, flipped, glossLang }: Props) {
           <span lang={glossLang} className="text-2xl font-semibold">
             {glossFor(word, glossLang)}
           </span>
-          {(word.hanzi_traditional || word.han_viet) && (
+          {(word.hanja || word.han_viet) && (
             <span className="text-muted-foreground">
-              <span lang={word.lang === "ko" ? "ko" : "zh-TW"}>{word.hanzi_traditional}</span>
-              {word.hanzi_traditional && word.han_viet && " · "}
+              <span lang="ko">{word.hanja}</span>
+              {word.hanja && word.han_viet && " · "}
               <span lang="vi">{word.han_viet}</span>
             </span>
           )}

@@ -33,7 +33,7 @@ function Detail({ w }: { w: WordDetail }) {
   const unverified = w.ai_generated && !w.verified;
   // Order the meanings so the profile's gloss language comes first.
   const glossLangs = [...UI_LANGS].sort((a, b) => Number(b === profile?.gloss_lang) - Number(a === profile?.gloss_lang));
-  const firstChar = w.hanzi_simplified ? [...w.hanzi_simplified][0] : undefined;
+  const firstChar = w.hanja ? [...w.hanja][0] : undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -67,20 +67,12 @@ function Detail({ w }: { w: WordDetail }) {
         </p>
       )}
 
-      {(w.hanzi_traditional || w.han_viet) && (
+      {(w.hanja || w.han_viet) && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-lg">
-          {w.hanzi_traditional && (
+          {w.hanja && (
             <>
-              <dt className="text-muted-foreground">
-                {w.lang === "ko" ? t("words.fields.hanja") : t("words.fields.hanzi_traditional")}
-              </dt>
-              <dd lang={w.lang === "ko" ? "ko" : "zh-TW"}>{w.hanzi_traditional}</dd>
-            </>
-          )}
-          {w.lang === "ko" && w.hanzi_simplified && (
-            <>
-              <dt className="text-muted-foreground">{t("words.fields.hanzi_simplified")}</dt>
-              <dd lang="zh-CN">{w.hanzi_simplified}</dd>
+              <dt className="text-muted-foreground">{t("words.fields.hanja")}</dt>
+              <dd lang="ko">{w.hanja}</dd>
             </>
           )}
           {w.han_viet && (

@@ -13,6 +13,16 @@ type Db = ReturnType<typeof getDb>;
 export const defaultDeckId = (lang: LearnLang) => `default-${lang}`;
 
 /**
+ * Supported learning languages from a stored `study_langs` value. Anything else (e.g. a
+ * leftover "zh" from before M1.6) is ignored, so no deck is ever created for it.
+ */
+export const supportedStudyLangs = (stored: readonly unknown[]): LearnLang[] =>
+  LEARN_LANGS.filter((lang) => stored.includes(lang));
+
+// SQL list of supported languages, e.g. ('ko','en'): words in other languages get no deck or cards.
+const SUPPORTED_LANGS_SQL = `(${LEARN_LANGS.map((l) => `'${l}'`).join(",")})`;
+
+/**
  * Idempotent: creates the default decks, puts every word in the deck of its language,
  * links the profile to the decks of its study_langs and creates missing cards
  * (recognition + listening). Unlinked decks keep their cards, so progress is never lost.
@@ -25,7 +35,7 @@ export async function syncProfileCards(db: Db, d1: D1Database, profileId: string
 
   const nowMs = now.getTime();
   const empty = emptyCardFields(now);
-  const studied = profile.study_langs.map(defaultDeckId);
+  const studied = supportedStudyLangs(profile.study_langs).map(defaultDeckId);
   const notStudied = LEARN_LANGS.map(defaultDeckId).filter((id) => !studied.includes(id));
 
   await d1.batch([
@@ -34,7 +44,10 @@ export async function syncProfileCards(db: Db, d1: D1Database, profileId: string
         .prepare("INSERT OR IGNORE INTO decks (id, name, lang, is_kid_deck, created_at) VALUES (?, ?, ?, 0, ?)")
         .bind(defaultDeckId(lang), defaultDeckId(lang), lang, nowMs),
     ),
-    d1.prepare("INSERT OR IGNORE INTO deck_words (deck_id, word_id) SELECT 'default-' || lang, id FROM words"),
+    d1.prepare(
+      `INSERT OR IGNORE INTO deck_words (deck_id, word_id)
+       SELECT 'default-' || lang, id FROM words WHERE lang IN ${SUPPORTED_LANGS_SQL}`,
+    ),
     ...notStudied.map((deckId) =>
       d1.prepare("DELETE FROM profile_decks WHERE profile_id = ? AND deck_id = ?").bind(profileId, deckId),
     ),
@@ -150,7 +163,7 @@ export async function todaysQueue(db: Db, a: QueueArgs) {
         gloss_en: word.gloss_en,
         gloss_ko: word.gloss_ko,
         emoji: word.emoji,
-        hanzi_traditional: word.hanzi_traditional,
+        hanja: word.hanja,
         han_viet: word.han_viet,
         audio_key: word.audio_key,
       },

@@ -28,8 +28,7 @@ const word = (profileId: string, term: string, lang: WordCreate["lang"] = "ko"):
   gloss_vi: `vi ${term}`,
   gloss_en: `en ${term}`,
   gloss_ko: `ko ${term}`,
-  hanzi_simplified: null,
-  hanzi_traditional: null,
+  hanja: null,
   han_viet: null,
   emoji: null,
   ai_generated: false,
@@ -58,15 +57,15 @@ beforeEach(async () => {
     await t.env.DB.prepare(`DELETE FROM ${table}`).run();
   }
   bo = await createProfile();
-  // Words saved before any review (like words from M1.2/M1.3): 3 Korean + 1 Chinese.
+  // Words saved before any review (like words from M1.2/M1.3): 3 Korean + 1 English.
   for (const term of ["학생", "학교", "선생님"]) await t.api("POST", "/words", word(bo, term));
-  await t.api("POST", "/words", word(bo, "学习", "zh"));
+  await t.api("POST", "/words", word(bo, "apple", "en"));
 });
 
 describe("cards and queue", () => {
   it("creates recognition + listening cards for studied languages only", async () => {
     expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 2 }]);
-    expect(await cardCount(bo)).toBe(6); // 3 Korean words × 2 types, no Chinese cards
+    expect(await cardCount(bo)).toBe(6); // 3 Korean words × 2 types, no English cards
   });
 
   it("queue = new recognition cards up to the daily limit; listening waits", async () => {
@@ -95,17 +94,17 @@ describe("cards and queue", () => {
   });
 
   it("daily_new_limit applies per language", async () => {
-    await t.api("PATCH", `/profiles/${bo}`, { study_langs: ["ko", "zh"] });
+    await t.api("PATCH", `/profiles/${bo}`, { study_langs: ["ko", "en"] });
     for (const item of await queue(bo)) await answer(bo, item.card.id, 4);
-    expect((await queue(bo, "zh")).map((i) => i.word.term)).toEqual(["学习"]);
+    expect((await queue(bo, "en")).map((i) => i.word.term)).toEqual(["apple"]);
   });
 
   it("removing a language hides its cards but keeps progress", async () => {
     const [first] = await queue(bo);
     await answer(bo, first!.card.id, 3);
-    await t.api("PATCH", `/profiles/${bo}`, { study_langs: ["zh"] });
+    await t.api("PATCH", `/profiles/${bo}`, { study_langs: ["en"] });
     expect(await queue(bo, "ko")).toEqual([]);
-    expect(await cardCount(bo)).toBe(8); // ko cards kept + new zh cards
+    expect(await cardCount(bo)).toBe(8); // ko cards kept + new en cards
 
     await t.api("PATCH", `/profiles/${bo}`, { study_langs: ["ko"] });
     expect((await queue(bo))[0]!.card).toMatchObject({ id: first!.card.id, reps: 1 });

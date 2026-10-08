@@ -9,8 +9,7 @@ const enrichment = {
   gloss_vi: "học sinh",
   gloss_en: "student",
   gloss_ko: "학생",
-  hanzi_simplified: "学生",
-  hanzi_traditional: "學生",
+  hanja: "學生",
   han_viet: "học sinh",
   emoji: null,
   examples: [
@@ -22,7 +21,7 @@ const enrichment = {
 describe("word draft", () => {
   it("round-trips an AI enrichment into create input", () => {
     const { input } = draftToCreateInput(draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples] }), meta);
-    expect(input).toMatchObject({ term: "학생", ai_generated: true, hanzi_traditional: "學生", emoji: "" });
+    expect(input).toMatchObject({ term: "학생", ai_generated: true, hanja: "學生", emoji: "" });
     expect(input?.examples).toHaveLength(2);
     expect(input?.examples[0]).toMatchObject({ level: "beginner", ai_generated: true });
   });
@@ -33,13 +32,11 @@ describe("word draft", () => {
     expect(Object.keys(errors ?? {}).some((k) => k.startsWith("examples"))).toBe(false);
   });
 
-  it("ignores Han fields for English and uses the term as simplified Chinese", () => {
-    const d = { ...draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples] }), hanzi_simplified: "x" };
+  it("ignores Hanja fields for English words", () => {
+    const d = draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples] });
     expect(draftToCreateInput(d, { ...meta, lang: "en", term: "student" }).input).toMatchObject({
-      hanzi_simplified: null,
-      hanzi_traditional: null,
+      hanja: null,
       han_viet: null,
     });
-    expect(draftToCreateInput(d, { ...meta, lang: "zh", term: "学生" }).input?.hanzi_simplified).toBe("学生");
   });
 });

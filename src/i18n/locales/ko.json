@@ -25,7 +25,6 @@
   },
   "langs": {
     "ko": "한국어",
-    "zh": "중국어",
     "en": "영어"
   },
   "profiles": {
@@ -158,8 +157,6 @@
       "gloss_en": "영어 뜻",
       "gloss_ko": "한국어 뜻",
       "hanja": "한자",
-      "hanzi_traditional": "번체자",
-      "hanzi_simplified": "간체자",
       "han_viet": "한월음",
       "emoji": "이모지",
       "examples": "예문",

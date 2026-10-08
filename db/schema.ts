@@ -59,9 +59,8 @@ export const words = sqliteTable(
     gloss_vi: text("gloss_vi").notNull(),
     gloss_en: text("gloss_en").notNull(),
     gloss_ko: text("gloss_ko").notNull(),
-    hanzi_simplified: text("hanzi_simplified"),
-    /** Traditional characters; for Korean words this is the Hanja. */
-    hanzi_traditional: text("hanzi_traditional"),
+    /** Hanja (traditional characters) of a Sino-Korean word; null for other words. */
+    hanja: text("hanja"),
     han_viet: text("han_viet"),
     emoji: text("emoji"),
     image_key: text("image_key"),
@@ -224,9 +223,9 @@ export const pron_attempts = sqliteTable(
   ],
 );
 
+/** One Hanja character (F7): Hán-Việt reading and Vietnamese meaning. */
 export const han_chars = sqliteTable("han_chars", {
-  char_simplified: text("char_simplified").primaryKey(),
-  char_traditional: text("char_traditional").notNull(),
+  hanja: text("hanja").primaryKey(),
   han_viet: text("han_viet").notNull(),
   meaning_vi: text("meaning_vi").notNull(),
   ai_generated: bool("ai_generated").notNull().default(false),
@@ -240,13 +239,13 @@ export const word_chars = sqliteTable(
       .notNull()
       .references(() => words.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
-    char_simplified: text("char_simplified")
+    hanja: text("hanja")
       .notNull()
-      .references(() => han_chars.char_simplified),
+      .references(() => han_chars.hanja),
   },
   (t) => [
     primaryKey({ columns: [t.word_id, t.position] }),
-    index("word_chars_char_idx").on(t.char_simplified),
+    index("word_chars_hanja_idx").on(t.hanja),
   ],
 );
 

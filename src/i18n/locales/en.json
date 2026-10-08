@@ -25,7 +25,6 @@
   },
   "langs": {
     "ko": "Korean",
-    "zh": "Chinese",
     "en": "English"
   },
   "profiles": {
@@ -100,13 +99,13 @@
     "wordDetail": {
       "title": "Word detail",
       "practice": "Practice pronunciation",
-      "character": "View character"
+      "character": "View Hanja"
     },
     "practice": {
       "title": "Pronunciation practice"
     },
     "character": {
-      "title": "Character"
+      "title": "Hanja"
     },
     "decks": {
       "title": "Decks"
@@ -158,8 +157,6 @@
       "gloss_en": "English meaning",
       "gloss_ko": "Korean meaning",
       "hanja": "Hanja",
-      "hanzi_traditional": "Traditional",
-      "hanzi_simplified": "Simplified",
       "han_viet": "Sino-Vietnamese",
       "emoji": "Emoji",
       "examples": "Example sentences",

@@ -1,6 +1,6 @@
 # Lingo Family
 
-A family-only PWA for learning Korean, Chinese (Simplified) and English vocabulary and pronunciation.
+A family-only PWA for learning Korean and English vocabulary, phrases and pronunciation, picture-first.
 
 - **What** is being built: [`SPEC.md`](SPEC.md)
 - **How** it is built (stack, rules, commands): [`CLAUDE.md`](CLAUDE.md)

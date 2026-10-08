@@ -180,8 +180,7 @@ export const wordRoutes = ({ makeLlm, makeTts }: { makeLlm: MakeLlm; makeTts: Ma
       const detail: WordDetail = {
         ...toSummary(w),
         pos: posSchema.catch("other").parse(w.pos),
-        hanzi_simplified: w.hanzi_simplified,
-        hanzi_traditional: w.hanzi_traditional,
+        hanja: w.hanja,
         han_viet: w.han_viet,
         notes: w.notes,
         created_at: w.created_at.getTime(),

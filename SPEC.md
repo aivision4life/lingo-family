@@ -7,7 +7,7 @@
 > **Product change (2026-10-08).** Chinese (`zh`) is removed from the product; Korean Hanja + Hán-Việt stay.
 > Learning becomes picture-based: every word, phrase and example sentence has an image (AI-drawn or uploaded).
 > Phrases become study items of their own, and a new `picture` card type is added.
-> Code still contains `zh` until **M1.6**; decisions from M1.1–M1.4 below remain valid except where marked *superseded*.
+> `zh` was removed from code and DB in **M1.6**; decisions from M1.1–M1.4 below remain valid except where marked *superseded*.
 
 ---
 
@@ -377,7 +377,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M1.3 | Audio | F3 TTS audio | [x] |
 | M1.4 | Review | F4 FSRS, recognition + listening cards | [x] |
 | M1.5 | Navigation | Shared navigation (desktop collapsible sidebar, mobile tab bar), add-word button, focused review screen | [x] |
-| M1.6 | Remove Chinese | Migration deleting `zh` data, Hanja field rename, code/UI/TTS/font clean-up | [ ] |
+| M1.6 | Remove Chinese | Migration deleting `zh` data, Hanja field rename, code/UI/TTS/font clean-up | [x] |
 | M1.7 | Phrases | Phrases table, AI suggestions + selection, phrase audio/examples, phrase cards (recognition + listening) | [ ] |
 | M1.8 | Image pipeline | Workers AI FLUX (benchmark flux-1-schnell vs flux-2-klein-4b), image prompts in enrichment, `waitUntil` background generation, lazy example images, R2, Try again / Redraw / My photo, quotas | [ ] |
 | M1.9 | Picture card + visual review | `picture` card type, unlock chain recognition → picture → listening, image-centred review UI | [ ] |
