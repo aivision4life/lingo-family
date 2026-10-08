@@ -5,11 +5,14 @@
   "nav": {
     "main": "주요 메뉴",
     "home": "홈",
-    "words": "단어",
-    "decks": "덱",
+    "review": "복습",
+    "words": "단어장",
     "settings": "설정",
     "switchProfile": "프로필 변경",
-    "uiLanguage": "화면 언어"
+    "uiLanguage": "화면 언어",
+    "addWord": "단어 추가",
+    "collapseSidebar": "접기",
+    "expandSidebar": "사이드바 펼치기"
   },
   "common": {
     "comingSoon": "이 화면은 {{milestone}}에서 완성됩니다.",

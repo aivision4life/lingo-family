@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import type { LearnLang } from "@shared/enums";
 import { LangText } from "@/components/LangText";
 import { LinkButton } from "@/components/LinkButton";
+import { AddWordFab } from "@/components/layout/AddWordFab";
 import { PageShell } from "@/components/PageShell";
 import { SpeakButton } from "@/features/audio/AudioButtons";
 import { Input } from "@/components/ui/input";
@@ -26,8 +27,9 @@ export function WordLibraryPage() {
 
   return (
     <PageShell title={t("pages.words.title")}>
+      {/* Desktop: prominent button in the header; phones use the floating "+" instead. */}
       {canManageProfiles(profile) && (
-        <LinkButton to="/words/new" size="lg">
+        <LinkButton to="/words/new" size="lg" className="hidden md:inline-flex">
           <Plus aria-hidden />
           {t("pages.words.addWord")}
         </LinkButton>
@@ -79,6 +81,7 @@ export function WordLibraryPage() {
         ))}
       </ul>
       )}
+      <AddWordFab />
     </PageShell>
   );
 }

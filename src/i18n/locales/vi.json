@@ -5,11 +5,14 @@
   "nav": {
     "main": "Điều hướng chính",
     "home": "Trang chủ",
-    "words": "Từ vựng",
-    "decks": "Bộ thẻ",
+    "review": "Ôn tập",
+    "words": "Thư viện",
     "settings": "Cài đặt",
     "switchProfile": "Đổi hồ sơ",
-    "uiLanguage": "Ngôn ngữ giao diện"
+    "uiLanguage": "Ngôn ngữ giao diện",
+    "addWord": "Thêm từ",
+    "collapseSidebar": "Thu gọn",
+    "expandSidebar": "Mở rộng thanh bên"
   },
   "common": {
     "comingSoon": "Màn hình này sẽ được hoàn thiện ở {{milestone}}.",

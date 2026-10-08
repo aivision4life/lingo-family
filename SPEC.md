@@ -376,7 +376,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M1.2 | Add word + AI | F2 add word, F6 enrichment | [x] |
 | M1.3 | Audio | F3 TTS audio | [x] |
 | M1.4 | Review | F4 FSRS, recognition + listening cards | [x] |
-| M1.5 | Navigation | Shared navigation (desktop collapsible sidebar, mobile tab bar), add-word button, focused review screen | [~] |
+| M1.5 | Navigation | Shared navigation (desktop collapsible sidebar, mobile tab bar), add-word button, focused review screen | [x] |
 | M1.6 | Remove Chinese | Migration deleting `zh` data, Hanja field rename, code/UI/TTS/font clean-up | [ ] |
 | M1.7 | Phrases | Phrases table, AI suggestions + selection, phrase audio/examples, phrase cards (recognition + listening) | [ ] |
 | M1.8 | Image pipeline | Workers AI FLUX (benchmark flux-1-schnell vs flux-2-klein-4b), image prompts in enrichment, `waitUntil` background generation, lazy example images, R2, Try again / Redraw / My photo, quotas | [ ] |

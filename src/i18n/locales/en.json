@@ -5,11 +5,14 @@
   "nav": {
     "main": "Main navigation",
     "home": "Home",
-    "words": "Words",
-    "decks": "Decks",
+    "review": "Review",
+    "words": "Library",
     "settings": "Settings",
     "switchProfile": "Switch profile",
-    "uiLanguage": "Interface language"
+    "uiLanguage": "Interface language",
+    "addWord": "Add word",
+    "collapseSidebar": "Collapse",
+    "expandSidebar": "Expand sidebar"
   },
   "common": {
     "comingSoon": "This screen will be completed in {{milestone}}.",

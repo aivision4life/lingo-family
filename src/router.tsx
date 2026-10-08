@@ -1,5 +1,5 @@
 import { createBrowserRouter } from "react-router";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { AppLayout, FocusLayout } from "@/components/layout/AppLayout";
 import { RequireProfile, RootRedirect } from "@/features/profiles/guards";
 import { AddWordPage } from "@/pages/AddWordPage";
 import { CharacterPage } from "@/pages/CharacterPage";
@@ -23,11 +23,12 @@ export const router = createBrowserRouter([
   {
     element: <RequireProfile />,
     children: [
+      // Review hides the navigation to keep the learner focused (only an Exit button).
+      { element: <FocusLayout />, children: [{ path: "review", element: <ReviewPage /> }] }, // 3
       {
         element: <AppLayout />,
         children: [
           { path: "home", element: <HomePage /> }, // 2
-          { path: "review", element: <ReviewPage /> }, // 3
           { path: "words", element: <WordLibraryPage /> }, // 4
           { path: "words/new", element: <AddWordPage /> }, // 5
           { path: "words/:id", element: <WordDetailPage /> }, // 6
