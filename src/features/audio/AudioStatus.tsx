@@ -18,7 +18,11 @@ export function AudioStatus({ word }: { word: WordDetail }) {
   const { profile } = useActiveProfile();
   const generate = useGenerateAudio(word.id);
 
-  const missing = (word.audio_key ? 0 : 1) + word.examples.filter((ex) => !ex.audio_key).length;
+  // The word, its phrases and every example (of the word or of a phrase) need audio.
+  const missing =
+    (word.audio_key ? 0 : 1) +
+    word.examples.filter((ex) => !ex.audio_key).length +
+    word.phrases.reduce((n, p) => n + (p.audio_key ? 0 : 1) + p.examples.filter((ex) => !ex.audio_key).length, 0);
   const nav = navStateSchema.safeParse(location.state);
   const justSavedWithoutAudio = nav.success && nav.data.audioMissing > 0;
 

@@ -98,7 +98,10 @@ SPEC.md  CLAUDE.md  README.md
 - **Never edit a migration that has already been applied.** Create a new one.
 - Ask before any schema change that drops or renames columns.
 - Store ts-fsrs `Card` and `ReviewLog` fields exactly as the library defines them.
-- `review_logs` is append-only.
+- `review_logs` is append-only. Its `card_id` becomes NULL when a card is deleted; use `review_logs.lang` for per-language counts.
+- Words vs phrases (option A): `cards.word_id` / `examples.word_id` always hold the **root word**; `phrase_id` is set for phrase rows (NULL = the word itself). Filter word-only rows with `phrase_id IS NULL`.
+- Hand-written triggers live in the migration SQL (`0002_phrases.sql`); drizzle-kit does not know about them. `db/migrations.test.ts` runs all migrations and checks that the triggers exist and work. If a later migration rebuilds `cards`, `examples` or `phrases`, recreate the triggers there.
+- Before applying migrations locally: stop the dev server, export the DB into `backups/` (gitignored) and compare row counts before/after.
 
 ## Secrets & security
 - Secrets (`AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`) go in `.dev.vars` locally and in `wrangler secret` in production.

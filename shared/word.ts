@@ -1,5 +1,26 @@
 import { z } from "zod";
-import { exampleLevelSchema, learnLangSchema, type LearnLang } from "./enums";
+import {
+  EXAMPLES_MAX,
+  exampleInputSchema,
+  exampleSchema,
+  llmSentenceSchema,
+  optionalText,
+  TERM_MAX,
+  termSchema,
+} from "./base";
+import { exampleLevelSchema, learnLangSchema } from "./enums";
+import { llmPhraseSchema, PHRASES_MAX, phraseInputSchema, phraseSchema, skippedPhraseSchema } from "./phrase";
+
+// Base text/example schemas live in ./base (shared with ./phrase); re-exported for existing imports.
+export {
+  duplicateKey,
+  EXAMPLES_MAX,
+  exampleInputSchema,
+  exampleSchema,
+  normalizeTerm,
+  TERM_MAX,
+  type ExampleInput,
+} from "./base";
 
 export const PARTS_OF_SPEECH = [
   "noun", "verb", "adjective", "adverb", "pronoun", "numeral",
@@ -7,24 +28,7 @@ export const PARTS_OF_SPEECH = [
 ] as const;
 export const posSchema = z.enum(PARTS_OF_SPEECH);
 
-export const TERM_MAX = 60;
-export const EXAMPLES_MAX = 5;
 
-/**
- * Canonical form used for storage and duplicate checks:
- * Unicode NFC, trimmed, inner whitespace collapsed.
- */
-export function normalizeTerm(term: string): string {
-  return term.normalize("NFC").trim().replace(/\s+/g, " ");
-}
-
-/** Key for duplicate detection; English is case-insensitive ("Apple" = "apple"). */
-export function duplicateKey(lang: LearnLang, term: string): string {
-  const t = normalizeTerm(term);
-  return lang === "en" ? t.toLowerCase() : t;
-}
-
-const termSchema = z.string().transform(normalizeTerm).pipe(z.string().min(1).max(TERM_MAX));
 
 // --- AI enrichment -----------------------------------------------------------
 
@@ -41,17 +45,9 @@ export const llmEnrichmentSchema = z.object({
   hanja: z.string(),
   han_viet: z.string(),
   emoji: z.string(),
-  examples: z
-    .array(
-      z.object({
-        sentence: z.string().min(1),
-        translation_vi: z.string(),
-        translation_en: z.string(),
-        translation_ko: z.string(),
-      }),
-    )
-    .min(2)
-    .max(3),
+  // SPEC: 2 examples per word (a 3rd one is tolerated and dropped by the server).
+  examples: z.array(llmSentenceSchema).min(2).max(3),
+  phrases: z.array(llmPhraseSchema).min(1).max(PHRASES_MAX),
 });
 export type LlmEnrichment = z.infer<typeof llmEnrichmentSchema>;
 
@@ -60,6 +56,8 @@ export const enrichmentSchema = llmEnrichmentSchema.extend({
   hanja: z.string().nullable(),
   han_viet: z.string().nullable(),
   emoji: z.string().nullable(),
+  /** Suggested phrases; the adult ticks which ones to save (SPEC F2). */
+  phrases: z.array(llmPhraseSchema).max(PHRASES_MAX),
 });
 export type Enrichment = z.infer<typeof enrichmentSchema>;
 
@@ -79,20 +77,7 @@ export const enrichResponseSchema = z.object({
 
 // --- Words -------------------------------------------------------------------
 
-const optionalText = z
-  .string()
-  .nullable()
-  .transform((s) => (s === null || s.trim() === "" ? null : s.trim()));
 
-export const exampleInputSchema = z.object({
-  sentence: z.string().trim().min(1),
-  translation_vi: z.string().trim(),
-  translation_en: z.string().trim(),
-  translation_ko: z.string().trim(),
-  level: exampleLevelSchema,
-  ai_generated: z.boolean(),
-});
-export type ExampleInput = z.input<typeof exampleInputSchema>;
 
 /** POST /api/words */
 export const wordCreateSchema = z.object({
@@ -109,20 +94,10 @@ export const wordCreateSchema = z.object({
   emoji: optionalText,
   ai_generated: z.boolean(),
   examples: z.array(exampleInputSchema).max(EXAMPLES_MAX),
+  /** Ticked phrases saved together with the word (duplicates are skipped). */
+  phrases: z.array(phraseInputSchema).max(PHRASES_MAX).default([]),
 });
 export type WordCreate = z.input<typeof wordCreateSchema>;
-
-export const exampleSchema = z.object({
-  id: z.string(),
-  sentence: z.string(),
-  translation_vi: z.string(),
-  translation_en: z.string(),
-  translation_ko: z.string(),
-  level: exampleLevelSchema,
-  ai_generated: z.boolean(),
-  /** R2 key of the sentence audio; null until generated. Play via `/api/media/{audio_key}`. */
-  audio_key: z.string().nullable(),
-});
 
 export const wordSummarySchema = z.object({
   id: z.string(),
@@ -137,6 +112,8 @@ export const wordSummarySchema = z.object({
   audio_key: z.string().nullable(),
   ai_generated: z.boolean(),
   verified: z.boolean(),
+  /** Number of phrases built on this word. */
+  phrase_count: z.number().int().nonnegative(),
 });
 export type WordSummary = z.infer<typeof wordSummarySchema>;
 export const wordListSchema = z.array(wordSummarySchema);
@@ -147,9 +124,16 @@ export const wordDetailSchema = wordSummarySchema.extend({
   han_viet: z.string().nullable(),
   notes: z.string().nullable(),
   created_at: z.number(),
+  /** Examples of the word itself (phrase examples are inside `phrases`). */
   examples: z.array(exampleSchema),
+  phrases: z.array(phraseSchema),
+  /** Review cards of all profiles for this word and its phrases (shown before deleting). */
+  card_count: z.number().int().nonnegative(),
 });
 export type WordDetail = z.infer<typeof wordDetailSchema>;
+
+/** DELETE /api/words/:id (adults only). */
+export const deleteWordRequestSchema = z.object({ profile_id: z.string().min(1) });
 
 export const wordListQuerySchema = z.object({
   lang: learnLangSchema.optional(),
@@ -182,7 +166,12 @@ export const TTS_DAILY_QUOTA = 200;
 export const audioResultSchema = z.object({ missing: z.number().int().nonnegative() });
 
 /** POST /api/words response. */
-export const wordCreatedSchema = z.object({ id: z.string(), audio: audioResultSchema });
+export const wordCreatedSchema = z.object({
+  id: z.string(),
+  audio: audioResultSchema,
+  /** Ticked phrases not saved because they already exist (SPEC: shown as "already under word X"). */
+  skipped_phrases: z.array(skippedPhraseSchema),
+});
 
 /** POST /api/words/:id/audio */
 export const generateAudioRequestSchema = z.object({ profile_id: z.string().min(1) });

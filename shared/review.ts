@@ -29,8 +29,14 @@ export const cardFieldsFromDto = (c: CardDto): CardFields => ({
   last_review: c.last_review === null ? null : new Date(c.last_review),
 });
 
+/** The item a card belongs to: a word, or a phrase (then `root_term` is its root word). */
 export const reviewWordSchema = z.object({
+  kind: z.enum(["word", "phrase"]),
+  /** Word id, or phrase id for a phrase card. */
   id: z.string(),
+  /** Id of the word, or of the phrase's root word (for links to Word detail). */
+  word_id: z.string(),
+  root_term: z.string().nullable(),
   lang: learnLangSchema,
   term: z.string(),
   reading: z.string(),

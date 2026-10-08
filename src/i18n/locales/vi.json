@@ -196,7 +196,16 @@
       "examples": "Câu ví dụ",
       "notVerified": "Một số thông tin do AI tạo và chưa được người lớn kiểm tra.",
       "notFound": "Không tìm thấy từ này."
-    }
+    },
+    "delete": {
+      "button": "Xoá từ",
+      "title": "Xoá từ {{term}}?",
+      "description": "Sẽ xoá {{phrases}} cụm từ và {{cards}} thẻ ôn (của mọi hồ sơ). Lịch sử ôn vẫn được giữ cho thống kê.",
+      "confirm": "Xoá"
+    },
+    "kindLabel": "Loại",
+    "kindWords": "Từ",
+    "kindPhrases": "Cụm từ"
   },
   "audio": {
     "play": "Nghe phát âm",
@@ -252,6 +261,40 @@
       "plus1": "+1 ngày",
       "plus7": "+7 ngày",
       "reset": "Về hôm nay"
+    }
+  },
+  "phrases": {
+    "title": "Cụm từ",
+    "suggested": "Cụm từ gợi ý",
+    "suggestedHint": "Tích chọn cụm muốn học; có thể sửa trước khi lưu.",
+    "suggest": "Gợi ý cụm từ",
+    "suggesting": "AI đang gợi ý…",
+    "addManual": "Thêm cụm từ thủ công",
+    "none": "Chưa có cụm từ nào.",
+    "noSuggestions": "AI không gợi ý được cụm từ mới.",
+    "select": "Chọn cụm {{text}}",
+    "edit": "Sửa cụm {{text}}",
+    "save": "Lưu cụm từ",
+    "saveSelected": "Lưu các cụm đã chọn",
+    "delete": "Xoá cụm {{text}}",
+    "deleteTitle": "Xoá cụm từ {{text}}?",
+    "deleteDescription": "Thẻ ôn của cụm từ này sẽ bị xoá ở mọi hồ sơ; lịch sử ôn vẫn được giữ cho thống kê.",
+    "skipped": "“{{text}}” đã có dưới từ {{word}}, không lưu lại.",
+    "duplicate": "Cụm từ này đã có dưới từ {{word}}.",
+    "count": "{{count}} cụm",
+    "root": "Từ gốc: {{word}}",
+    "play": "Nghe cụm {{text}}",
+    "playExample": "Nghe câu ví dụ của cụm {{text}}",
+    "fields": {
+      "text": "Cụm từ",
+      "reading": "Phiên âm",
+      "gloss_vi": "Nghĩa tiếng Việt",
+      "gloss_en": "Nghĩa tiếng Anh",
+      "gloss_ko": "Nghĩa tiếng Hàn",
+      "sentence": "Câu ví dụ",
+      "translation_vi": "Dịch tiếng Việt",
+      "translation_en": "Dịch tiếng Anh",
+      "translation_ko": "Dịch tiếng Hàn"
     }
   }
 }

@@ -20,7 +20,7 @@ const enrichment = {
 
 describe("word draft", () => {
   it("round-trips an AI enrichment into create input", () => {
-    const { input } = draftToCreateInput(draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples] }), meta);
+    const { input } = draftToCreateInput(draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples], phrases: [] }), meta);
     expect(input).toMatchObject({ term: "학생", ai_generated: true, hanja: "學生", emoji: "" });
     expect(input?.examples).toHaveLength(2);
     expect(input?.examples[0]).toMatchObject({ level: "beginner", ai_generated: true });
@@ -33,7 +33,7 @@ describe("word draft", () => {
   });
 
   it("ignores Hanja fields for English words", () => {
-    const d = draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples] });
+    const d = draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples], phrases: [] });
     expect(draftToCreateInput(d, { ...meta, lang: "en", term: "student" }).input).toMatchObject({
       hanja: null,
       han_viet: null,

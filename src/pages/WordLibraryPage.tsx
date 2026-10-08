@@ -1,28 +1,33 @@
 import { Plus, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
 import type { LearnLang } from "@shared/enums";
-import { LangText } from "@/components/LangText";
-import { LinkButton } from "@/components/LinkButton";
 import { AddWordFab } from "@/components/layout/AddWordFab";
+import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
-import { SpeakButton } from "@/features/audio/AudioButtons";
 import { Input } from "@/components/ui/input";
+import { usePhrases } from "@/features/phrases/api";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useWords } from "@/features/words/api";
-import { AiBadge, LangChips } from "@/features/words/bits";
-import { glossFor } from "@/features/words/format";
+import { LangChips } from "@/features/words/bits";
+import { PhraseRow, WordRow } from "@/features/words/LibraryRows";
+import { cn } from "@/lib/utils";
 
-/** Screen 4 — shared family word library with search and language filter (F2). */
+type Kind = "words" | "phrases";
+
+/** Screen 4 — shared family library: words or phrases, search and language filter (F2). */
 export function WordLibraryPage() {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
+  const [kind, setKind] = useState<Kind>("words");
   const [lang, setLang] = useState<LearnLang | null>(null);
   const [query, setQuery] = useState("");
   // Typing stays responsive; the search request follows slightly behind.
   const q = useDeferredValue(query.trim());
-  const words = useWords({ lang: lang ?? undefined, q: q || undefined });
+  const filter = { lang: lang ?? undefined, q: q || undefined };
+  const words = useWords(filter);
+  const phrases = usePhrases(filter, kind === "phrases");
+  const list = kind === "words" ? words : phrases;
   const glossLang = profile?.gloss_lang ?? "vi";
 
   return (
@@ -46,40 +51,45 @@ export function WordLibraryPage() {
           className="pl-10"
         />
       </div>
+      <div role="group" aria-label={t("words.kindLabel")} className="flex gap-2">
+        {(["words", "phrases"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={kind === k}
+            onClick={() => setKind(k)}
+            className={cn(
+              "min-h-11 flex-1 rounded-lg border px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              kind === k ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-accent",
+            )}
+          >
+            {k === "words" ? t("words.kindWords") : t("words.kindPhrases")}
+          </button>
+        ))}
+      </div>
       <LangChips allowAll label={t("words.add.lang")} value={lang} onChange={setLang} />
 
-      {words.isPending && <p className="text-muted-foreground">{t("common.loading")}</p>}
-      {words.isError && <p className="text-destructive">{t("common.loadError")}</p>}
-      {words.data?.length === 0 && (
-        <p className="text-muted-foreground">{q || lang ? t("words.noResults") : t("words.empty")}</p>
+      {list.isPending && <p className="text-muted-foreground">{t("common.loading")}</p>}
+      {list.isError && <p className="text-destructive">{t("common.loadError")}</p>}
+      {list.data?.length === 0 && (
+        <p className="text-muted-foreground">
+          {q || lang ? t("words.noResults") : kind === "words" ? t("words.empty") : t("phrases.none")}
+        </p>
       )}
 
-      {!!words.data?.length && (
-      <ul className="flex flex-col divide-y rounded-lg border">
-        {words.data.map((w) => (
-          // The speaker is a sibling of the link: a button cannot be nested inside <a>.
-          <li key={w.id} className="flex items-center pr-1">
-            <Link to={`/words/${w.id}`} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-3 py-2 hover:bg-accent">
-              <span className="w-10 text-center text-3xl" aria-hidden>
-                {w.emoji}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex items-baseline gap-2">
-                  <LangText lang={w.lang} className="truncate text-xl font-semibold">
-                    {w.term}
-                  </LangText>
-                  <span className="truncate text-sm text-muted-foreground">{w.reading}</span>
-                </span>
-                <span lang={glossLang} className="truncate text-sm">
-                  {glossFor(w, glossLang)}
-                </span>
-              </span>
-              {w.ai_generated && !w.verified && <AiBadge />}
-            </Link>
-            <SpeakButton audioKey={w.audio_key} label={t("audio.play")} />
-          </li>
-        ))}
-      </ul>
+      {kind === "words" && !!words.data?.length && (
+        <ul className="flex flex-col divide-y rounded-lg border">
+          {words.data.map((w) => (
+            <WordRow key={w.id} w={w} glossLang={glossLang} />
+          ))}
+        </ul>
+      )}
+      {kind === "phrases" && !!phrases.data?.length && (
+        <ul className="flex flex-col divide-y rounded-lg border">
+          {phrases.data.map((p) => (
+            <PhraseRow key={p.id} p={p} glossLang={glossLang} />
+          ))}
+        </ul>
       )}
       <AddWordFab />
     </PageShell>

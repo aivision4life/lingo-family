@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "./env";
 import { healthRoutes } from "./routes/health";
 import { mediaRoutes } from "./routes/media";
+import { phraseRoutes } from "./routes/phrases";
 import { profileRoutes } from "./routes/profiles";
 import { reviewRoutes } from "./routes/review";
 import { wordRoutes, type MakeLlm, type MakeTts } from "./routes/words";
@@ -21,6 +22,7 @@ export function createApp({ makeLlm = createLlmClient, makeTts = createTtsClient
   app.route("/health", healthRoutes);
   app.route("/profiles", profileRoutes);
   app.route("/words", wordRoutes({ makeLlm, makeTts }));
+  app.route("/", phraseRoutes({ makeLlm, makeTts }));
   app.route("/media", mediaRoutes);
   app.route("/review", reviewRoutes);
 

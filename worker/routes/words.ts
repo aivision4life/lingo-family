@@ -1,12 +1,12 @@
-import { and, desc, eq, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { LearnLang } from "../../shared/enums";
 import {
+  deleteWordRequestSchema,
   duplicateKey,
   enrichRequestSchema,
   generateAudioRequestSchema,
-  LLM_DAILY_QUOTA,
   posSchema,
   WORD_ERRORS,
   wordCreateSchema,
@@ -14,28 +14,22 @@ import {
   type WordDetail,
   type WordSummary,
 } from "../../shared/word";
-import { examples, profiles, words } from "../../db/schema";
+import { cards, examples, words } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
-import { consumeQuota } from "../lib/quota";
+import { requireAdult } from "../lib/access";
+import { runAiTask } from "../lib/aiTask";
 import { zv } from "../lib/validate";
 import { generateWordAudio } from "../services/audio";
 import { enrichWithCache } from "../services/enrich";
-import { LlmError, type LlmClient } from "../services/llm";
+import type { LlmClient } from "../services/llm";
+import { loadPhrases, savePhrases, wordOnlyExamples } from "../services/phrases";
 import type { TtsClient } from "../services/tts";
 
 type Db = ReturnType<typeof getDb>;
 type WordRow = typeof words.$inferSelect;
 export type MakeLlm = (env: Env) => LlmClient | null;
 export type MakeTts = (env: Env) => TtsClient | null;
-
-class QuotaExceeded extends Error {}
-
-const LLM_ERROR_STATUS = { not_configured: 503, unavailable: 502, invalid_output: 502 } as const;
-const LLM_ERROR_CODE = {
-  not_configured: WORD_ERRORS.aiNotConfigured,
-  unavailable: WORD_ERRORS.aiUnavailable,
-  invalid_output: WORD_ERRORS.aiInvalidOutput,
-} as const;
+export type ContentDeps = { makeLlm: MakeLlm; makeTts: MakeTts };
 
 async function findDuplicate(db: Db, lang: LearnLang, term: string) {
   const key = duplicateKey(lang, term);
@@ -43,14 +37,10 @@ async function findDuplicate(db: Db, lang: LearnLang, term: string) {
   return db.select({ id: words.id }).from(words).where(and(eq(words.lang, lang), sameTerm)).get();
 }
 
-/** Only existing adult profiles may add words or use AI (SPEC: kid restrictions). */
-async function checkAdult(db: Db, profileId: string): Promise<"ok" | "not_found" | "kid"> {
-  const p = await db.select({ is_kid: profiles.is_kid }).from(profiles).where(eq(profiles.id, profileId)).get();
-  if (!p) return "not_found";
-  return p.is_kid ? "kid" : "ok";
-}
+// Written out in full: an interpolated column would render as a bare "id" and bind to p.id.
+const phraseCount = sql<number>`(SELECT count(*) FROM phrases p WHERE p.word_id = "words"."id")`;
 
-const toSummary = (w: WordRow): WordSummary => ({
+const toSummary = (w: WordRow, phrase_count: number): WordSummary => ({
   id: w.id,
   lang: w.lang,
   term: w.term,
@@ -62,22 +52,21 @@ const toSummary = (w: WordRow): WordSummary => ({
   audio_key: w.audio_key,
   ai_generated: w.ai_generated,
   verified: w.verified,
+  phrase_count,
 });
 
 /** Escapes LIKE wildcards so user input is matched literally. */
-const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+export const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 const idParam = zv("param", z.object({ id: z.string().min(1) }));
 
-export const wordRoutes = ({ makeLlm, makeTts }: { makeLlm: MakeLlm; makeTts: MakeTts }) =>
+export const wordRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
   new Hono<AppEnv>()
     .post("/enrich", zv("json", enrichRequestSchema), async (c) => {
       const db = getDb(c.env);
       const input = c.req.valid("json");
-
-      const who = await checkAdult(db, input.profile_id);
-      if (who === "not_found") return c.json({ error: "not_found" }, 404);
-      if (who === "kid") return c.json({ error: WORD_ERRORS.kidForbidden }, 403);
+      const denied = await requireAdult(c, input.profile_id);
+      if (denied) return denied;
 
       // Duplicate check first: an existing word costs no AI call.
       const dup = await findDuplicate(db, input.lang, input.term);
@@ -85,34 +74,17 @@ export const wordRoutes = ({ makeLlm, makeTts }: { makeLlm: MakeLlm; makeTts: Ma
 
       const llm = makeLlm(c.env);
       if (!llm) return c.json({ error: WORD_ERRORS.aiNotConfigured }, 503);
-
-      try {
-        const result = await enrichWithCache({
-          db,
-          llm,
-          input,
-          beforeLlmCall: async () => {
-            if (!(await consumeQuota(db, input.profile_id, "llm", LLM_DAILY_QUOTA))) throw new QuotaExceeded();
-          },
-        });
-        return c.json(result);
-      } catch (e) {
-        if (e instanceof QuotaExceeded) return c.json({ error: WORD_ERRORS.quotaExceeded }, 429);
-        if (e instanceof LlmError) {
-          console.error("enrich failed:", e.message);
-          return c.json({ error: LLM_ERROR_CODE[e.code] }, LLM_ERROR_STATUS[e.code]);
-        }
-        throw e;
-      }
+      const run = await runAiTask(c, input.profile_id, (beforeLlmCall) =>
+        enrichWithCache({ db, llm, input, beforeLlmCall }),
+      );
+      return run.ok ? c.json(run.result) : run.response;
     })
 
     .post("/", zv("json", wordCreateSchema), async (c) => {
       const db = getDb(c.env);
-      const { profile_id, examples: exampleInputs, ...fields } = c.req.valid("json");
-
-      const who = await checkAdult(db, profile_id);
-      if (who === "not_found") return c.json({ error: "not_found" }, 404);
-      if (who === "kid") return c.json({ error: WORD_ERRORS.kidForbidden }, 403);
+      const { profile_id, examples: exampleInputs, phrases: phraseInputs, ...fields } = c.req.valid("json");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
 
       const dup = await findDuplicate(db, fields.lang, fields.term);
       if (dup) return c.json({ error: WORD_ERRORS.duplicate, existing_id: dup.id }, 409);
@@ -125,24 +97,29 @@ export const wordRoutes = ({ makeLlm, makeTts }: { makeLlm: MakeLlm; makeTts: Ma
       } else {
         await insertWord;
       }
+      const { skipped } = await savePhrases(db, {
+        wordId: id,
+        wordTerm: fields.term,
+        lang: fields.lang,
+        profileId: profile_id,
+        inputs: phraseInputs,
+      });
 
-      // Audio for the word + examples. TTS problems never fail the save: items stay
+      // Audio for the word, phrases and examples. TTS problems never fail the save: items stay
       // without audio and the client offers "Generate audio" later.
       const audio = await generateWordAudio(
         { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
         id,
       );
-      return c.json({ id, audio }, 201);
+      return c.json({ id, audio, skipped_phrases: skipped }, 201);
     })
 
     .post("/:id/audio", idParam, zv("json", generateAudioRequestSchema), async (c) => {
       const db = getDb(c.env);
       const { id } = c.req.valid("param");
       const { profile_id } = c.req.valid("json");
-
-      const who = await checkAdult(db, profile_id);
-      if (who === "not_found") return c.json({ error: "not_found" }, 404);
-      if (who === "kid") return c.json({ error: WORD_ERRORS.kidForbidden }, 403);
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
       if (!(await db.select({ id: words.id }).from(words).where(eq(words.id, id)).get())) {
         return c.json({ error: "not_found" }, 404);
       }
@@ -162,12 +139,12 @@ export const wordRoutes = ({ makeLlm, makeTts }: { makeLlm: MakeLlm; makeTts: Ma
         conditions.push(or(...fields.map((f) => sql`${f} LIKE ${pattern} ESCAPE '\\'`))!);
       }
       const rows = await getDb(c.env)
-        .select()
+        .select({ word: words, phrase_count: phraseCount })
         .from(words)
         .where(and(...conditions))
         .orderBy(desc(words.created_at))
         .limit(200);
-      return c.json(rows.map(toSummary));
+      return c.json(rows.map((r) => toSummary(r.word, r.phrase_count)));
     })
 
     .get("/:id", idParam, async (c) => {
@@ -175,16 +152,36 @@ export const wordRoutes = ({ makeLlm, makeTts }: { makeLlm: MakeLlm; makeTts: Ma
       const { id } = c.req.valid("param");
       const w = await db.select().from(words).where(eq(words.id, id)).get();
       if (!w) return c.json({ error: "not_found" }, 404);
-      const exs = await db.select().from(examples).where(eq(examples.word_id, id)).orderBy(sql`rowid`);
+      const [exs, phs, cardRow] = await Promise.all([
+        wordOnlyExamples(db, id),
+        loadPhrases(db, id),
+        db.select({ n: count() }).from(cards).where(eq(cards.word_id, id)).get(),
+      ]);
 
       const detail: WordDetail = {
-        ...toSummary(w),
+        ...toSummary(w, phs.length),
         pos: posSchema.catch("other").parse(w.pos),
         hanja: w.hanja,
         han_viet: w.han_viet,
         notes: w.notes,
         created_at: w.created_at.getTime(),
-        examples: exs.map(({ word_id: _w, ...ex }) => ex),
+        examples: exs.map(({ word_id: _w, phrase_id: _p, ...ex }) => ex),
+        phrases: phs,
+        card_count: cardRow?.n ?? 0,
       };
       return c.json(detail);
+    })
+
+    /**
+     * Deletes a word with its phrases, examples and all profiles' cards (ON DELETE CASCADE).
+     * Review logs are kept with card_id = NULL (SPEC §5, decided 2026-10-08).
+     */
+    .delete("/:id", idParam, zv("json", deleteWordRequestSchema), async (c) => {
+      const db = getDb(c.env);
+      const { id } = c.req.valid("param");
+      const denied = await requireAdult(c, c.req.valid("json").profile_id);
+      if (denied) return denied;
+      const deleted = await db.delete(words).where(eq(words.id, id)).returning({ id: words.id });
+      if (deleted.length === 0) return c.json({ error: "not_found" }, 404);
+      return c.body(null, 204);
     });

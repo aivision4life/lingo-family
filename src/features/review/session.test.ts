@@ -18,7 +18,10 @@ const dto = (id: string, f: CardFields): CardDto => ({
 const item = (id: string): QueueItem => ({
   card: dto(id, emptyCardFields(now)),
   word: {
+    kind: "word",
     id: `w-${id}`,
+    word_id: `w-${id}`,
+    root_term: null,
     lang: "ko",
     term: id,
     reading: id,

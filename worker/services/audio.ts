@@ -1,13 +1,13 @@
 // Generates missing audio for a word and its examples: R2 first, Azure only on a miss.
 import { eq } from "drizzle-orm";
 import { TTS_DAILY_QUOTA } from "../../shared/word";
-import { examples, words } from "../../db/schema";
+import { examples, phrases, words } from "../../db/schema";
 import type { getDb } from "../env";
 import { consumeQuota } from "../lib/quota";
 import { audioKey, voiceFor, type TtsClient } from "./tts";
 
 type Db = ReturnType<typeof getDb>;
-type Item = { table: "word" | "example"; id: string; text: string };
+type Item = { table: "word" | "phrase" | "example"; id: string; text: string };
 
 export type AudioDeps = {
   db: Db;
@@ -21,7 +21,8 @@ export type AudioDeps = {
 };
 
 /**
- * Fills `audio_key` for the word and every example that has none.
+ * Fills `audio_key` for the word, its phrases and every example (of the word or of its
+ * phrases — they all carry the root word in word_id) that has none.
  * Never throws for TTS problems: failed items simply stay missing.
  */
 export async function generateWordAudio(deps: AudioDeps, wordId: string): Promise<{ missing: number }> {
@@ -29,9 +30,11 @@ export async function generateWordAudio(deps: AudioDeps, wordId: string): Promis
   const word = await db.select().from(words).where(eq(words.id, wordId)).get();
   if (!word) return { missing: 0 };
   const exs = await db.select().from(examples).where(eq(examples.word_id, wordId));
+  const phs = await db.select().from(phrases).where(eq(phrases.word_id, wordId));
 
   const todo: Item[] = [
     ...(word.audio_key ? [] : [{ table: "word" as const, id: word.id, text: word.term }]),
+    ...phs.filter((p) => !p.audio_key).map((p) => ({ table: "phrase" as const, id: p.id, text: p.text })),
     ...exs.filter((ex) => !ex.audio_key).map((ex) => ({ table: "example" as const, id: ex.id, text: ex.sentence })),
   ];
   if (todo.length === 0) return { missing: 0 };
@@ -43,6 +46,7 @@ export async function generateWordAudio(deps: AudioDeps, wordId: string): Promis
         const key = await ensureAudio(deps, word.lang, voice, item.text);
         if (!key) return false;
         if (item.table === "word") await db.update(words).set({ audio_key: key }).where(eq(words.id, item.id));
+        else if (item.table === "phrase") await db.update(phrases).set({ audio_key: key }).where(eq(phrases.id, item.id));
         else await db.update(examples).set({ audio_key: key }).where(eq(examples.id, item.id));
         return true;
       } catch (e) {

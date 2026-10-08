@@ -14,6 +14,24 @@ export const sampleEnrichment: LlmEnrichment = {
     { sentence: "저는 학생이에요.", translation_vi: "Tôi là học sinh.", translation_en: "I am a student.", translation_ko: "x" },
     { sentence: "학생이 많아요.", translation_vi: "Có nhiều học sinh.", translation_en: "There are many students.", translation_ko: "" },
   ],
+  phrases: [
+    {
+      text: "대학생",
+      reading: "daehaksaeng",
+      gloss_vi: "sinh viên",
+      gloss_en: "university student",
+      gloss_ko: "대학에 다니는 학생",
+      example: { sentence: "저는 대학생이에요.", translation_vi: "Tôi là sinh viên.", translation_en: "I am a university student.", translation_ko: "" },
+    },
+    {
+      text: "학생증",
+      reading: "haksaengjeung",
+      gloss_vi: "thẻ học sinh",
+      gloss_en: "student ID card",
+      gloss_ko: "학생임을 증명하는 카드",
+      example: { sentence: "학생증을 보여 주세요.", translation_vi: "Cho xem thẻ học sinh.", translation_en: "Please show your student ID.", translation_ko: "" },
+    },
+  ],
 };
 
 /** Fake LLM that returns the given raw texts in order (last one repeats) and records requests. */

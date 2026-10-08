@@ -108,3 +108,85 @@ describe("migration 0001_remove_zh", () => {
     expect(wc.results.map((c) => c.name)).toEqual(["word_id", "position", "hanja"]);
   });
 });
+
+describe("migration 0002_phrases", () => {
+  let logsBefore: number | undefined;
+
+  beforeAll(async () => {
+    logsBefore = await count("SELECT count(*) AS n FROM review_logs");
+    await apply("0002_phrases.sql");
+  });
+
+  it("keeps every review log and backfills lang from the card's word", async () => {
+    expect(logsBefore).toBe(1);
+    expect(await count("SELECT count(*) AS n FROM review_logs")).toBe(logsBefore);
+    expect(await DB.prepare("SELECT lang FROM review_logs WHERE id = 'l-ko'").first("lang")).toBe("ko");
+  });
+
+  it("creates the hand-written triggers", async () => {
+    const rows = await DB.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name").all<{ name: string }>();
+    expect(rows.results.map((r) => r.name)).toEqual([
+      "cards_phrase_root_insert",
+      "cards_phrase_root_update",
+      "examples_phrase_root_insert",
+      "examples_phrase_root_update",
+      "phrases_root_fixed",
+    ]);
+  });
+
+  describe("triggers and cascades", () => {
+    const now = Date.now();
+    const addPhrase = (id: string, wordId: string, text: string) =>
+      DB.prepare(
+        `INSERT INTO phrases (id, word_id, lang, text, reading, gloss_vi, gloss_en, gloss_ko, ai_generated, verified, created_at, updated_at)
+         VALUES (?, ?, 'ko', ?, '', 'x', 'x', 'x', 0, 0, ?, ?)`,
+      ).bind(id, wordId, text, now, now).run();
+    const addCard = (id: string, wordId: string, phraseId: string | null, type = "recognition") =>
+      DB.prepare(
+        `INSERT INTO cards (id, profile_id, word_id, phrase_id, card_type, due, stability, difficulty, elapsed_days,
+           scheduled_days, learning_steps, reps, lapses, state, updated_at)
+         VALUES (?, 'p-ko', ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, ?)`,
+      ).bind(id, wordId, phraseId, type, now, now).run();
+
+    beforeAll(async () => {
+      const t2 = Date.now();
+      await DB.prepare(
+        `INSERT INTO words (id, lang, term, reading, pos, gloss_vi, gloss_en, gloss_ko, ai_generated, verified, created_at, updated_at)
+         VALUES ('w-ko2', 'ko', '학교', '', 'noun', 'x', 'x', 'x', 0, 0, ?, ?)`,
+      ).bind(t2, t2).run();
+      await addPhrase("ph-1", "w-ko", "대학생");
+    });
+
+    it("rejects a phrase row whose word_id is not the phrase's root word", async () => {
+      await expect(addCard("c-bad", "w-ko2", "ph-1")).rejects.toThrow(/root word/);
+      await expect(
+        DB.prepare(
+          `INSERT INTO examples (id, word_id, phrase_id, sentence, translation_vi, translation_en, translation_ko, level, ai_generated)
+           VALUES ('e-bad', 'w-ko2', 'ph-1', 's', '', '', '', 'beginner', 0)`,
+        ).run(),
+      ).rejects.toThrow(/root word/);
+      await expect(DB.prepare("UPDATE phrases SET word_id = 'w-ko2' WHERE id = 'ph-1'").run()).rejects.toThrow(/cannot change/);
+    });
+
+    it("allows a word card and a phrase card of the same type, but no duplicate phrase card", async () => {
+      await addCard("c-ph", "w-ko", "ph-1"); // c-ko (word card, recognition) already exists
+      await expect(addCard("c-ph-dup", "w-ko", "ph-1")).rejects.toThrow(/UNIQUE/);
+    });
+
+    it("deleting the root word removes phrases and their cards, but keeps review logs (card_id → NULL)", async () => {
+      await DB.prepare(
+        `INSERT INTO review_logs (id, card_id, profile_id, rating, reviewed_at, lang, state, due, stability, difficulty,
+           elapsed_days, last_elapsed_days, scheduled_days, learning_steps)
+         VALUES ('l-ph', 'c-ph', 'p-ko', 3, ?, 'ko', 0, ?, 0, 0, 0, 0, 0, 0)`,
+      ).bind(now, now).run();
+      await DB.prepare("DELETE FROM words WHERE id = 'w-ko'").run();
+      expect(await count("SELECT count(*) AS n FROM phrases WHERE id = 'ph-1'")).toBe(0);
+      expect(await count("SELECT count(*) AS n FROM cards WHERE word_id = 'w-ko'")).toBe(0);
+      const logs = await DB.prepare("SELECT id, card_id, lang FROM review_logs WHERE id IN ('l-ko', 'l-ph') ORDER BY id").all();
+      expect(logs.results).toEqual([
+        { id: "l-ko", card_id: null, lang: "ko" },
+        { id: "l-ph", card_id: null, lang: "ko" },
+      ]);
+    });
+  });
+});

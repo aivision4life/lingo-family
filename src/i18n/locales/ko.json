@@ -196,7 +196,16 @@
       "examples": "예문",
       "notVerified": "일부 정보는 AI가 만들었고 아직 어른이 확인하지 않았습니다.",
       "notFound": "단어를 찾을 수 없습니다."
-    }
+    },
+    "delete": {
+      "button": "단어 삭제",
+      "title": "{{term}}을(를) 삭제할까요?",
+      "description": "구 {{phrases}}개와 복습 카드 {{cards}}장(모든 프로필)이 삭제됩니다. 복습 기록은 통계를 위해 남습니다.",
+      "confirm": "삭제"
+    },
+    "kindLabel": "종류",
+    "kindWords": "단어",
+    "kindPhrases": "구"
   },
   "audio": {
     "play": "발음 듣기",
@@ -252,6 +261,40 @@
       "plus1": "+1일",
       "plus7": "+7일",
       "reset": "오늘로"
+    }
+  },
+  "phrases": {
+    "title": "구",
+    "suggested": "추천 구",
+    "suggestedHint": "배우고 싶은 구를 선택하세요. 저장 전에 수정할 수 있습니다.",
+    "suggest": "구 추천받기",
+    "suggesting": "AI가 추천하는 중…",
+    "addManual": "구 직접 추가",
+    "none": "아직 구가 없습니다.",
+    "noSuggestions": "AI가 새 구를 찾지 못했습니다.",
+    "select": "{{text}} 선택",
+    "edit": "{{text}} 수정",
+    "save": "구 저장",
+    "saveSelected": "선택한 구 저장",
+    "delete": "{{text}} 삭제",
+    "deleteTitle": "{{text}}을(를) 삭제할까요?",
+    "deleteDescription": "모든 프로필에서 이 구의 복습 카드가 삭제됩니다. 복습 기록은 통계를 위해 남습니다.",
+    "skipped": "“{{text}}”은(는) 이미 {{word}} 아래에 있어 저장하지 않았습니다.",
+    "duplicate": "이 구는 이미 {{word}} 아래에 있습니다.",
+    "count": "구 {{count}}개",
+    "root": "기본 단어: {{word}}",
+    "play": "{{text}} 듣기",
+    "playExample": "{{text}} 예문 듣기",
+    "fields": {
+      "text": "구",
+      "reading": "발음",
+      "gloss_vi": "베트남어 뜻",
+      "gloss_en": "영어 뜻",
+      "gloss_ko": "한국어 뜻",
+      "sentence": "예문",
+      "translation_vi": "베트남어 번역",
+      "translation_en": "영어 번역",
+      "translation_ko": "한국어 번역"
     }
   }
 }

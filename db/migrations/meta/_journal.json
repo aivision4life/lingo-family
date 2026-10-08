@@ -15,6 +15,13 @@
       "when": 1791461668498,
       "tag": "0001_remove_zh",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791462465446,
+      "tag": "0002_phrases",
+      "breakpoints": true
     }
   ]
 }

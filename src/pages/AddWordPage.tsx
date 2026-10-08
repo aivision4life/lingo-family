@@ -14,6 +14,8 @@ import { draftFromEnrichment, draftToCreateInput, emptyDraft, type DraftErrors, 
 import { DraftFields } from "@/features/words/DraftFields";
 import { ExamplesEditor } from "@/features/words/ExamplesEditor";
 import { TermStep } from "@/features/words/TermStep";
+import { draftFromSuggestion, selectedPhraseInputs, type PhraseDraft, type PhraseDraftErrors } from "@/features/phrases/phraseDraft";
+import { PhraseSuggestionList } from "@/features/phrases/PhraseSuggestionList";
 
 /** Screen 5 — add a word: term → AI enrich (or manual) → review/edit → save (F2, F6). */
 export function AddWordPage() {
@@ -55,6 +57,9 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
   const [aiFilled, setAiFilled] = useState(false);
   const [cached, setCached] = useState(false);
   const [errors, setErrors] = useState<DraftErrors>({});
+  // AI-suggested phrases (unticked by default); only ticked ones are saved.
+  const [phraseDrafts, setPhraseDrafts] = useState<PhraseDraft[]>([]);
+  const [phraseErrors, setPhraseErrors] = useState<Record<string, PhraseDraftErrors>>({});
 
   const changeLang = (l: LearnLang) => {
     setLang(l);
@@ -74,6 +79,7 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
       onSuccess: (res) => {
         setTerm(req.term);
         setDraft(draftFromEnrichment(res.enrichment));
+        setPhraseDrafts(res.enrichment.phrases.map(draftFromSuggestion));
         setAiFilled(true);
         setCached(res.cached);
       },
@@ -86,6 +92,7 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
     enrich.reset();
     setTerm(req.term);
     setDraft(emptyDraft());
+    setPhraseDrafts([]);
     setAiFilled(false);
     setCached(false);
   };
@@ -93,12 +100,18 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
   const save = () => {
     if (!draft) return;
     const result = draftToCreateInput(draft, { profileId, lang, term, level, aiFilled });
+    const phrases = selectedPhraseInputs(phraseDrafts, level);
     setErrors(result.errors ?? {});
-    if (result.input) {
-      create.mutate(result.input, {
-        // Word detail shows a light notice when some audio could not be generated.
-        onSuccess: ({ id, audio }) => void navigate(`/words/${id}`, { state: { audioMissing: audio.missing } }),
-      });
+    setPhraseErrors(phrases.errors);
+    if (result.input && phrases.ok) {
+      create.mutate(
+        { ...result.input, phrases: phrases.inputs },
+        {
+          // Word detail shows light notices for missing audio and for phrases that already existed.
+          onSuccess: ({ id, audio, skipped_phrases }) =>
+            void navigate(`/words/${id}`, { state: { audioMissing: audio.missing, skippedPhrases: skipped_phrases } }),
+        },
+      );
     }
   };
 
@@ -161,6 +174,13 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
         onChange={(patch) => setDraft({ ...draft, ...patch })}
       />
       <ExamplesEditor lang={lang} examples={draft.examples} onChange={(examples) => setDraft({ ...draft, examples })} />
+      {phraseDrafts.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold">{t("phrases.suggested")}</h2>
+          <p className="text-sm text-muted-foreground">{t("phrases.suggestedHint")}</p>
+          <PhraseSuggestionList lang={lang} drafts={phraseDrafts} errors={phraseErrors} onChange={setPhraseDrafts} />
+        </section>
+      )}
       {errorNotice(create.error)}
       <Button size="lg" disabled={create.isPending} onClick={save}>
         {create.isPending ? t("words.add.saving") : t("words.add.save")}

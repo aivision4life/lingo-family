@@ -80,13 +80,50 @@ export const words = sqliteTable(
   (t) => [uniqueIndex("words_lang_term_uq").on(t.lang, t.term)],
 );
 
-export const examples = sqliteTable(
-  "examples",
+/**
+ * A phrase (collocation / short expression) built on one root word (SPEC F2, M1.7).
+ * Rows that belong to a phrase (examples, cards) keep `word_id` = the root word and set
+ * `phrase_id`; SQL triggers in migration 0002 enforce that pairing (not managed by drizzle-kit).
+ */
+export const phrases = sqliteTable(
+  "phrases",
   {
     id: id(),
     word_id: text("word_id")
       .notNull()
       .references(() => words.id, { onDelete: "cascade" }),
+    lang: text("lang", { enum: LEARN_LANGS }).notNull(),
+    text: text("text").notNull(),
+    reading: text("reading").notNull(),
+    gloss_vi: text("gloss_vi").notNull(),
+    gloss_en: text("gloss_en").notNull(),
+    gloss_ko: text("gloss_ko").notNull(),
+    emoji: text("emoji"),
+    /** Null until TTS audio has been generated. */
+    audio_key: text("audio_key"),
+    ai_generated: bool("ai_generated").notNull().default(false),
+    verified: bool("verified").notNull().default(false),
+    created_by_profile: text("created_by_profile").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    created_at: createdAt(),
+    updated_at: timestamp("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [uniqueIndex("phrases_lang_text_uq").on(t.lang, t.text), index("phrases_word_idx").on(t.word_id)],
+);
+
+export const examples = sqliteTable(
+  "examples",
+  {
+    id: id(),
+    /** The word, or the root word when the example belongs to a phrase. */
+    word_id: text("word_id")
+      .notNull()
+      .references(() => words.id, { onDelete: "cascade" }),
+    /** Set when the example belongs to a phrase (then word_id = the phrase's root word). */
+    phrase_id: text("phrase_id").references(() => phrases.id, { onDelete: "cascade" }),
     sentence: text("sentence").notNull(),
     translation_vi: text("translation_vi").notNull(),
     translation_en: text("translation_en").notNull(),
@@ -95,7 +132,7 @@ export const examples = sqliteTable(
     level: text("level", { enum: EXAMPLE_LEVELS }).notNull(),
     ai_generated: bool("ai_generated").notNull().default(false),
   },
-  (t) => [index("examples_word_idx").on(t.word_id)],
+  (t) => [index("examples_word_idx").on(t.word_id), index("examples_phrase_idx").on(t.phrase_id)],
 );
 
 export const decks = sqliteTable("decks", {
@@ -133,7 +170,10 @@ export const profile_decks = sqliteTable(
   (t) => [primaryKey({ columns: [t.profile_id, t.deck_id] })],
 );
 
-/** One row per (profile, word, card type). Columns after card_type mirror ts-fsrs `Card`. */
+/**
+ * One row per (profile, item, card type); the item is the phrase when `phrase_id` is set,
+ * otherwise the word. Columns after card_type mirror ts-fsrs `Card`.
+ */
 export const cards = sqliteTable(
   "cards",
   {
@@ -141,9 +181,11 @@ export const cards = sqliteTable(
     profile_id: text("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
+    /** The word, or the root word of a phrase card. */
     word_id: text("word_id")
       .notNull()
       .references(() => words.id, { onDelete: "cascade" }),
+    phrase_id: text("phrase_id").references(() => phrases.id, { onDelete: "cascade" }),
     card_type: text("card_type", { enum: CARD_TYPES }).notNull(),
     // --- ts-fsrs Card ---
     due: timestamp("due").notNull(),
@@ -163,19 +205,26 @@ export const cards = sqliteTable(
       .$defaultFn(() => new Date()),
   },
   (t) => [
-    uniqueIndex("cards_profile_word_type_uq").on(t.profile_id, t.word_id, t.card_type),
+    // One card per type for a word and, separately, for each of its phrases.
+    uniqueIndex("cards_word_type_uq")
+      .on(t.profile_id, t.word_id, t.card_type)
+      .where(sql`phrase_id IS NULL`),
+    uniqueIndex("cards_phrase_type_uq")
+      .on(t.profile_id, t.phrase_id, t.card_type)
+      .where(sql`phrase_id IS NOT NULL`),
     index("cards_profile_due_idx").on(t.profile_id, t.due),
   ],
 );
 
-/** Append-only. Columns mirror ts-fsrs `ReviewLog`; its `review` field is stored as `reviewed_at`. */
+/**
+ * Append-only. Columns mirror ts-fsrs `ReviewLog`; its `review` field is stored as `reviewed_at`.
+ * Logs outlive their card (card_id → NULL when a word/phrase is deleted); `lang` keeps stats per language.
+ */
 export const review_logs = sqliteTable(
   "review_logs",
   {
     id: id(),
-    card_id: text("card_id")
-      .notNull()
-      .references(() => cards.id, { onDelete: "cascade" }),
+    card_id: text("card_id").references(() => cards.id, { onDelete: "set null" }),
     profile_id: text("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
@@ -183,6 +232,7 @@ export const review_logs = sqliteTable(
     rating: integer("rating").notNull(),
     reviewed_at: timestamp("reviewed_at").notNull(),
     duration_ms: integer("duration_ms"),
+    lang: text("lang", { enum: LEARN_LANGS }).notNull(),
     // --- ts-fsrs ReviewLog (card state before this review) ---
     state: integer("state").notNull(),
     due: timestamp("due").notNull(),
@@ -207,6 +257,7 @@ export const pron_attempts = sqliteTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     word_id: text("word_id").references(() => words.id, { onDelete: "cascade" }),
+    phrase_id: text("phrase_id").references(() => phrases.id, { onDelete: "cascade" }),
     example_id: text("example_id").references(() => examples.id, { onDelete: "cascade" }),
     lang: text("lang", { enum: LEARN_LANGS }).notNull(),
     reference_text: text("reference_text").notNull(),

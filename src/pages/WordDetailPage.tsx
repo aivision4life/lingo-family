@@ -7,7 +7,9 @@ import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
 import { SpeakButton, SpeedToggle } from "@/features/audio/AudioButtons";
 import { AudioStatus } from "@/features/audio/AudioStatus";
-import { useActiveProfile } from "@/features/profiles/activeProfile";
+import { PhrasesSection } from "@/features/phrases/PhrasesSection";
+import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
+import { DeleteWordButton } from "@/features/words/DeleteWordButton";
 import { useWord } from "@/features/words/api";
 import { AiBadge } from "@/features/words/bits";
 import { UI_LANG_NATIVE_NAMES } from "@/i18n";
@@ -121,6 +123,8 @@ function Detail({ w }: { w: WordDetail }) {
         </section>
       )}
 
+      <PhrasesSection word={w} />
+
       <LinkButton to={`/practice/${w.id}`} variant="secondary">
         {t("pages.wordDetail.practice")}
       </LinkButton>
@@ -129,6 +133,7 @@ function Detail({ w }: { w: WordDetail }) {
           {t("pages.wordDetail.character")}
         </LinkButton>
       )}
+      {profile && canManageProfiles(profile) && <DeleteWordButton word={w} profileId={profile.id} />}
     </div>
   );
 }

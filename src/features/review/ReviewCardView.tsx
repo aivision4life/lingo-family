@@ -52,6 +52,12 @@ export function ReviewCardView({ item, flipped, glossLang }: Props) {
             </span>
           )}
           <span className="text-lg text-muted-foreground">{word.reading}</span>
+          {word.kind === "phrase" && word.root_term && (
+            <span className="text-sm text-muted-foreground">
+              {t("phrases.root", { word: "" })}
+              <LangText lang={word.lang}>{word.root_term}</LangText>
+            </span>
+          )}
           <span lang={glossLang} className="text-2xl font-semibold">
             {glossFor(word, glossLang)}
           </span>
