@@ -11,14 +11,15 @@ const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../../db/migrations");
  * App for tests. getPlatformProxy also loads .dev.vars (real API keys), so paid clients are
  * disabled unless a test passes a fake: tests must never call a paid API.
  */
-export const testApp = (deps: AppDeps = {}) => createApp({ makeLlm: () => null, makeTts: () => null, ...deps });
+export const testApp = (deps: AppDeps = {}) =>
+  createApp({ makeLlm: () => null, makeTts: () => null, makeImageAi: () => null, ...deps });
 
 /**
  * `vars` override env values from .dev.vars so tests do not depend on the developer's local
  * settings (e.g. DEV_TIME_TRAVEL is off unless a test turns it on).
  */
 export async function createTestEnv(app = testApp(), vars: Record<string, string> = {}) {
-  const proxy: PlatformProxy<Env> = await getPlatformProxy<Env>({ persist: false });
+  const proxy: PlatformProxy<Env> = await getPlatformProxy<Env>({ persist: false, remoteBindings: false });
   // Bindings on proxy.env are not enumerable, so inherit them instead of copying them.
   const env: Env = Object.assign(Object.create(proxy.env) as Env, { DEV_TIME_TRAVEL: "0" }, vars);
 
@@ -30,6 +31,17 @@ export async function createTestEnv(app = testApp(), vars: Record<string, string
     }
   }
 
+  // waitUntil() work (e.g. images drawn after saving) is collected; `settle()` waits for it.
+  const background: Promise<unknown>[] = [];
+  const ctx = {
+    waitUntil: (p: Promise<unknown>) => void background.push(p),
+    passThroughOnException: () => {},
+    props: {},
+  } as unknown as ExecutionContext;
+  const settle = async () => {
+    while (background.length > 0) await Promise.allSettled(background.splice(0));
+  };
+
   /** Calls the Worker app like a browser would: `api("POST", "/profiles", body)`. */
   const api = async (method: string, url: string, body?: unknown) => {
     const res = await app.request(
@@ -40,13 +52,17 @@ export async function createTestEnv(app = testApp(), vars: Record<string, string
         body: body === undefined ? undefined : JSON.stringify(body),
       },
       env,
+      ctx,
     );
     const text = await res.text();
     return { status: res.status, body: (text ? JSON.parse(text) : null) as unknown };
   };
 
   /** Raw GET returning the Response (for headers / binary bodies). */
-  const raw = (url: string, headers: Record<string, string> = {}) => app.request(url, { headers }, env);
+  const raw = (url: string, headers: Record<string, string> = {}) => app.request(url, { headers }, env, ctx);
 
-  return { env, api, raw, dispose: () => proxy.dispose() };
+  /** Any request with a raw body (e.g. an image upload). */
+  const send = (url: string, init: RequestInit) => app.request(url, init, env, ctx);
+
+  return { env, api, raw, send, settle, dispose: () => proxy.dispose() };
 }

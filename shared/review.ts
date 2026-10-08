@@ -1,6 +1,6 @@
 // API contract for /api/review.
 import { z } from "zod";
-import { cardTypeSchema, learnLangSchema } from "./enums";
+import { cardTypeSchema, imageStatusSchema, learnLangSchema } from "./enums";
 import type { CardFields } from "./scheduling";
 
 /** Header the client sends with a fake "now"; honoured only when DEV_TIME_TRAVEL=1. */
@@ -47,6 +47,9 @@ export const reviewWordSchema = z.object({
   hanja: z.string().nullable(),
   han_viet: z.string().nullable(),
   audio_key: z.string().nullable(),
+  /** Image of the word / phrase (shown large on the back of the card). */
+  image_key: z.string().nullable(),
+  image_status: imageStatusSchema,
 });
 
 export const queueItemSchema = z.object({ card: cardDtoSchema, word: reviewWordSchema });

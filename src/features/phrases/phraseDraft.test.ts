@@ -7,7 +7,11 @@ const suggestion = {
   gloss_vi: "sinh viên",
   gloss_en: "university student",
   gloss_ko: "대학에 다니는 학생",
-  example: { sentence: "저는 대학생이에요.", translation_vi: "Tôi là sinh viên.", translation_en: "I am a student.", translation_ko: "" },
+  image_prompt: "A young adult on a university campus",
+  example: {
+    sentence: "저는 대학생이에요.", translation_vi: "Tôi là sinh viên.", translation_en: "I am a student.", translation_ko: "",
+    image_prompt: "A smiling student holding books",
+  },
 };
 
 describe("phrase drafts", () => {
@@ -18,7 +22,12 @@ describe("phrase drafts", () => {
 
   it("converts a draft with its example", () => {
     const { input } = phraseDraftToInput(draftFromSuggestion(suggestion), "beginner");
-    expect(input).toMatchObject({ text: "대학생", ai_generated: true, example: { sentence: "저는 대학생이에요.", level: "beginner" } });
+    expect(input).toMatchObject({
+      text: "대학생",
+      ai_generated: true,
+      image_prompt: "A young adult on a university campus",
+      example: { sentence: "저는 대학생이에요.", level: "beginner", image_prompt: "A smiling student holding books" },
+    });
   });
 
   it("a blank sentence means no example", () => {

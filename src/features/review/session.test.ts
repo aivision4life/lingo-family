@@ -32,6 +32,8 @@ const item = (id: string): QueueItem => ({
     hanja: null,
     han_viet: null,
     audio_key: null,
+    image_key: null,
+    image_status: "none",
   },
 });
 

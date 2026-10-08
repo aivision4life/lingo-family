@@ -12,9 +12,10 @@ const enrichment = {
   hanja: "學生",
   han_viet: "học sinh",
   emoji: null,
+  image_prompt: "A smiling student with a backpack",
   examples: [
-    { sentence: "저는 학생이에요.", translation_vi: "Tôi là học sinh.", translation_en: "I am a student.", translation_ko: "" },
-    { sentence: "학생이 많아요.", translation_vi: "Nhiều học sinh.", translation_en: "Many students.", translation_ko: "" },
+    { sentence: "저는 학생이에요.", translation_vi: "Tôi là học sinh.", translation_en: "I am a student.", translation_ko: "", image_prompt: "A student" },
+    { sentence: "학생이 많아요.", translation_vi: "Nhiều học sinh.", translation_en: "Many students.", translation_ko: "", image_prompt: "Many students" },
   ],
 } as const;
 
@@ -23,7 +24,8 @@ describe("word draft", () => {
     const { input } = draftToCreateInput(draftFromEnrichment({ ...enrichment, examples: [...enrichment.examples], phrases: [] }), meta);
     expect(input).toMatchObject({ term: "학생", ai_generated: true, hanja: "學生", emoji: "" });
     expect(input?.examples).toHaveLength(2);
-    expect(input?.examples[0]).toMatchObject({ level: "beginner", ai_generated: true });
+    expect(input?.examples[0]).toMatchObject({ level: "beginner", ai_generated: true, image_prompt: "A student" });
+    expect(input?.image_prompt).toBe("A smiling student with a backpack");
   });
 
   it("drops blank example rows and reports missing required fields", () => {

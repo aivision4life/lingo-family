@@ -186,7 +186,8 @@
       "duplicate": "Từ này đã có trong thư viện.",
       "openExisting": "Mở từ đã có",
       "quota": "Hôm nay đã hết lượt AI. Bạn vẫn có thể tự điền.",
-      "aiUnavailable": "AI đang bận, thử lại sau ít phút hoặc tự điền.",
+      "aiUnavailable": "AI đang bận, thử lại sau ít phút.",
+      "aiRejected": "AI từ chối yêu cầu (kiểm tra LLM_API_KEY / LLM_MODEL). Bạn vẫn có thể tự điền.",
       "aiInvalid": "AI trả kết quả không hợp lệ, hãy thử lại.",
       "aiNotConfigured": "Chưa cấu hình AI (thiếu LLM_API_KEY).",
       "generic": "Có lỗi xảy ra, vui lòng thử lại."
@@ -295,6 +296,42 @@
       "translation_vi": "Dịch tiếng Việt",
       "translation_en": "Dịch tiếng Anh",
       "translation_ko": "Dịch tiếng Hàn"
+    }
+  },
+  "images": {
+    "drawing": "Đang vẽ ảnh…",
+    "redraw": "Vẽ lại",
+    "draw": "Vẽ ảnh",
+    "upload": "Ảnh của tôi",
+    "uploading": "Đang tải ảnh lên…",
+    "retry": "Thử lại",
+    "failed": "Chưa vẽ được ảnh. Bạn có thể thử lại.",
+    "quota": "Hôm nay đã hết lượt vẽ ảnh. Ảnh sẽ được vẽ sau.",
+    "invalidUpload": "Không dùng được ảnh này (tối đa 512 px, 300 KB, WebP/JPEG/PNG).",
+    "notConfigured": "Chưa bật Workers AI để vẽ ảnh.",
+    "redrawTitle": "Vẽ lại ảnh",
+    "promptLabel": "Mô tả cảnh (tiếng Anh)",
+    "promptHint": "Phong cách vẽ (tranh phẳng, màu tươi, không chữ) được thêm tự động.",
+    "redrawSubmit": "Vẽ",
+    "backfill": {
+      "title": "Ảnh cho các từ cũ",
+      "remaining": "Còn {{count}} từ/cụm từ chưa có ảnh.",
+      "none": "Mọi từ và cụm từ đều đã có ảnh.",
+      "start": "Tạo ảnh cho các từ cũ",
+      "stop": "Dừng",
+      "working": "Đang vẽ ảnh cho “{{term}}”…",
+      "done": "Đã xong.",
+      "stopped": "Đã dừng. Bấm lại để chạy tiếp.",
+      "quota": "Hôm nay đã hết lượt (ảnh hoặc AI). Ngày mai chạy tiếp.",
+      "drawn": "Đã vẽ {{count}} ảnh."
+    },
+    "usage": {
+      "title": "Mức dùng hôm nay",
+      "familyImages": "Ảnh (cả nhà)",
+      "profileImages": "Ảnh (hồ sơ này)",
+      "llm": "AI văn bản (hồ sơ này)",
+      "tts": "Âm thanh (hồ sơ này)",
+      "note": "Tính theo ngày UTC: hạn mức mới lúc 7:00 sáng giờ Việt Nam."
     }
   }
 }

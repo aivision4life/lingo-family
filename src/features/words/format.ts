@@ -11,9 +11,18 @@ const ERROR_KEYS = {
   [WORD_ERRORS.duplicate]: "words.errors.duplicate",
   [WORD_ERRORS.quotaExceeded]: "words.errors.quota",
   [WORD_ERRORS.aiUnavailable]: "words.errors.aiUnavailable",
+  [WORD_ERRORS.aiRejected]: "words.errors.aiRejected",
   [WORD_ERRORS.aiInvalidOutput]: "words.errors.aiInvalid",
   [WORD_ERRORS.aiNotConfigured]: "words.errors.aiNotConfigured",
 } as const;
+
+/** AI calls worth retrying: busy / invalid answer, server errors, or no answer at all (network). */
+export function isRetryableAiError(error: unknown): boolean {
+  if (!error) return false;
+  if (!(error instanceof ApiError)) return true;
+  if (error.code === WORD_ERRORS.aiUnavailable || error.code === WORD_ERRORS.aiInvalidOutput) return true;
+  return error.status >= 500 && !(error.code in ERROR_KEYS);
+}
 
 export function wordErrorMessage(error: unknown, t: TFunction): string | null {
   if (!error) return null;

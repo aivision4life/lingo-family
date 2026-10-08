@@ -1,10 +1,18 @@
 import type { ExampleLevel, LearnLang } from "../../shared/enums";
+import { IMAGE_PROMPT_RULES } from "./imagePrompt";
 
 /** Bump when the prompt or output schema changes, so old cache entries are not reused. */
 // v2 (M1.6): Chinese removed, hanzi_* fields replaced by `hanja`. v3 (M1.7): phrases, 2 examples.
-export const ENRICH_PROMPT_VERSION = "enrich-v3";
+// v4 (M1.8): image_prompt for the word, each example and each phrase (+ its example).
+export const ENRICH_PROMPT_VERSION = "enrich-v4";
 /** Version of the "suggest phrases for an existing word" prompt (part of its cache key). */
-export const PHRASES_PROMPT_VERSION = "phrases-v1";
+export const PHRASES_PROMPT_VERSION = "phrases-v2";
+
+/** Where image prompts are needed; the rules themselves are shared with stand-alone requests. */
+const IMAGE_FIELDS = [
+  "Pictures: the word, every example sentence, every phrase and every phrase example has its own field `image_prompt`.",
+  IMAGE_PROMPT_RULES,
+].join("\n");
 
 const READING_RULES: Record<LearnLang, string> = {
   ko: "reading: Revised Romanization of Korean, lowercase, syllables joined (e.g. haksaeng).",
@@ -59,6 +67,7 @@ export function buildEnrichPrompt(lang: LearnLang, term: string, level: ExampleL
     "emoji: one emoji that best pictures the word, or an empty string if none fits.",
     "examples: exactly 2 natural sentences in the word's language that use the word, each with translations into Vietnamese, English and Korean.",
     PHRASE_RULES,
+    IMAGE_FIELDS,
     `Leave ${OWN_TRANSLATION[lang]} empty for all example sentences, because the sentence is already in that language.`,
     LANG_RULES[lang],
     LEVEL_RULES[level],
@@ -74,6 +83,7 @@ export function buildPhrasePrompt(lang: LearnLang, term: string, level: ExampleL
     ROLE,
     'Answer with a single JSON object {"phrases": [...]} that matches the given schema. No markdown, no comments.',
     PHRASE_RULES,
+    IMAGE_FIELDS,
     "gloss_vi, gloss_en, gloss_ko: short natural meanings (1-5 words each); never just repeat the phrase.",
     `Leave ${OWN_TRANSLATION[lang]} empty for example sentences, because the sentence is already in that language.`,
     READING_RULES[lang],

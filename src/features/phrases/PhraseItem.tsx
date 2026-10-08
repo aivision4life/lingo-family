@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PHRASE_ERRORS, type Phrase } from "@shared/phrase";
-import { UI_LANGS, type UiLang } from "@shared/enums";
+import type { UiLang } from "@shared/enums";
 import { LangText } from "@/components/LangText";
 import {
   AlertDialog,
@@ -17,7 +17,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { SpeakButton } from "@/features/audio/AudioButtons";
+import { ImageTools } from "@/features/images/ImageTools";
+import { ItemImage } from "@/features/images/ItemImage";
 import { AiBadge } from "@/features/words/bits";
+import { ExampleItem } from "@/features/words/ExampleItem";
 import { glossFor } from "@/features/words/format";
 import { ApiError } from "@/lib/api";
 import { useDeletePhrase, useUpdatePhrase } from "./api";
@@ -74,6 +77,7 @@ export function PhraseItem({ phrase, glossLang, editorId }: Props) {
   return (
     <li className="flex flex-col gap-2 rounded-lg border p-3">
       <div className="flex items-start gap-2">
+        <ItemImage kind="phrase" id={phrase.id} image={phrase} alt={glossFor(phrase, glossLang)} emoji={phrase.emoji} size="small" />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="flex flex-wrap items-baseline gap-2">
             <LangText lang={phrase.lang} className="text-xl font-semibold">{phrase.text}</LangText>
@@ -110,15 +114,10 @@ export function PhraseItem({ phrase, glossLang, editorId }: Props) {
           </>
         )}
       </div>
+      <ImageTools kind="phrase" id={phrase.id} image={phrase} suggestion={phrase.gloss_en} compact />
       {ex && (
-        <div className="flex items-start gap-2 border-t pt-2">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <LangText lang={phrase.lang}>{ex.sentence}</LangText>
-            {UI_LANGS.filter((l) => ex[`translation_${l}`]).map((l) => (
-              <span key={l} lang={l} className="text-sm text-muted-foreground">{ex[`translation_${l}`]}</span>
-            ))}
-          </div>
-          <SpeakButton audioKey={ex.audio_key} label={t("phrases.playExample", { text: phrase.text })} />
+        <div className="border-t pt-2">
+          <ExampleItem ex={ex} lang={phrase.lang} glossLang={glossLang} audioLabel={t("phrases.playExample", { text: phrase.text })} />
         </div>
       )}
       {del.isError && <p role="alert" className="text-sm text-destructive">{t("words.errors.generic")}</p>}

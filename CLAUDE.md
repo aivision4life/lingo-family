@@ -55,6 +55,7 @@ SPEC.md  CLAUDE.md  README.md
 - `npm run db:migrate:local` / `npm run db:migrate:remote`: apply pending migrations to D1
 - `npm run cf-typegen`: regenerate `worker-configuration.d.ts` (the `Env` type) after editing `wrangler.jsonc` or `.dev.vars`
 - `npm run deploy`: build + `wrangler deploy` (needs a real `database_id` in `wrangler.jsonc`, see M2)
+- `npm run bench:images`: M1.8A image benchmark (Gemini image prompts + FLUX models), output in `benchmarks/report.html`
 - Add a shadcn component: `npx shadcn@latest add <name>` (then keep tap targets >= 44px)
 
 ## Project setup notes
@@ -65,13 +66,14 @@ SPEC.md  CLAUDE.md  README.md
 - shadcn/ui uses the `cn` package (from shadcn-ui) instead of `clsx` + `tailwind-merge`.
 - API: validate with `zv(target, schema)` from `worker/lib/validate.ts`; errors are `{ error, issues? }` (`shared/api/error.ts`). Client calls go through `api()` in `src/lib/api.ts` (validates responses with zod) and TanStack Query hooks in `src/features/<feature>/api.ts`.
 - API tests run the Hono app against a real in-memory local D1 via `createTestEnv()` (`worker/test/testEnv.ts`, uses wrangler's `getPlatformProxy`; `@cloudflare/vitest-pool-workers` does not support Vitest 5).
-- LLM: `worker/services/llm.ts` (`LlmClient` interface, Gemini via REST `generateContent` + `responseJsonSchema`, `generateStructured()` = zod-validated JSON with one retry). Enrichment prompt in `worker/services/enrichPrompt.ts`: bump `ENRICH_PROMPT_VERSION` when the prompt or output schema changes (it is part of the `ai_cache` key).
+- LLM: `worker/services/llm.ts` (`LlmClient` interface, Gemini via REST `generateContent` + `responseJsonSchema`, `generateStructured()` = zod-validated JSON with one retry, returns `{ data, model }`). Transient errors (429/500/503, network, timeout) are retried 3× with backoff 1s/3s/9s ± 25 % jitter (`worker/services/llmRetry.ts`), then `LLM_FALLBACK_MODEL` gets one try; 400/401/403 fail at once (`rejected` → `ai_rejected`). `ai_cache.model` records the model that answered; the cache key keeps the primary model. The quota is consumed once per cache miss, never per retry. Tests inject `fetch`/`sleep` into `createLlmClient(env, opts)`. Enrichment prompt in `worker/services/enrichPrompt.ts`: bump `ENRICH_PROMPT_VERSION` when the prompt or output schema changes (it is part of the `ai_cache` key).
 - The Worker app is built by `createApp({ makeLlm, makeTts })` (`worker/app.ts`). `getPlatformProxy` loads `.dev.vars` (real keys), so in tests **always** build the app with `testApp({...})` from `worker/test/testEnv.ts` (paid clients default to null) and inject fakes (`worker/test/fakeLlm.ts`, `fakeTts.ts`). Never call `createApp()` directly in a test: it would use real Gemini/Azure.
 - TTS: `worker/services/tts.ts` (Azure REST, voices from `voiceFor()`), `worker/services/audio.ts` (`generateWordAudio()`: R2 `head` first, Azure only on a miss, never throws for TTS errors). Audio is served by `GET /api/media/audio/...` with immutable cache headers; the client plays it through the shared player in `src/features/audio/player.ts`.
 - Daily quotas: `consumeQuota()` in `worker/lib/quota.ts` (atomic upsert on `usage_daily`, UTC day).
 - Review/FSRS: pure rules in `shared/scheduling.ts` (`scheduler` with fuzz off, `applyReview`, `previewIntervals`, `buildQueue`, `localDayStart`), used by both the Worker (authority) and the client (previews). `worker/services/review.ts` → `syncProfileCards()` (idempotent: default decks `default-{lang}`, deck_words, profile_decks, missing cards) runs on every `/api/review/summary|queue` call.
 - Dev time travel: client `src/lib/devClock.ts` (only when `import.meta.env.DEV`) sends `X-Dev-Now`; the Worker reads it via `resolveNow()` only when `DEV_TIME_TRAVEL=1` in `.dev.vars`. `createTestEnv(app, vars)` forces `DEV_TIME_TRAVEL=0` unless a test passes it.
 - Navigation (M1.5): items in `src/components/layout/navItems.ts` (a slot is reserved for a later "Hanja" item). Desktop (≥ 768px, `md:`): collapsible left sidebar with the profile avatar at the top; phones: bottom tab bar + top bar with the avatar, and a floating "+" (add word) button. Screens that need focus (review) use `FocusLayout` (no navigation; the page has its own Exit button); the profile picker is outside the app layout.
+- Images (M1.8): columns `image_*` on words/phrases/examples (`db/schema.ts` → `imageColumns()`). Worker: `worker/services/imageStore.ts` (R2 key, conditional-UPDATE claims, `finishImage` guarded by `image_nonce`), `imageJobs.ts` (`drawClaimedItem`: R2 head → `consumeImageQuota` → klein → schnell), `imageBackfill.ts`, routes `worker/routes/images.ts` (`ensure`/`retry`/`redraw`/`upload`/`backfill`, `GET /api/usage`). Only draw an item after winning `claimImage()`. Client: `src/features/images/` (`ItemImage` shows image or emoji and triggers lazy/stalled drawing, `ImageTools` for adults, `pollWhilePending` as `refetchInterval`). `createApp({ makeImageAi })`; tests use `fakeImageAi()` and `t.settle()` to await `waitUntil` work.
 - Active profile: `useActiveProfile()` (`src/features/profiles/activeProfile.ts`); the UI language follows the active profile's `ui_lang`. Use `canManageProfiles()` to hide edit/delete/settings for kid profiles.
 
 ## Workflow for every task
@@ -104,7 +106,7 @@ SPEC.md  CLAUDE.md  README.md
 - Before applying migrations locally: stop the dev server, export the DB into `backups/` (gitignored) and compare row counts before/after.
 
 ## Secrets & security
-- Secrets (`AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`) go in `.dev.vars` locally and in `wrangler secret` in production.
+- Secrets (`AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_FALLBACK_MODEL`) go in `.dev.vars` locally and in `wrangler secret` in production.
 - **Never** put secrets in frontend code, in `wrangler.jsonc` vars, or in git. Keep `.dev.vars` in `.gitignore`.
 - The browser only receives short-lived Azure tokens from `/api/speech-token`.
 - In production, the Worker must verify the Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) on every `/api` request.
@@ -112,8 +114,8 @@ SPEC.md  CLAUDE.md  README.md
 ## Cost rules (free tiers)
 - **Cache first** for every paid call: TTS audio (R2 key = hash of lang + voice + text), LLM responses (`ai_cache`).
 - Never regenerate media that already exists.
-- **Images (Workers AI):** content-addressed R2 key = sha1(model + full prompt + style version + seed + size). Check R2 before calling `env.AI`. The fixed style suffix (`flat vector illustration, bright colors, simple shapes, plain background, no text, no letters`) lives in one constant with a `STYLE_VERSION`; changing it means bumping the version, never silently redrawing existing images.
-- Image generation runs in the background (never inside the save request) and must be idempotent: a retried job finds the existing R2 object and only updates the row.
+- **Images (Workers AI):** primary model `flux-2-klein-4b` (512×512, ≈ 26 Neurons), fallback `flux-1-schnell` (≈ 58 Neurons, no seed, 1024×1024). Content-addressed R2 key = sha1(model + full prompt + style version + nonce + size) (nonce: "0" first, random per Redraw; flux-1-schnell has no seed, see SPEC F3). Check R2 before calling `env.AI`. The fixed style suffix (`flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children`) lives in one constant (`IMAGE_STYLE` in `worker/services/imagePrompt.ts`) with `IMAGE_STYLE_VERSION`; changing it means bumping the version, never silently redrawing existing images.
+- Image generation after saving runs with `waitUntil` (never inside the save request; ~30 s limit, stalled items are taken over after 2 min). Redraw / Try again / lazy examples / backfill draw inside their own request. Always idempotent: a retried job finds the existing R2 object and only updates the row.
 - Image quota: `usage_daily` service `image`, 60/profile/day **and** a family-wide daily cap (sum over profiles; provisional 150, measure Neurons in the dashboard before changing). Count only real `env.AI` calls; R2 hits are free.
 - Uploads ("My photo") are resized in the browser to ≤ 512 px WebP before upload; the Worker re-checks type and size and never re-encodes.
 - Enforce daily quotas per profile through `usage_daily` (pronunciation, LLM, TTS).
@@ -133,10 +135,12 @@ SPEC.md  CLAUDE.md  README.md
 ## Lessons learned
 - `npx shadcn add <x>` may ask to overwrite `button.tsx`: answer **no** (`echo n | npx shadcn add <x>`), it has custom 44px sizes. Check new components for hard-coded English strings (e.g. "Close" in `dialog.tsx`).
 - Don't `disable` an input while checking it asynchronously (it loses focus); use `readOnly`.
-- Gemini can return 503 "high demand" or take 30s+ under load; the client retries 500/503 once and times out after 45s. If the default model stays overloaded, set `LLM_MODEL=gemini-3.5-flash-lite` in `.dev.vars`.
+- Gemini can return 503 "high demand" or take 30s+ under load. The shared client retries (see LLM above) within a 100 s budget, 45 s per attempt; set `LLM_FALLBACK_MODEL=gemini-3.5-flash-lite` in `.dev.vars` so a busy primary falls back. The UI shows "AI is busy" + a Try again button (`isRetryableAiError()`); a button inside a `<form>` needs `type="button"` or it also submits the form.
 - Homonyms (e.g. 사과 = apple / apology) made the LLM mix meanings with one Hanja; the prompt now asks for the most common meaning only.
 - drizzle's `db.batch()` on D1 cannot run raw `db.run(sql\`...\`)` statements with parameters (`stmt` is undefined). For raw SQL batches use the D1 API: `env.DB.batch([env.DB.prepare(...).bind(...)])`.
 - `drizzle-kit generate` asks interactively when a column is renamed (it cannot be answered here). Write a custom migration instead: `npx drizzle-kit generate --custom --name <x>`, put the SQL in it, then copy the table definitions of a reference snapshot (generate the current schema into a temp `out` dir) into the new `meta/000N_snapshot.json`, keeping its `id`/`prevId`; `npm run db:generate` must then report "No schema changes". Test the migration in `db/migrations.test.ts`.
+- Workers AI (`env.AI`) has no local simulator: it always runs on Cloudflare, so `npm run dev` needs `npx wrangler login` once (otherwise the remote proxy session fails). Tests call `getPlatformProxy({ remoteBindings: false })` so they never need login or touch Workers AI.
+- Scripts that need Worker code (TypeScript) run through `benchmarks/run.mjs` (Vite's `runnerImport`, no extra TS runner).
 - `getPlatformProxy().env` bindings are not enumerable: `{...env}` / `Object.assign({}, env)` drops them; use `Object.create(env)` to add overrides.
 <!-- Add a line here whenever the AI repeats a mistake, e.g.:
 - Always use `lang="ko"` on Korean text (fixed glyph bug on 2026-10-xx). -->

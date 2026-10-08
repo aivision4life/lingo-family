@@ -16,14 +16,15 @@ import { runAiTask } from "../lib/aiTask";
 import { zv } from "../lib/validate";
 import { generateWordAudio } from "../services/audio";
 import { suggestPhrasesWithCache } from "../services/enrich";
+import { imageView } from "../services/imageStore";
 import { findPhraseDuplicate, savePhrases } from "../services/phrases";
-import { likePattern, type ContentDeps } from "./words";
+import { drawAfterSave, likePattern, type ContentDeps } from "./words";
 
 const idParam = zv("param", z.object({ id: z.string().min(1) }));
 const deleteBody = zv("json", z.object({ profile_id: z.string().min(1) }));
 
 /** Mounted at /api: /words/:id/phrases… and /phrases… */
-export const phraseRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
+export const phraseRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
   new Hono<AppEnv>()
     /** AI phrase suggestions for a word already in the library (cache-first, LLM quota). */
     .post("/words/:id/phrases/suggest", idParam, zv("json", suggestPhrasesRequestSchema), async (c) => {
@@ -54,7 +55,11 @@ export const phraseRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
       const word = await db.select().from(words).where(eq(words.id, id)).get();
       if (!word) return c.json({ error: "not_found" }, 404);
 
-      const result = await savePhrases(db, { wordId: id, wordTerm: word.term, lang: word.lang, profileId: profile_id, inputs });
+      const imagesOn = makeImageAi(c.env) !== null;
+      const { pendingImages, ...result } = await savePhrases(db, {
+        wordId: id, wordTerm: word.term, lang: word.lang, profileId: profile_id, inputs, imagesOn,
+      });
+      drawAfterSave(c, makeImageAi, profile_id, pendingImages.map((pid) => ({ kind: "phrase" as const, id: pid })));
       const audio = await generateWordAudio(
         { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
         id,
@@ -92,6 +97,7 @@ export const phraseRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
         audio_key: p.audio_key,
         ai_generated: p.ai_generated,
         verified: p.verified,
+        ...imageView(p),
         root_term,
       }));
       return c.json(list);
@@ -120,9 +126,16 @@ export const phraseRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
         .where(eq(phrases.id, id));
 
       // The phrase keeps at most one example: replace it (or remove it with `example: null`).
+      // Same sentence → only translations change: update in place, keeping its audio and image.
       if (example !== undefined) {
-        await db.delete(examples).where(and(eq(examples.phrase_id, id), isNotNull(examples.phrase_id)));
-        if (example) await db.insert(examples).values({ ...example, word_id: phrase.word_id, phrase_id: id });
+        const old = await db.select().from(examples).where(eq(examples.phrase_id, id)).get();
+        if (example && old && old.sentence === example.sentence) {
+          const { translation_vi, translation_en, translation_ko, level } = example;
+          await db.update(examples).set({ translation_vi, translation_en, translation_ko, level }).where(eq(examples.id, old.id));
+        } else {
+          await db.delete(examples).where(and(eq(examples.phrase_id, id), isNotNull(examples.phrase_id)));
+          if (example) await db.insert(examples).values({ ...example, word_id: phrase.word_id, phrase_id: id });
+        }
       }
       const audio = await generateWordAudio(
         { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },

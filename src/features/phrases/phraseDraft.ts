@@ -17,9 +17,15 @@ export type PhraseDraft = {
   translation_en: string;
   translation_ko: string;
   ai_generated: boolean;
+  /** Image prompts of the phrase and of its example (from AI; not shown in the form). */
+  image_prompt: string | null;
+  example_image_prompt: string | null;
 };
 
-export type PhraseTextField = Exclude<keyof PhraseDraft, "key" | "selected" | "ai_generated">;
+export type PhraseTextField = Exclude<
+  keyof PhraseDraft,
+  "key" | "selected" | "ai_generated" | "image_prompt" | "example_image_prompt"
+>;
 /** Field → true when invalid. */
 export type PhraseDraftErrors = Partial<Record<PhraseTextField, true>>;
 
@@ -34,8 +40,13 @@ export const draftFromSuggestion = (p: LlmPhrase): PhraseDraft => ({
   gloss_vi: p.gloss_vi,
   gloss_en: p.gloss_en,
   gloss_ko: p.gloss_ko,
-  ...p.example,
+  sentence: p.example.sentence,
+  translation_vi: p.example.translation_vi,
+  translation_en: p.example.translation_en,
+  translation_ko: p.example.translation_ko,
   ai_generated: true,
+  image_prompt: p.image_prompt,
+  example_image_prompt: p.example.image_prompt,
 });
 
 export const emptyPhraseDraft = (): PhraseDraft => ({
@@ -51,6 +62,8 @@ export const emptyPhraseDraft = (): PhraseDraft => ({
   translation_en: "",
   translation_ko: "",
   ai_generated: false,
+  image_prompt: null,
+  example_image_prompt: null,
 });
 
 export const draftFromPhrase = (p: Phrase): PhraseDraft => {
@@ -68,6 +81,8 @@ export const draftFromPhrase = (p: Phrase): PhraseDraft => {
     translation_en: ex?.translation_en ?? "",
     translation_ko: ex?.translation_ko ?? "",
     ai_generated: p.ai_generated,
+    image_prompt: p.image_prompt,
+    example_image_prompt: ex?.image_prompt ?? null,
   };
 };
 
@@ -82,6 +97,7 @@ export function phraseDraftToInput(
     gloss_vi: d.gloss_vi,
     gloss_en: d.gloss_en,
     gloss_ko: d.gloss_ko,
+    image_prompt: d.image_prompt,
     ai_generated: d.ai_generated,
     example:
       d.sentence.trim() === ""
@@ -93,6 +109,7 @@ export function phraseDraftToInput(
             translation_ko: d.translation_ko,
             level,
             ai_generated: d.ai_generated,
+            image_prompt: d.example_image_prompt,
           },
   };
   const result = phraseInputSchema.safeParse(input);

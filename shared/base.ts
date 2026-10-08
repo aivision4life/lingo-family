@@ -1,6 +1,7 @@
 // Base schemas shared by words and phrases (kept separate to avoid an import cycle).
 import { z } from "zod";
 import { exampleLevelSchema, type LearnLang } from "./enums";
+import { imageViewSchema } from "./image";
 
 export const TERM_MAX = 60;
 export const EXAMPLES_MAX = 5;
@@ -34,6 +35,8 @@ export const exampleInputSchema = z.object({
   translation_ko: z.string().trim(),
   level: exampleLevelSchema,
   ai_generated: z.boolean(),
+  /** Scene for the example's image (from enrichment); drawn lazily when first displayed. */
+  image_prompt: optionalText.optional().default(null),
 });
 export type ExampleInput = z.input<typeof exampleInputSchema>;
 
@@ -43,6 +46,8 @@ export const llmSentenceSchema = z.object({
   translation_vi: z.string(),
   translation_en: z.string(),
   translation_ko: z.string(),
+  /** English scene description for the sentence's image (IMAGE_PROMPT_RULES). */
+  image_prompt: z.string().min(1),
 });
 export type LlmSentence = z.infer<typeof llmSentenceSchema>;
 
@@ -56,5 +61,5 @@ export const exampleSchema = z.object({
   ai_generated: z.boolean(),
   /** R2 key of the sentence audio; null until generated. Play via `/api/media/{audio_key}`. */
   audio_key: z.string().nullable(),
-});
+}).extend(imageViewSchema.shape);
 

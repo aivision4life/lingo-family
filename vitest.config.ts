@@ -11,7 +11,10 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["{src,worker,shared,db}/**/*.test.ts"],
+    include: ["{src,worker,shared,db,benchmarks}/**/*.test.ts"],
     environment: "node",
+    // API tests run many requests against a local D1 (workerd); with all files in parallel a
+    // test can take more than the default 5 s on a busy machine.
+    testTimeout: 20_000,
   },
 });

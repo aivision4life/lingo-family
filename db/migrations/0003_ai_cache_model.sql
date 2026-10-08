@@ -1,0 +1,1 @@
+ALTER TABLE `ai_cache` ADD `model` text;

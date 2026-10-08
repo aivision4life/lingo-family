@@ -9,14 +9,14 @@ const valid = JSON.stringify(sampleEnrichment);
 describe("generateStructured", () => {
   it("returns parsed output and sends a JSON schema", async () => {
     const { client, requests } = fakeLlm([valid]);
-    expect(await generateStructured(client, llmEnrichmentSchema, prompt)).toEqual(sampleEnrichment);
+    expect(await generateStructured(client, llmEnrichmentSchema, prompt)).toEqual({ data: sampleEnrichment, model: "fake-model" });
     expect(requests).toHaveLength(1);
     expect(requests[0]!.jsonSchema).toMatchObject({ type: "object" });
   });
 
   it("retries once after invalid JSON", async () => {
     const { client, requests } = fakeLlm(["not json", valid]);
-    await expect(generateStructured(client, llmEnrichmentSchema, prompt)).resolves.toEqual(sampleEnrichment);
+    await expect(generateStructured(client, llmEnrichmentSchema, prompt)).resolves.toMatchObject({ data: sampleEnrichment });
     expect(requests).toHaveLength(2);
     expect(requests[1]!.user).toContain("not valid JSON");
   });

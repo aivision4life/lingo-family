@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router";
@@ -8,7 +9,7 @@ import { PageShell } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { duplicateIdOf, useCreateWord, useEnrichWord } from "@/features/words/api";
-import { wordErrorMessage } from "@/features/words/format";
+import { isRetryableAiError, wordErrorMessage } from "@/features/words/format";
 import { readLastAddLang, saveLastAddLang } from "@/features/words/langGuess";
 import { draftFromEnrichment, draftToCreateInput, emptyDraft, type DraftErrors, type WordDraft } from "@/features/words/draft";
 import { DraftFields } from "@/features/words/DraftFields";
@@ -115,17 +116,24 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
     }
   };
 
-  const errorNotice = (error: unknown) => {
+  // The typed term and the chosen language/level stay as they are, so "Try again" resends them.
+  const errorNotice = (error: unknown, onRetry?: () => void) => {
     const message = wordErrorMessage(error, t);
     if (!message) return null;
     const existingId = duplicateIdOf(error);
     return (
-      <div role="alert" className="flex flex-col gap-2 text-sm text-destructive">
+      <div role="alert" className="flex flex-col items-start gap-2 text-sm text-destructive">
         <p>{message}</p>
         {existingId && (
           <Link to={`/words/${existingId}`} className="font-medium underline underline-offset-4">
             {t("words.errors.openExisting")}
           </Link>
+        )}
+        {onRetry && isRetryableAiError(error) && (
+          <Button type="button" variant="outline" onClick={onRetry}>
+            <RefreshCw aria-hidden />
+            {t("common.retry")}
+          </Button>
         )}
       </div>
     );
@@ -145,7 +153,7 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
           onManual={manual}
           enriching={enrich.isPending}
           termError={termError ? t("words.errors.term") : undefined}
-          notice={errorNotice(enrich.error)}
+          notice={enrich.isPending ? null : errorNotice(enrich.error, aiFill)}
         />
       </PageShell>
     );

@@ -10,6 +10,8 @@ export type ExampleDraft = {
   translation_en: string;
   translation_ko: string;
   ai_generated: boolean;
+  /** From enrichment (not shown in the form); the sentence image is drawn lazily from it. */
+  image_prompt: string | null;
 };
 
 export type WordDraft = {
@@ -21,10 +23,12 @@ export type WordDraft = {
   hanja: string;
   han_viet: string;
   emoji: string;
+  /** From enrichment (not shown in the form; editable later with "Redraw"). */
+  image_prompt: string | null;
   examples: ExampleDraft[];
 };
 
-export type DraftTextField = Exclude<keyof WordDraft, "pos" | "examples">;
+export type DraftTextField = Exclude<keyof WordDraft, "pos" | "examples" | "image_prompt">;
 
 /** Field path → true, e.g. "gloss_vi" or "examples.0.sentence". */
 export type DraftErrors = Record<string, true>;
@@ -39,6 +43,7 @@ export const emptyExample = (): ExampleDraft => ({
   translation_en: "",
   translation_ko: "",
   ai_generated: false,
+  image_prompt: null,
 });
 
 export const emptyDraft = (): WordDraft => ({
@@ -50,6 +55,7 @@ export const emptyDraft = (): WordDraft => ({
   hanja: "",
   han_viet: "",
   emoji: "",
+  image_prompt: null,
   examples: [emptyExample()],
 });
 
@@ -63,6 +69,7 @@ export function draftFromEnrichment(e: Enrichment): WordDraft {
     hanja: e.hanja ?? "",
     han_viet: e.han_viet ?? "",
     emoji: e.emoji ?? "",
+    image_prompt: e.image_prompt,
     examples: e.examples.map((ex) => ({ ...ex, key: newKey(), ai_generated: true })),
   };
 }
@@ -91,6 +98,7 @@ export function draftToCreateInput(
     hanja: pick("hanja"),
     han_viet: pick("han_viet"),
     emoji: d.emoji,
+    image_prompt: d.image_prompt,
     ai_generated: m.aiFilled,
     // Blank example rows are dropped instead of failing validation.
     examples: d.examples

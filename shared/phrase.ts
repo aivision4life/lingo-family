@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { exampleInputSchema, exampleSchema, llmSentenceSchema, optionalText, termSchema } from "./base";
 import { exampleLevelSchema, learnLangSchema } from "./enums";
+import { imageViewSchema } from "./image";
 
 /** At most 3 phrases are suggested / saved at once (SPEC F2). */
 export const PHRASES_MAX = 3;
@@ -13,6 +14,8 @@ export const llmPhraseSchema = z.object({
   gloss_vi: z.string().min(1),
   gloss_en: z.string().min(1),
   gloss_ko: z.string().min(1),
+  /** English scene description for the phrase's image (IMAGE_PROMPT_RULES). */
+  image_prompt: z.string().min(1),
   example: llmSentenceSchema,
 });
 export type LlmPhrase = z.infer<typeof llmPhraseSchema>;
@@ -25,6 +28,8 @@ export const phraseInputSchema = z.object({
   gloss_en: z.string().trim().min(1),
   gloss_ko: z.string().trim().min(1),
   emoji: optionalText.optional().default(null),
+  /** From the AI suggestion; null when typed by hand (then no image is drawn automatically). */
+  image_prompt: optionalText.optional().default(null),
   ai_generated: z.boolean(),
   /** One example sentence, or null when typed by hand without one. */
   example: exampleInputSchema.nullable(),
@@ -84,7 +89,7 @@ export const phraseSchema = z.object({
   ai_generated: z.boolean(),
   verified: z.boolean(),
   examples: z.array(exampleSchema),
-});
+}).extend(imageViewSchema.shape);
 export type Phrase = z.infer<typeof phraseSchema>;
 
 /** A phrase row in the library (GET /api/phrases). */

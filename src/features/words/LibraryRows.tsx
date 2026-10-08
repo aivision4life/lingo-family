@@ -5,6 +5,7 @@ import type { PhraseSummary } from "@shared/phrase";
 import type { WordSummary } from "@shared/word";
 import { LangText } from "@/components/LangText";
 import { SpeakButton } from "@/features/audio/AudioButtons";
+import { ItemImage } from "@/features/images/ItemImage";
 import { AiBadge } from "./bits";
 import { glossFor } from "./format";
 
@@ -17,9 +18,7 @@ export function WordRow({ w, glossLang }: { w: WordSummary; glossLang: UiLang })
   return (
     <li className="flex items-center pr-1">
       <Link to={`/words/${w.id}`} className={ROW}>
-        <span className="w-10 text-center text-3xl" aria-hidden>
-          {w.emoji}
-        </span>
+        <ItemImage kind="word" id={w.id} image={w} alt={glossFor(w, glossLang)} emoji={w.emoji} size="thumb" />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-baseline gap-2">
             <LangText lang={w.lang} className="truncate text-xl font-semibold">
@@ -49,6 +48,7 @@ export function PhraseRow({ p, glossLang }: { p: PhraseSummary; glossLang: UiLan
   return (
     <li className="flex items-center pr-1">
       <Link to={`/words/${p.word_id}`} className={ROW}>
+        <ItemImage kind="phrase" id={p.id} image={p} alt={glossFor(p, glossLang)} emoji={p.emoji} size="thumb" />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-baseline gap-2">
             <LangText lang={p.lang} className="truncate text-xl font-semibold">

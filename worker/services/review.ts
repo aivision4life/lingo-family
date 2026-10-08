@@ -177,6 +177,8 @@ const toQueueItem = ({ card, word, phrase }: CandidateRow): QueueItem => ({
         hanja: null,
         han_viet: null,
         audio_key: phrase.audio_key,
+        image_key: phrase.image_key,
+        image_status: phrase.image_status,
       }
     : {
         kind: "word",
@@ -193,6 +195,8 @@ const toQueueItem = ({ card, word, phrase }: CandidateRow): QueueItem => ({
         hanja: word.hanja,
         han_viet: word.han_viet,
         audio_key: word.audio_key,
+        image_key: word.image_key,
+        image_status: word.image_status,
       },
 });
 

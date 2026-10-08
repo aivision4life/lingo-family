@@ -1,5 +1,5 @@
 import { and, count, desc, eq, or, sql, type SQL } from "drizzle-orm";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { LearnLang } from "../../shared/enums";
 import {
@@ -18,18 +18,38 @@ import { cards, examples, words } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { requireAdult } from "../lib/access";
 import { runAiTask } from "../lib/aiTask";
+import { runInBackground } from "../lib/background";
 import { zv } from "../lib/validate";
 import { generateWordAudio } from "../services/audio";
 import { enrichWithCache } from "../services/enrich";
+import { drawClaimedItems, initialImageFields } from "../services/imageJobs";
+import type { AiRunner } from "../services/imageModels";
+import { imageView } from "../services/imageStore";
 import type { LlmClient } from "../services/llm";
-import { loadPhrases, savePhrases, wordOnlyExamples } from "../services/phrases";
+import { loadPhrases, savePhrases, toExample, wordOnlyExamples } from "../services/phrases";
 import type { TtsClient } from "../services/tts";
 
 type Db = ReturnType<typeof getDb>;
 type WordRow = typeof words.$inferSelect;
 export type MakeLlm = (env: Env) => LlmClient | null;
 export type MakeTts = (env: Env) => TtsClient | null;
-export type ContentDeps = { makeLlm: MakeLlm; makeTts: MakeTts };
+export type MakeImageAi = (env: Env) => AiRunner | null;
+export type ContentDeps = { makeLlm: MakeLlm; makeTts: MakeTts; makeImageAi: MakeImageAi };
+
+/** Workers AI binding (always remote, see wrangler.jsonc); null when missing. */
+export const defaultImageAi: MakeImageAi = (env) => (env.AI as unknown as AiRunner | undefined) ?? null;
+
+/** Draws the word / phrases claimed while saving, after the response (waitUntil). */
+export function drawAfterSave(
+  c: Context<AppEnv>,
+  makeImageAi: MakeImageAi,
+  profileId: string,
+  items: { kind: "word" | "phrase"; id: string }[],
+) {
+  if (items.length === 0) return;
+  const deps = { DB: c.env.DB, bucket: c.env.MEDIA, ai: makeImageAi(c.env), profileId };
+  runInBackground(c, drawClaimedItems(deps, items));
+}
 
 async function findDuplicate(db: Db, lang: LearnLang, term: string) {
   const key = duplicateKey(lang, term);
@@ -53,6 +73,7 @@ const toSummary = (w: WordRow, phrase_count: number): WordSummary => ({
   ai_generated: w.ai_generated,
   verified: w.verified,
   phrase_count,
+  ...imageView(w),
 });
 
 /** Escapes LIKE wildcards so user input is matched literally. */
@@ -60,7 +81,7 @@ export const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c
 
 const idParam = zv("param", z.object({ id: z.string().min(1) }));
 
-export const wordRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
+export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
   new Hono<AppEnv>()
     .post("/enrich", zv("json", enrichRequestSchema), async (c) => {
       const db = getDb(c.env);
@@ -90,20 +111,30 @@ export const wordRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
       if (dup) return c.json({ error: WORD_ERRORS.duplicate, existing_id: dup.id }, 409);
 
       const id = crypto.randomUUID();
-      const insertWord = db.insert(words).values({ ...fields, id, verified: false, created_by_profile: profile_id });
+      const imagesOn = makeImageAi(c.env) !== null;
+      const image = initialImageFields(fields.image_prompt, imagesOn);
+      const insertWord = db
+        .insert(words)
+        .values({ ...fields, ...image, id, verified: false, created_by_profile: profile_id });
       // Word + examples in one D1 batch (atomic).
       if (exampleInputs.length > 0) {
         await db.batch([insertWord, db.insert(examples).values(exampleInputs.map((ex) => ({ ...ex, word_id: id })))]);
       } else {
         await insertWord;
       }
-      const { skipped } = await savePhrases(db, {
+      const { skipped, pendingImages } = await savePhrases(db, {
         wordId: id,
         wordTerm: fields.term,
         lang: fields.lang,
         profileId: profile_id,
         inputs: phraseInputs,
+        imagesOn,
       });
+      // Pictures of the word and the selected phrases are drawn in the background (SPEC F3).
+      drawAfterSave(c, makeImageAi, profile_id, [
+        ...(image.image_status === "pending" ? [{ kind: "word" as const, id }] : []),
+        ...pendingImages.map((pid) => ({ kind: "phrase" as const, id: pid })),
+      ]);
 
       // Audio for the word, phrases and examples. TTS problems never fail the save: items stay
       // without audio and the client offers "Generate audio" later.
@@ -165,7 +196,7 @@ export const wordRoutes = ({ makeLlm, makeTts }: ContentDeps) =>
         han_viet: w.han_viet,
         notes: w.notes,
         created_at: w.created_at.getTime(),
-        examples: exs.map(({ word_id: _w, phrase_id: _p, ...ex }) => ex),
+        examples: exs.map(toExample),
         phrases: phs,
         card_count: cardRow?.n ?? 0,
       };

@@ -1,10 +1,10 @@
-import { Plus, Sparkles } from "lucide-react";
+import { Plus, RefreshCw, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ExampleLevel, LearnLang } from "@shared/enums";
 import type { SkippedPhrase } from "@shared/phrase";
 import { Button } from "@/components/ui/button";
-import { wordErrorMessage } from "@/features/words/format";
+import { isRetryableAiError, wordErrorMessage } from "@/features/words/format";
 import { useSavePhrases, useSuggestPhrases } from "./api";
 import {
   draftFromSuggestion,
@@ -86,7 +86,15 @@ export function PhraseAdder({ wordId, lang, profileId, level }: Props) {
         </div>
       )}
       {suggest.isError && mode === "idle" && (
-        <p role="alert" className="text-sm text-destructive">{wordErrorMessage(suggest.error, t)}</p>
+        <div role="alert" className="flex flex-col items-start gap-2 text-sm text-destructive">
+          <p>{wordErrorMessage(suggest.error, t)}</p>
+          {isRetryableAiError(suggest.error) && (
+            <Button type="button" variant="outline" onClick={startSuggest}>
+              <RefreshCw aria-hidden />
+              {t("common.retry")}
+            </Button>
+          )}
+        </div>
       )}
 
       {mode === "suggest" && drafts.length === 0 && <p className="text-muted-foreground">{t("phrases.noSuggestions")}</p>}

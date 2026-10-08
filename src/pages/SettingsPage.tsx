@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
+import { BackfillCard } from "@/features/images/BackfillCard";
+import { UsageCard } from "@/features/images/UsageCard";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useUpdateProfile } from "@/features/profiles/api";
 import { profileErrorMessage } from "@/features/profiles/errors";
@@ -58,6 +60,8 @@ export function SettingsPage() {
       <LinkButton to="/profiles" variant="outline">
         {t("pages.settings.manageProfiles")}
       </LinkButton>
+      <UsageCard profileId={profile.id} />
+      <BackfillCard profileId={profile.id} />
     </PageShell>
   );
 }

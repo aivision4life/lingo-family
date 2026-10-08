@@ -15,6 +15,8 @@ import {
 import {
   CARD_TYPES,
   EXAMPLE_LEVELS,
+  IMAGE_SOURCES,
+  IMAGE_STATUSES,
   LEARN_LANGS,
   UI_LANGS,
   USAGE_SERVICES,
@@ -31,6 +33,22 @@ const createdAt = () =>
     .notNull()
     .$defaultFn(() => new Date());
 const bool = (name: string) => integer(name, { mode: "boolean" });
+
+/** Image of a study item (words, phrases, examples; SPEC F3, M1.8). */
+const imageColumns = () => ({
+  /** R2 key (images/ai/... or images/upload/...); set when the image is ready. */
+  image_key: text("image_key"),
+  /** English scene description from Gemini; the fixed style is appended when drawing. */
+  image_prompt: text("image_prompt"),
+  image_source: text("image_source", { enum: IMAGE_SOURCES }),
+  image_status: text("image_status", { enum: IMAGE_STATUSES }).notNull().default("none"),
+  /** Part of the AI image key: "0" for the first drawing, a random value for each Redraw. */
+  image_nonce: text("image_nonce"),
+  /** When drawing was claimed; a pending item older than 2 minutes counts as stalled. */
+  image_requested_at: timestamp("image_requested_at"),
+  /** Model that actually drew the image (null for uploads), for fallback statistics. */
+  image_model: text("image_model"),
+});
 
 export const profiles = sqliteTable("profiles", {
   id: id(),
@@ -63,7 +81,7 @@ export const words = sqliteTable(
     hanja: text("hanja"),
     han_viet: text("han_viet"),
     emoji: text("emoji"),
-    image_key: text("image_key"),
+    ...imageColumns(),
     /** Null until TTS audio has been generated. */
     audio_key: text("audio_key"),
     notes: text("notes"),
@@ -99,6 +117,7 @@ export const phrases = sqliteTable(
     gloss_en: text("gloss_en").notNull(),
     gloss_ko: text("gloss_ko").notNull(),
     emoji: text("emoji"),
+    ...imageColumns(),
     /** Null until TTS audio has been generated. */
     audio_key: text("audio_key"),
     ai_generated: bool("ai_generated").notNull().default(false),
@@ -131,6 +150,7 @@ export const examples = sqliteTable(
     audio_key: text("audio_key"),
     level: text("level", { enum: EXAMPLE_LEVELS }).notNull(),
     ai_generated: bool("ai_generated").notNull().default(false),
+    ...imageColumns(),
   },
   (t) => [index("examples_word_idx").on(t.word_id), index("examples_phrase_idx").on(t.phrase_id)],
 );
@@ -304,6 +324,8 @@ export const word_chars = sqliteTable(
 export const ai_cache = sqliteTable("ai_cache", {
   key: text("key").primaryKey(),
   response_json: text("response_json", { mode: "json" }).$type<unknown>().notNull(),
+  /** Model that actually answered (LLM_MODEL, or LLM_FALLBACK_MODEL when the primary was busy). */
+  model: text("model"),
   created_at: createdAt(),
 });
 

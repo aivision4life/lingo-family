@@ -9,6 +9,7 @@ import {
   termSchema,
 } from "./base";
 import { exampleLevelSchema, learnLangSchema } from "./enums";
+import { imageViewSchema } from "./image";
 import { llmPhraseSchema, PHRASES_MAX, phraseInputSchema, phraseSchema, skippedPhraseSchema } from "./phrase";
 
 // Base text/example schemas live in ./base (shared with ./phrase); re-exported for existing imports.
@@ -45,6 +46,8 @@ export const llmEnrichmentSchema = z.object({
   hanja: z.string(),
   han_viet: z.string(),
   emoji: z.string(),
+  /** English scene description for the word's image (IMAGE_PROMPT_RULES). */
+  image_prompt: z.string().min(1),
   // SPEC: 2 examples per word (a 3rd one is tolerated and dropped by the server).
   examples: z.array(llmSentenceSchema).min(2).max(3),
   phrases: z.array(llmPhraseSchema).min(1).max(PHRASES_MAX),
@@ -92,6 +95,8 @@ export const wordCreateSchema = z.object({
   hanja: optionalText,
   han_viet: optionalText,
   emoji: optionalText,
+  /** From enrichment; null for words typed by hand (then no image is drawn automatically). */
+  image_prompt: optionalText.optional().default(null),
   ai_generated: z.boolean(),
   examples: z.array(exampleInputSchema).max(EXAMPLES_MAX),
   /** Ticked phrases saved together with the word (duplicates are skipped). */
@@ -114,7 +119,7 @@ export const wordSummarySchema = z.object({
   verified: z.boolean(),
   /** Number of phrases built on this word. */
   phrase_count: z.number().int().nonnegative(),
-});
+}).extend(imageViewSchema.shape);
 export type WordSummary = z.infer<typeof wordSummarySchema>;
 export const wordListSchema = z.array(wordSummarySchema);
 
@@ -146,7 +151,10 @@ export const WORD_ERRORS = {
   kidForbidden: "kid_forbidden",
   quotaExceeded: "quota_exceeded",
   aiNotConfigured: "ai_not_configured",
+  /** The AI is busy (after retries and the fallback model): try again later. */
   aiUnavailable: "ai_unavailable",
+  /** The AI provider refused the request (key / model / request problem): retrying will not help. */
+  aiRejected: "ai_rejected",
   aiInvalidOutput: "ai_invalid_output",
   ttsNotConfigured: "tts_not_configured",
 } as const;

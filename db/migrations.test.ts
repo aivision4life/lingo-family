@@ -18,7 +18,7 @@ async function apply(file: string) {
 const count = async (sql: string) => (await DB.prepare(sql).first<{ n: number }>())?.n;
 
 beforeAll(async () => {
-  proxy = await getPlatformProxy<Env>({ persist: false });
+  proxy = await getPlatformProxy<Env>({ persist: false, remoteBindings: false });
   DB = proxy.env.DB;
   await apply("0000_init.sql");
 
@@ -188,5 +188,29 @@ describe("migration 0002_phrases", () => {
         { id: "l-ph", card_id: null, lang: "ko" },
       ]);
     });
+  });
+});
+
+describe("migrations 0003_ai_cache_model and 0004_images", () => {
+  beforeAll(async () => {
+    await apply("0003_ai_cache_model.sql");
+    await apply("0004_images.sql");
+  });
+
+  it("keeps existing rows; old words, phrases and examples start with image_status 'none'", async () => {
+    expect(await count("SELECT count(*) AS n FROM words")).toBe(1); // w-ko2 (w-ko was deleted in the 0002 cascade test)
+    for (const table of ["words", "phrases", "examples"]) {
+      const bad = await count(`SELECT count(*) AS n FROM ${table} WHERE image_status != 'none' OR image_key IS NOT NULL`);
+      expect(bad).toBe(0);
+    }
+    const cols = await DB.prepare("SELECT name FROM pragma_table_info('examples') WHERE name LIKE 'image_%' ORDER BY name").all<{ name: string }>();
+    expect(cols.results.map((c) => c.name)).toEqual([
+      "image_key", "image_model", "image_nonce", "image_prompt", "image_requested_at", "image_source", "image_status",
+    ]);
+    expect(await count("SELECT count(*) AS n FROM pragma_table_info('ai_cache') WHERE name = 'model'")).toBe(1);
+  });
+
+  it("keeps the phrase triggers (no table was rebuilt)", async () => {
+    expect(await count("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'")).toBe(5);
   });
 });

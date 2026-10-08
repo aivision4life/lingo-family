@@ -11,10 +11,14 @@ import { PhrasesSection } from "@/features/phrases/PhrasesSection";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { DeleteWordButton } from "@/features/words/DeleteWordButton";
 import { useWord } from "@/features/words/api";
+import { ImageTools } from "@/features/images/ImageTools";
+import { ItemImage } from "@/features/images/ItemImage";
 import { AiBadge } from "@/features/words/bits";
+import { ExampleItem } from "@/features/words/ExampleItem";
+import { glossFor } from "@/features/words/format";
 import { UI_LANG_NATIVE_NAMES } from "@/i18n";
 
-/** Screen 6 — read-only word detail (audio, images and editing come later). */
+/** Screen 6 — word detail: picture (Redraw / My photo), audio, meanings, examples, phrases. */
 export function WordDetailPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
@@ -36,15 +40,15 @@ function Detail({ w }: { w: WordDetail }) {
   // Order the meanings so the profile's gloss language comes first.
   const glossLangs = [...UI_LANGS].sort((a, b) => Number(b === profile?.gloss_lang) - Number(a === profile?.gloss_lang));
   const firstChar = w.hanja ? [...w.hanja][0] : undefined;
+  const glossLang = profile?.gloss_lang ?? "vi";
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex flex-col items-center gap-2">
+        <ItemImage kind="word" id={w.id} image={w} alt={glossFor(w, glossLang)} emoji={w.emoji} size="large" />
+        <ImageTools kind="word" id={w.id} image={w} suggestion={w.gloss_en} />
+      </div>
       <div className="flex items-center gap-4">
-        {w.emoji && (
-          <span className="text-6xl" aria-hidden>
-            {w.emoji}
-          </span>
-        )}
         <div className="flex min-w-0 flex-col">
           <span className="flex items-center gap-1">
             <LangText lang={w.lang} className="text-5xl font-bold">
@@ -106,17 +110,7 @@ function Detail({ w }: { w: WordDetail }) {
           <ul className="flex flex-col gap-3">
             {w.examples.map((ex, i) => (
               <li key={ex.id} className="rounded-lg border p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <LangText lang={w.lang} className="block text-xl">
-                    {ex.sentence}
-                  </LangText>
-                  <SpeakButton audioKey={ex.audio_key} label={t("audio.playExample", { n: i + 1 })} />
-                </div>
-                {UI_LANGS.filter((l) => ex[`translation_${l}`]).map((l) => (
-                  <p key={l} lang={l} className="text-sm text-muted-foreground">
-                    {ex[`translation_${l}`]}
-                  </p>
-                ))}
+                <ExampleItem ex={ex} lang={w.lang} glossLang={glossLang} audioLabel={t("audio.playExample", { n: i + 1 })} />
               </li>
             ))}
           </ul>

@@ -1,0 +1,190 @@
+{
+  "generated_at": "2026-10-08T14:58:17.357Z",
+  "llm_model": "gemini-3.8-flash",
+  "llm_fallback_model": "gemini-3.5-flash-lite",
+  "style": "flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children",
+  "style_version": "style-v1",
+  "size": 512,
+  "seed": null,
+  "models": [
+    {
+      "label": "flux-1-schnell",
+      "id": "@cf/black-forest-labs/flux-1-schnell",
+      "pricing": "4.80 per 512×512 output tile + 9.60 per step (4 steps)"
+    },
+    {
+      "label": "flux-2-klein-4b",
+      "id": "@cf/black-forest-labs/flux-2-klein-4b",
+      "pricing": "26.05 per 512×512 output tile (+5.37 per input-image tile, none for text-to-image)"
+    }
+  ],
+  "items": [
+    {
+      "id": "1-sagwa",
+      "kind": "word",
+      "lang": "ko",
+      "level": "beginner",
+      "text": "사과",
+      "note": "concrete noun",
+      "image_prompt": "A bright red apple sitting on a wooden table next to a small knife.",
+      "full_prompt": "A bright red apple sitting on a wooden table next to a small knife. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children",
+      "prompt_model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": "2-huimang",
+      "kind": "word",
+      "lang": "ko",
+      "level": "beginner",
+      "text": "희망",
+      "note": "abstract word",
+      "image_prompt": "A child stands on a grassy hill at sunrise, holding a glowing paper lantern and looking up at the bright morning sky with a big smile.",
+      "full_prompt": "A child stands on a grassy hill at sunrise, holding a glowing paper lantern and looking up at the bright morning sky with a big smile. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children",
+      "prompt_model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": "3-hoeui",
+      "kind": "phrase",
+      "lang": "ko",
+      "level": "intermediate",
+      "text": "회의를 하다",
+      "note": "phrase",
+      "image_prompt": "Three adults sitting around a wooden table in an office, looking at documents and discussing while pointing at a whiteboard with charts.",
+      "full_prompt": "Three adults sitting around a wooden table in an office, looking at documents and discussing while pointing at a whiteboard with charts. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children",
+      "prompt_model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": "4-meeting",
+      "kind": "sentence",
+      "lang": "ko",
+      "level": "intermediate",
+      "text": "저는 오후 3시에 고객과 회의가 있어요",
+      "note": "sentence, office",
+      "image_prompt": "A person sitting at a desk shaking hands with a client in an office, while a wall clock shows three o'clock.",
+      "full_prompt": "A person sitting at a desk shaking hands with a client in an office, while a wall clock shows three o'clock. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children",
+      "prompt_model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": "5-goyangi",
+      "kind": "word",
+      "lang": "ko",
+      "level": "kid",
+      "text": "고양이",
+      "note": "word for kids",
+      "image_prompt": "A cute fluffy cat sitting on a soft yellow rug and looking up curiously with big round eyes",
+      "full_prompt": "A cute fluffy cat sitting on a soft yellow rug and looking up curiously with big round eyes. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children",
+      "prompt_model": "gemini-3.5-flash-lite"
+    }
+  ],
+  "cells": {
+    "1-sagwa": {
+      "flux-1-schnell": {
+        "status": "ok",
+        "file": "images/1-sagwa__flux-1-schnell.jpg",
+        "ms": 3135,
+        "bytes": 272178,
+        "width": 1024,
+        "height": 1024,
+        "neurons": 57.6,
+        "full_prompt": "A bright red apple sitting on a wooden table next to a small knife. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      },
+      "flux-2-klein-4b": {
+        "status": "ok",
+        "file": "images/1-sagwa__flux-2-klein-4b.jpg",
+        "ms": 8927,
+        "bytes": 84114,
+        "width": 512,
+        "height": 512,
+        "neurons": 26.05,
+        "full_prompt": "A bright red apple sitting on a wooden table next to a small knife. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      }
+    },
+    "2-huimang": {
+      "flux-1-schnell": {
+        "status": "ok",
+        "file": "images/2-huimang__flux-1-schnell.jpg",
+        "ms": 2202,
+        "bytes": 290826,
+        "width": 1024,
+        "height": 1024,
+        "neurons": 57.6,
+        "full_prompt": "A child stands on a grassy hill at sunrise, holding a glowing paper lantern and looking up at the bright morning sky with a big smile. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      },
+      "flux-2-klein-4b": {
+        "status": "ok",
+        "file": "images/2-huimang__flux-2-klein-4b.jpg",
+        "ms": 25696,
+        "bytes": 86276,
+        "width": 512,
+        "height": 512,
+        "neurons": 26.05,
+        "full_prompt": "A child stands on a grassy hill at sunrise, holding a glowing paper lantern and looking up at the bright morning sky with a big smile. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      }
+    },
+    "3-hoeui": {
+      "flux-1-schnell": {
+        "status": "ok",
+        "file": "images/3-hoeui__flux-1-schnell.jpg",
+        "ms": 2229,
+        "bytes": 344968,
+        "width": 1024,
+        "height": 1024,
+        "neurons": 57.6,
+        "full_prompt": "Three adults sitting around a wooden table in an office, looking at documents and discussing while pointing at a whiteboard with charts. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      },
+      "flux-2-klein-4b": {
+        "status": "ok",
+        "file": "images/3-hoeui__flux-2-klein-4b.jpg",
+        "ms": 14222,
+        "bytes": 110930,
+        "width": 512,
+        "height": 512,
+        "neurons": 26.05,
+        "full_prompt": "Three adults sitting around a wooden table in an office, looking at documents and discussing while pointing at a whiteboard with charts. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      }
+    },
+    "4-meeting": {
+      "flux-1-schnell": {
+        "status": "ok",
+        "file": "images/4-meeting__flux-1-schnell.jpg",
+        "ms": 2559,
+        "bytes": 267544,
+        "width": 1024,
+        "height": 1024,
+        "neurons": 57.6,
+        "full_prompt": "A person sitting at a desk shaking hands with a client in an office, while a wall clock shows three o'clock. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      },
+      "flux-2-klein-4b": {
+        "status": "ok",
+        "file": "images/4-meeting__flux-2-klein-4b.jpg",
+        "ms": 33277,
+        "bytes": 101466,
+        "width": 512,
+        "height": 512,
+        "neurons": 26.05,
+        "full_prompt": "A person sitting at a desk shaking hands with a client in an office, while a wall clock shows three o'clock. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      }
+    },
+    "5-goyangi": {
+      "flux-1-schnell": {
+        "status": "ok",
+        "file": "images/5-goyangi__flux-1-schnell.jpg",
+        "ms": 2149,
+        "bytes": 260922,
+        "width": 1024,
+        "height": 1024,
+        "neurons": 57.6,
+        "full_prompt": "A cute fluffy cat sitting on a soft yellow rug and looking up curiously with big round eyes. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      },
+      "flux-2-klein-4b": {
+        "status": "ok",
+        "file": "images/5-goyangi__flux-2-klein-4b.jpg",
+        "ms": 14441,
+        "bytes": 77559,
+        "width": 512,
+        "height": 512,
+        "neurons": 26.05,
+        "full_prompt": "A cute fluffy cat sitting on a soft yellow rug and looking up curiously with big round eyes. flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children"
+      }
+    }
+  }
+}

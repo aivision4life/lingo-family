@@ -6,7 +6,11 @@ import { LangText } from "@/components/LangText";
 import { Button } from "@/components/ui/button";
 import { SpeakButton } from "@/features/audio/AudioButtons";
 import { playAudio } from "@/features/audio/player";
+import { ItemImage } from "@/features/images/ItemImage";
 import { glossFor } from "@/features/words/format";
+
+/** Queue items carry only the image key and status. */
+const NO_IMAGE_META = { image_prompt: null, image_source: null, image_requested_at: null };
 
 type Props = { item: QueueItem; flipped: boolean; glossLang: UiLang };
 
@@ -46,11 +50,15 @@ export function ReviewCardView({ item, flipped, glossLang }: Props) {
 
       {flipped && (
         <div className="flex flex-col items-center gap-2 border-t pt-4">
-          {word.emoji && (
-            <span className="text-5xl" aria-hidden>
-              {word.emoji}
-            </span>
-          )}
+          <ItemImage
+            kind={word.kind}
+            id={word.id}
+            image={{ ...NO_IMAGE_META, image_key: word.image_key, image_status: word.image_status }}
+            alt={glossFor(word, glossLang)}
+            emoji={word.emoji}
+            size="large"
+            className="max-w-64"
+          />
           <span className="text-lg text-muted-foreground">{word.reading}</span>
           {word.kind === "phrase" && word.root_term && (
             <span className="text-sm text-muted-foreground">

@@ -30,6 +30,7 @@ const cleanSentence = (lang: LearnLang, ex: LlmSentence): LlmSentence => ({
   translation_vi: ex.translation_vi.trim(),
   translation_en: lang === "en" ? "" : ex.translation_en.trim(),
   translation_ko: lang === "ko" ? "" : ex.translation_ko.trim(),
+  image_prompt: ex.image_prompt.trim(),
 });
 
 /** Trims phrases, drops ones equal to the word or to each other, keeps at most 3. */
@@ -46,6 +47,7 @@ export function finalizePhrases(lang: LearnLang, term: string, raw: LlmPhrase[])
       gloss_vi: p.gloss_vi.trim(),
       gloss_en: p.gloss_en.trim(),
       gloss_ko: p.gloss_ko.trim(),
+      image_prompt: p.image_prompt.trim(),
       example: cleanSentence(lang, p.example),
     });
   }
@@ -60,6 +62,7 @@ export function finalizeEnrichment(lang: LearnLang, term: string, raw: LlmEnrich
     hanja: isEnglish ? null : orNull(raw.hanja),
     han_viet: isEnglish ? null : orNull(raw.han_viet),
     emoji: orNull(raw.emoji),
+    image_prompt: raw.image_prompt.trim(),
     examples: raw.examples.slice(0, WORD_EXAMPLES).map((ex) => cleanSentence(lang, ex)),
     phrases: finalizePhrases(lang, term, raw.phrases),
   };
@@ -73,20 +76,21 @@ async function cachedTask<T>(o: {
   key: string;
   /** Validates a cached value (invalid or outdated entries are regenerated). */
   cachedSchema: z.ZodType<T>;
-  /** Runs only on a cache miss, right before the LLM call (quota check); may throw. */
+  /** Runs only on a cache miss, right before the LLM call (quota check, counted once); may throw. */
   beforeLlmCall: () => Promise<void>;
-  produce: () => Promise<T>;
+  /** Returns the value and the model that actually answered (primary or fallback). */
+  produce: () => Promise<{ value: T; model: string }>;
 }): Promise<{ value: T; cached: boolean }> {
   const hit = await o.db.select().from(ai_cache).where(eq(ai_cache.key, o.key)).get();
   const cached = hit && o.cachedSchema.safeParse(hit.response_json);
   if (cached?.success) return { value: cached.data, cached: true };
 
   await o.beforeLlmCall();
-  const value = await o.produce();
+  const { value, model } = await o.produce();
   await o.db
     .insert(ai_cache)
-    .values({ key: o.key, response_json: value })
-    .onConflictDoUpdate({ target: ai_cache.key, set: { response_json: value, created_at: new Date() } });
+    .values({ key: o.key, response_json: value, model })
+    .onConflictDoUpdate({ target: ai_cache.key, set: { response_json: value, model, created_at: new Date() } });
   return { value, cached: false };
 }
 
@@ -98,12 +102,10 @@ export async function enrichWithCache({ db, llm, input, beforeLlmCall }: Options
     key: await enrichCacheKey(llm.model, input),
     cachedSchema: enrichmentSchema,
     beforeLlmCall,
-    produce: async () =>
-      finalizeEnrichment(
-        input.lang,
-        input.term,
-        await generateStructured(llm, llmEnrichmentSchema, buildEnrichPrompt(input.lang, input.term, input.level)),
-      ),
+    produce: async () => {
+      const { data, model } = await generateStructured(llm, llmEnrichmentSchema, buildEnrichPrompt(input.lang, input.term, input.level));
+      return { value: finalizeEnrichment(input.lang, input.term, data), model };
+    },
   });
   return { enrichment: value, cached };
 }
@@ -117,12 +119,12 @@ export async function suggestPhrasesWithCache({ db, llm, input, beforeLlmCall }:
     cachedSchema: z.object({ phrases: z.array(llmPhraseSchema).max(PHRASES_MAX) }),
     beforeLlmCall,
     produce: async () => {
-      const raw = await generateStructured(
+      const { data: raw, model } = await generateStructured(
         llm,
         llmPhraseSuggestionsSchema,
         buildPhrasePrompt(input.lang, input.term, input.level),
       );
-      return { phrases: finalizePhrases(input.lang, input.term, raw.phrases) };
+      return { value: { phrases: finalizePhrases(input.lang, input.term, raw.phrases) }, model };
     },
   });
   return { phrases: value.phrases, cached };

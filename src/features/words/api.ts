@@ -9,7 +9,10 @@ import {
   wordListSchema,
   type EnrichRequest,
   type WordCreate,
+  type WordDetail,
+  type WordSummary,
 } from "@shared/word";
+import { pollWhilePending } from "@/features/images/api";
 import { api } from "@/lib/api";
 
 const WORDS_KEY = ["words"] as const;
@@ -24,13 +27,19 @@ export function useWords(filter: { lang?: LearnLang; q?: string }) {
     queryFn: () => api("GET", `/words${qs ? `?${qs}` : ""}`, wordListSchema),
     // Keep showing the old list while a new search loads (no flicker while typing).
     placeholderData: keepPreviousData,
+    // Thumbnails being drawn in the background appear without a manual refresh.
+    refetchInterval: pollWhilePending((list: WordSummary[]) => list),
   });
 }
+
+/** Every image on Word detail: the word, its examples, its phrases and their examples. */
+const detailImages = (w: WordDetail) => [w, ...w.examples, ...w.phrases.flatMap((p) => [p, ...p.examples])];
 
 export function useWord(id: string) {
   return useQuery({
     queryKey: [...WORDS_KEY, "detail", id],
     queryFn: () => api("GET", `/words/${id}`, wordDetailSchema),
+    refetchInterval: pollWhilePending(detailImages),
   });
 }
 

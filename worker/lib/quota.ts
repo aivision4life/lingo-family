@@ -28,3 +28,30 @@ export async function consumeQuota(
     .returning({ count: usage_daily.count });
   return rows.length > 0;
 }
+
+/**
+ * Image quota, two tiers (SPEC F3): at most `perProfile` images for this profile **and** at most
+ * `familyCap` images for all profiles together today. One atomic statement, so two parallel
+ * requests can never both take the last unit. Returns false (and counts nothing) when either
+ * limit is reached.
+ */
+export async function consumeImageQuota(
+  DB: D1Database,
+  profileId: string,
+  perProfile: number,
+  familyCap: number,
+  now = new Date(),
+): Promise<boolean> {
+  const date = usageDate(now);
+  const familyUsed = "(SELECT coalesce(sum(count), 0) FROM usage_daily WHERE date = ?1 AND service = 'image')";
+  const row = await DB.prepare(
+    `INSERT INTO usage_daily (date, profile_id, service, count)
+       SELECT ?1, ?2, 'image', 1 WHERE ${familyUsed} < ?4
+     ON CONFLICT (date, profile_id, service) DO UPDATE SET count = count + 1
+       WHERE count < ?3 AND ${familyUsed} < ?4
+     RETURNING count`,
+  )
+    .bind(date, profileId, perProfile, familyCap)
+    .first<{ count: number }>();
+  return row !== null;
+}

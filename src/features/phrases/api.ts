@@ -6,8 +6,10 @@ import {
   savePhrasesResponseSchema,
   suggestPhrasesResponseSchema,
   type PhraseInput,
+  type PhraseSummary,
   type PhraseUpdate,
 } from "@shared/phrase";
+import { pollWhilePending } from "@/features/images/api";
 import { api } from "@/lib/api";
 
 // Phrases are shown inside words (detail, library counts, review), so invalidate those too.
@@ -27,6 +29,7 @@ export function usePhrases(filter: { lang?: LearnLang; q?: string }, enabled: bo
     queryKey: ["phrases", "list", filter],
     queryFn: () => api("GET", `/phrases${qs ? `?${qs}` : ""}`, phraseListSchema),
     placeholderData: keepPreviousData,
+    refetchInterval: pollWhilePending((list: PhraseSummary[]) => list),
     enabled,
   });
 }

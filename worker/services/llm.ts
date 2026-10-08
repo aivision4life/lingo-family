@@ -1,14 +1,15 @@
 // LLM client behind a small interface so the provider can be switched by env var
-// (LLM_PROVIDER / LLM_MODEL / LLM_API_KEY). Only Gemini is implemented for now.
+// (LLM_PROVIDER / LLM_MODEL / LLM_FALLBACK_MODEL / LLM_API_KEY). Only Gemini is implemented for now.
 import { z } from "zod";
+import { AttemptError, RETRYABLE_STATUS, retryAfterMs, runWithRetry, type RetryOptions } from "./llmRetry";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
-// Generous: under heavy load Gemini can take 30s+. Waiting costs no Worker CPU time.
-const TIMEOUT_MS = 45_000;
-const TRANSIENT_STATUS = new Set([500, 503]);
-const TRANSIENT_RETRY_DELAY_MS = 1_000;
 
-export type LlmErrorCode = "not_configured" | "unavailable" | "invalid_output";
+/**
+ * unavailable = busy/overloaded after all retries (try again later);
+ * rejected = the provider refused the request (400/401/403/404: key, model or request problem).
+ */
+export type LlmErrorCode = "not_configured" | "unavailable" | "rejected" | "invalid_output";
 
 export class LlmError extends Error {
   readonly code: LlmErrorCode;
@@ -25,19 +26,36 @@ export type LlmRequest = {
   jsonSchema: object;
 };
 
+/** The answer text (expected to be JSON) and the model that actually produced it. */
+export type LlmResult = { text: string; model: string };
+
 export interface LlmClient {
+  /** The primary model (part of cache keys, so fallback answers are reused too). */
   readonly model: string;
-  /** Returns the raw text of the model's answer (expected to be JSON). */
-  generate(req: LlmRequest): Promise<string>;
+  generate(req: LlmRequest): Promise<LlmResult>;
 }
 
-type LlmEnv = { LLM_PROVIDER?: string; LLM_MODEL?: string; LLM_API_KEY?: string };
+type LlmEnv = { LLM_PROVIDER?: string; LLM_MODEL?: string; LLM_FALLBACK_MODEL?: string; LLM_API_KEY?: string };
+export type LlmClientOptions = RetryOptions & { fetch?: typeof fetch };
 
 /** Builds the client from env, or null when no API key / unknown provider is configured. */
-export function createLlmClient(env: LlmEnv): LlmClient | null {
+export function createLlmClient(env: LlmEnv, opts: LlmClientOptions = {}): LlmClient | null {
   const provider = (env.LLM_PROVIDER || "gemini").toLowerCase();
   if (!env.LLM_API_KEY || provider !== "gemini") return null;
-  return geminiClient(env.LLM_API_KEY, env.LLM_MODEL || DEFAULT_GEMINI_MODEL);
+  const model = env.LLM_MODEL || DEFAULT_GEMINI_MODEL;
+  const fallback = env.LLM_FALLBACK_MODEL && env.LLM_FALLBACK_MODEL !== model ? env.LLM_FALLBACK_MODEL : null;
+  const apiKey = env.LLM_API_KEY;
+  const doFetch = opts.fetch ?? fetch;
+
+  return {
+    model,
+    async generate(req) {
+      const outcome = await runWithRetry(model, fallback, (m, timeoutMs) => geminiAttempt(doFetch, apiKey, m, req, timeoutMs), opts);
+      if (outcome.ok) return { text: outcome.text, model: outcome.model };
+      const { error } = outcome;
+      throw new LlmError(error.retryable ? "unavailable" : "rejected", error.message);
+    },
+  };
 }
 
 const geminiPartSchema = z.object({ text: z.string().optional(), thought: z.boolean().optional() });
@@ -45,73 +63,61 @@ const geminiResponseSchema = z.object({
   candidates: z.array(z.object({ content: z.object({ parts: z.array(geminiPartSchema) }).optional() })).optional(),
 });
 
-function geminiClient(apiKey: string, model: string): LlmClient {
-  return {
-    model,
-    async generate({ system, user, jsonSchema }) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-      const body = JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: "user", parts: [{ text: user }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseJsonSchema: jsonSchema,
-          temperature: 0.2,
-        },
-      });
-      const send = () =>
-        fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-          body,
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
+/** One generateContent call. HTTP / network problems become AttemptError (retryable or not). */
+async function geminiAttempt(doFetch: typeof fetch, apiKey: string, model: string, req: LlmRequest, timeoutMs: number) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: req.system }] },
+    contents: [{ role: "user", parts: [{ text: req.user }] }],
+    generationConfig: { responseMimeType: "application/json", responseJsonSchema: req.jsonSchema, temperature: 0.2 },
+  });
 
-      let res: Response;
-      try {
-        res = await send();
-        // "High demand" 500/503 errors are usually transient: wait briefly and retry once.
-        if (TRANSIENT_STATUS.has(res.status)) {
-          await new Promise((r) => setTimeout(r, TRANSIENT_RETRY_DELAY_MS));
-          res = await send();
-        }
-      } catch (e) {
-        throw new LlmError("unavailable", `Gemini request failed: ${String(e)}`);
-      }
-      if (!res.ok) {
-        // Never include the request (it carries the key header) in errors.
-        const detail = (await res.text().catch(() => "")).slice(0, 300);
-        throw new LlmError("unavailable", `Gemini HTTP ${res.status}: ${detail}`);
-      }
-      const parsed = geminiResponseSchema.safeParse(await res.json().catch(() => null));
-      const text = parsed.success
-        ? parsed.data.candidates?.[0]?.content?.parts
-            // Skip "thinking" parts; only the answer text is JSON.
-            .filter((p) => !p.thought)
-            .map((p) => p.text ?? "")
-            .join("")
-        : undefined;
-      if (!text) throw new LlmError("invalid_output", "Gemini returned no text");
-      return text;
-    },
-  };
+  let res: Response;
+  try {
+    res = await doFetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+      body,
+      signal: AbortSignal.timeout(Math.max(1, timeoutMs)),
+    });
+  } catch (e) {
+    // Network error or timeout: transient.
+    throw new AttemptError(`Gemini request failed (${model}): ${String(e)}`, null, true);
+  }
+  if (!res.ok) {
+    // Never include the request (it carries the key header) in errors.
+    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    const retryable = RETRYABLE_STATUS.has(res.status);
+    throw new AttemptError(`Gemini HTTP ${res.status} (${model}): ${detail}`, res.status, retryable, retryAfterMs(res.headers.get("retry-after")));
+  }
+  const parsed = geminiResponseSchema.safeParse(await res.json().catch(() => null));
+  const text = parsed.success
+    ? parsed.data.candidates?.[0]?.content?.parts
+        // Skip "thinking" parts; only the answer text is JSON.
+        .filter((p) => !p.thought)
+        .map((p) => p.text ?? "")
+        .join("")
+    : undefined;
+  if (!text) throw new LlmError("invalid_output", `Gemini returned no text (${model})`);
+  return text;
 }
 
 /**
  * Asks for JSON matching `schema`. Invalid output (bad JSON or schema mismatch) is retried
  * once with the validation errors appended; a second failure throws `invalid_output`.
+ * Returns the data and the model that produced it (the fallback model, if it was used).
  */
 export async function generateStructured<S extends z.ZodType>(
   llm: LlmClient,
   schema: S,
   req: Omit<LlmRequest, "jsonSchema">,
-): Promise<z.output<S>> {
+): Promise<{ data: z.output<S>; model: string }> {
   const jsonSchema = z.toJSONSchema(schema);
   let user = req.user;
   let lastProblem = "";
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const text = await llm.generate({ system: req.system, user, jsonSchema });
+    const { text, model } = await llm.generate({ system: req.system, user, jsonSchema });
     let json: unknown;
     try {
       json = JSON.parse(text);
@@ -121,7 +127,7 @@ export async function generateStructured<S extends z.ZodType>(
       continue;
     }
     const result = schema.safeParse(json);
-    if (result.success) return result.data;
+    if (result.success) return { data: result.data, model };
     lastProblem = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     user = `${req.user}\n\nYour previous answer did not match the schema (${lastProblem}). Return corrected JSON only.`;
   }

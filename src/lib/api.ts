@@ -43,3 +43,14 @@ export async function api(method: Method, path: string, schema: z.ZodType | null
   }
   return schema ? schema.parse(json) : undefined;
 }
+
+/** POSTs a binary body (e.g. an image upload) to `/api{path}` and validates the JSON response. */
+export async function apiUpload<S extends z.ZodType>(path: string, body: Blob, schema: S): Promise<z.output<S>> {
+  const res = await fetch(`/api${path}`, { method: "POST", headers: { "content-type": body.type }, body });
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const parsed = apiErrorSchema.safeParse(json);
+    throw new ApiError(res.status, parsed.success ? parsed.data.error : "unknown", json);
+  }
+  return schema.parse(json);
+}

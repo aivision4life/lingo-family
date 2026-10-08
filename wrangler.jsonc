@@ -20,6 +20,10 @@
       "migrations_dir": "db/migrations"
     }
   ],
+  // Workers AI (FLUX image drawing, M1.8). Always runs on Cloudflare, also in local dev,
+  // so `npm run dev` and the image benchmark need `npx wrangler login` once.
+  // `remote: true` states this explicitly (and silences wrangler's warning).
+  "ai": { "binding": "AI", "remote": true },
   "r2_buckets": [
     {
       "binding": "MEDIA",

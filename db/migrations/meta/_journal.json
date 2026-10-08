@@ -22,6 +22,20 @@
       "when": 1791462465446,
       "tag": "0002_phrases",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791470740941,
+      "tag": "0003_ai_cache_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791471942798,
+      "tag": "0004_images",
+      "breakpoints": true
     }
   ]
 }

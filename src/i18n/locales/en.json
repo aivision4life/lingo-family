@@ -186,7 +186,8 @@
       "duplicate": "This word is already in the library.",
       "openExisting": "Open existing word",
       "quota": "No AI calls left today. You can still fill in the word yourself.",
-      "aiUnavailable": "The AI is busy. Try again in a few minutes or fill in yourself.",
+      "aiUnavailable": "The AI is busy, try again in a few minutes.",
+      "aiRejected": "The AI refused the request (check LLM_API_KEY / LLM_MODEL). You can still fill in yourself.",
       "aiInvalid": "The AI returned an invalid result, please try again.",
       "aiNotConfigured": "AI is not configured (missing LLM_API_KEY).",
       "generic": "Something went wrong, please try again."
@@ -295,6 +296,42 @@
       "translation_vi": "Vietnamese translation",
       "translation_en": "English translation",
       "translation_ko": "Korean translation"
+    }
+  },
+  "images": {
+    "drawing": "Drawing the picture…",
+    "redraw": "Redraw",
+    "draw": "Draw picture",
+    "upload": "My photo",
+    "uploading": "Uploading…",
+    "retry": "Try again",
+    "failed": "The picture could not be drawn. You can try again.",
+    "quota": "No pictures left for today. It will be drawn later.",
+    "invalidUpload": "This photo cannot be used (max 512 px, 300 KB, WebP/JPEG/PNG).",
+    "notConfigured": "Workers AI for pictures is not set up.",
+    "redrawTitle": "Redraw picture",
+    "promptLabel": "Scene description (English)",
+    "promptHint": "The drawing style (flat illustration, bright colors, no text) is added automatically.",
+    "redrawSubmit": "Draw",
+    "backfill": {
+      "title": "Pictures for older words",
+      "remaining": "{{count}} words/phrases still have no picture.",
+      "none": "Every word and phrase has a picture.",
+      "start": "Create pictures for older words",
+      "stop": "Stop",
+      "working": "Drawing “{{term}}”…",
+      "done": "Done.",
+      "stopped": "Stopped. Press again to continue.",
+      "quota": "Today's limit (pictures or AI) is used up. Continue tomorrow.",
+      "drawn": "Drew {{count}} pictures."
+    },
+    "usage": {
+      "title": "Today's usage",
+      "familyImages": "Pictures (family)",
+      "profileImages": "Pictures (this profile)",
+      "llm": "AI text (this profile)",
+      "tts": "Audio (this profile)",
+      "note": "Counted per UTC day: limits reset at 7:00 a.m. Vietnam time."
     }
   }
 }

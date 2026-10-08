@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image benchmark</title>
+<style>
+  :root { --bg: #fff; --fg: #1a1a1a; --muted: #6b6b6b; --line: #ddd; --bad: #b42318; --warn: #b54708; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161616; --fg: #eee; --muted: #a0a0a0; --line: #333; --bad: #f97066; --warn: #fdb022; } }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
+  .wrap { overflow-x: auto; } table { border-collapse: collapse; } th, td { border: 1px solid var(--line); padding: 8px; vertical-align: top; text-align: left; }
+  img { width: 256px; height: auto; display: block; border-radius: 6px; }
+  .item { width: 240px; font-weight: normal; } .term { font-size: 22px; font-weight: 600; margin: 0; }
+  [lang="ko"] { font-family: "Noto Sans KR", system-ui, sans-serif; }
+  .prompt { font-style: italic; } .muted { color: var(--muted); } .small { font-size: 12px; margin: 4px 0 0; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 4px; background: var(--warn); color: var(--bg); font-weight: 600; }
+  .error { color: var(--bad); font-weight: 600; } .skipped { color: var(--warn); font-weight: 600; }
+  pre { white-space: pre-wrap; background: color-mix(in srgb, var(--fg) 6%, transparent); padding: 12px; border-radius: 6px; }
+</style></head><body>
+<h1>Image benchmark (M1.8A)</h1>
+<p class="muted">2026-10-08T14:58:17.357Z · requested size 512×512 (flux-1-schnell has no size parameter) · no seed · style-v1</p>
+<p><strong>image_prompt:</strong> 0 by gemini-3.8-flash (primary) · <span class="badge">5 by the fallback model gemini-3.5-flash-lite</span></p>
+<p><strong>Style appended to every prompt:</strong> flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children</p>
+<h2>Summary (estimates from the price list)</h2>
+<div class="wrap"><table><tr><th>Model</th><th>Avg time</th><th>Avg size</th><th>Neurons / image</th><th>Images / day (10,000 free)</th></tr>
+<tr><th>flux-1-schnell</th><td>2.5 s</td><td>281 KB</td>
+        <td>≈ 57.6</td><td>≈ 173</td></tr>
+<tr><th>flux-2-klein-4b</th><td>19.3 s</td><td>90 KB</td>
+        <td>≈ 26.1</td><td>≈ 383</td></tr></table></div>
+<h2>Images</h2>
+<div class="wrap"><table><tr><th>Item · image_prompt</th><th>flux-1-schnell<br><span class="muted small">4.80 per 512×512 output tile + 9.60 per step (4 steps)</span></th><th>flux-2-klein-4b<br><span class="muted small">26.05 per 512×512 output tile (+5.37 per input-image tile, none for text-to-image)</span></th></tr>
+<tr><th class="item"><p lang="ko" class="term">사과</p>
+        <p class="muted small">word · concrete noun · beginner</p>
+        <p class="prompt">A bright red apple sitting on a wooden table next to a small knife.</p>
+        <p class="small"><span class="badge">fallback model</span> prompt by gemini-3.5-flash-lite (gemini-3.8-flash was busy)</p></th><td>
+    <a href="images/1-sagwa__flux-1-schnell.jpg"><img src="images/1-sagwa__flux-1-schnell.jpg" alt="A bright red apple sitting on a wooden table next to a small knife." loading="lazy"></a>
+    <p class="small">3.1 s · 266 KB · 1024×1024 · ≈ 57.6 Neurons</p>
+  </td><td>
+    <a href="images/1-sagwa__flux-2-klein-4b.jpg"><img src="images/1-sagwa__flux-2-klein-4b.jpg" alt="A bright red apple sitting on a wooden table next to a small knife." loading="lazy"></a>
+    <p class="small">8.9 s · 82 KB · 512×512 · ≈ 26.05 Neurons</p>
+  </td></tr>
+<tr><th class="item"><p lang="ko" class="term">희망</p>
+        <p class="muted small">word · abstract word · beginner</p>
+        <p class="prompt">A child stands on a grassy hill at sunrise, holding a glowing paper lantern and looking up at the bright morning sky with a big smile.</p>
+        <p class="small"><span class="badge">fallback model</span> prompt by gemini-3.5-flash-lite (gemini-3.8-flash was busy)</p></th><td>
+    <a href="images/2-huimang__flux-1-schnell.jpg"><img src="images/2-huimang__flux-1-schnell.jpg" alt="A child stands on a grassy hill at sunrise, holding a glowing paper lantern and looking up at the bright morning sky with a big smile." loading="lazy"></a>
+    <p class="small">2.2 s · 284 KB · 1024×1024 · ≈ 57.6 Neurons</p>
+  </td><td>
+    <a href="images/2-huimang__flux-2-klein-4b.jpg"><img src="images/2-huimang__flux-2-klein-4b.jpg" alt="A child stands on a grassy hill at sunrise, holding a glowing paper lantern and looking up at the bright morning sky with a big smile." loading="lazy"></a>
+    <p class="small">25.7 s · 84 KB · 512×512 · ≈ 26.05 Neurons</p>
+  </td></tr>
+<tr><th class="item"><p lang="ko" class="term">회의를 하다</p>
+        <p class="muted small">phrase · phrase · intermediate</p>
+        <p class="prompt">Three adults sitting around a wooden table in an office, looking at documents and discussing while pointing at a whiteboard with charts.</p>
+        <p class="small"><span class="badge">fallback model</span> prompt by gemini-3.5-flash-lite (gemini-3.8-flash was busy)</p></th><td>
+    <a href="images/3-hoeui__flux-1-schnell.jpg"><img src="images/3-hoeui__flux-1-schnell.jpg" alt="Three adults sitting around a wooden table in an office, looking at documents and discussing while pointing at a whiteboard with charts." loading="lazy"></a>
+    <p class="small">2.2 s · 337 KB · 1024×1024 · ≈ 57.6 Neurons</p>
+  </td><td>
+    <a href="images/3-hoeui__flux-2-klein-4b.jpg"><img src="images/3-hoeui__flux-2-klein-4b.jpg" alt="Three adults sitting around a wooden table in an office, looking at documents and discussing while pointing at a whiteboard with charts." loading="lazy"></a>
+    <p class="small">14.2 s · 108 KB · 512×512 · ≈ 26.05 Neurons</p>
+  </td></tr>
+<tr><th class="item"><p lang="ko" class="term">저는 오후 3시에 고객과 회의가 있어요</p>
+        <p class="muted small">sentence · sentence, office · intermediate</p>
+        <p class="prompt">A person sitting at a desk shaking hands with a client in an office, while a wall clock shows three o&#39;clock.</p>
+        <p class="small"><span class="badge">fallback model</span> prompt by gemini-3.5-flash-lite (gemini-3.8-flash was busy)</p></th><td>
+    <a href="images/4-meeting__flux-1-schnell.jpg"><img src="images/4-meeting__flux-1-schnell.jpg" alt="A person sitting at a desk shaking hands with a client in an office, while a wall clock shows three o&#39;clock." loading="lazy"></a>
+    <p class="small">2.6 s · 261 KB · 1024×1024 · ≈ 57.6 Neurons</p>
+  </td><td>
+    <a href="images/4-meeting__flux-2-klein-4b.jpg"><img src="images/4-meeting__flux-2-klein-4b.jpg" alt="A person sitting at a desk shaking hands with a client in an office, while a wall clock shows three o&#39;clock." loading="lazy"></a>
+    <p class="small">33.3 s · 99 KB · 512×512 · ≈ 26.05 Neurons</p>
+  </td></tr>
+<tr><th class="item"><p lang="ko" class="term">고양이</p>
+        <p class="muted small">word · word for kids · kid</p>
+        <p class="prompt">A cute fluffy cat sitting on a soft yellow rug and looking up curiously with big round eyes</p>
+        <p class="small"><span class="badge">fallback model</span> prompt by gemini-3.5-flash-lite (gemini-3.8-flash was busy)</p></th><td>
+    <a href="images/5-goyangi__flux-1-schnell.jpg"><img src="images/5-goyangi__flux-1-schnell.jpg" alt="A cute fluffy cat sitting on a soft yellow rug and looking up curiously with big round eyes" loading="lazy"></a>
+    <p class="small">2.1 s · 255 KB · 1024×1024 · ≈ 57.6 Neurons</p>
+  </td><td>
+    <a href="images/5-goyangi__flux-2-klein-4b.jpg"><img src="images/5-goyangi__flux-2-klein-4b.jpg" alt="A cute fluffy cat sitting on a soft yellow rug and looking up curiously with big round eyes" loading="lazy"></a>
+    <p class="small">14.4 s · 76 KB · 512×512 · ≈ 26.05 Neurons</p>
+  </td></tr></table></div>
+<h2>Real Neurons</h2>
+<pre>How to see the real Neurons used:
+  1. Open https://dash.cloudflare.com and pick your account.
+  2. Left menu: AI &#62; Workers AI (on some dashboards: Compute (Workers) &#62; Workers AI).
+  3. Open the usage / analytics view: Neurons per day and per model.
+     Pick the time range covering the benchmark run (data can lag a few minutes).
+  4. Divide each model&#39;s Neurons by the number of images it drew in that run
+     (see benchmarks/report.html) and compare with the estimate in the report.
+  Free allocation: 10,000 Neurons per day (resets at 00:00 UTC).</pre>
+</body></html>

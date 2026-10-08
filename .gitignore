@@ -28,3 +28,6 @@ Thumbs.db
 
 # Local DB exports (may contain family data)
 backups/
+
+# Image benchmark output (M1.8A)
+benchmarks/images/

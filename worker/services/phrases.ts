@@ -6,6 +6,8 @@ import { phraseInputSchema, type Phrase, type SkippedPhrase } from "../../shared
 import type { z } from "zod";
 import { examples, phrases, words } from "../../db/schema";
 import type { getDb } from "../env";
+import { imageView } from "./imageStore";
+import { initialImageFields } from "./imageJobs";
 
 type Db = ReturnType<typeof getDb>;
 type PhraseInputParsed = z.output<typeof phraseInputSchema>;
@@ -28,14 +30,20 @@ type SaveArgs = {
   lang: LearnLang;
   profileId: string;
   inputs: PhraseInputParsed[];
+  /** Workers AI available: phrases with an AI prompt are claimed for drawing right away. */
+  imagesOn: boolean;
 };
 
 /**
  * Saves phrases (+ their example) under a root word. Phrases that already exist — anywhere in
  * the library, or equal to the root word itself — are skipped and reported (SPEC: UNIQUE(lang, text)).
  */
-export async function savePhrases(db: Db, a: SaveArgs): Promise<{ saved: string[]; skipped: SkippedPhrase[] }> {
+export async function savePhrases(
+  db: Db,
+  a: SaveArgs,
+): Promise<{ saved: string[]; skipped: SkippedPhrase[]; pendingImages: string[] }> {
   const saved: string[] = [];
+  const pendingImages: string[] = [];
   const skipped: SkippedPhrase[] = [];
   const seen = new Set([duplicateKey(a.lang, a.wordTerm)]);
 
@@ -53,8 +61,11 @@ export async function savePhrases(db: Db, a: SaveArgs): Promise<{ saved: string[
     }
 
     const id = crypto.randomUUID();
+    const image = initialImageFields(input.image_prompt, a.imagesOn);
+    if (image.image_status === "pending") pendingImages.push(id);
     const insertPhrase = db.insert(phrases).values({
       ...input,
+      ...image,
       id,
       word_id: a.wordId,
       lang: a.lang,
@@ -69,7 +80,7 @@ export async function savePhrases(db: Db, a: SaveArgs): Promise<{ saved: string[
     }
     saved.push(id);
   }
-  return { saved, skipped };
+  return { saved, skipped, pendingImages };
 }
 
 /** Phrases of a word with their examples, oldest first. */
@@ -94,11 +105,25 @@ export async function loadPhrases(db: Db, wordId: string): Promise<Phrase[]> {
     audio_key: p.audio_key,
     ai_generated: p.ai_generated,
     verified: p.verified,
-    examples: exs
-      .filter((e) => e.phrase_id === p.id)
-      .map(({ word_id: _w, phrase_id: _p, ...ex }) => ex),
+    ...imageView(p),
+    examples: exs.filter((e) => e.phrase_id === p.id).map(toExample),
   }));
 }
+
+type ExampleRow = typeof examples.$inferSelect;
+
+/** An example row as sent to the client. */
+export const toExample = (e: ExampleRow) => ({
+  id: e.id,
+  sentence: e.sentence,
+  translation_vi: e.translation_vi,
+  translation_en: e.translation_en,
+  translation_ko: e.translation_ko,
+  level: e.level,
+  ai_generated: e.ai_generated,
+  audio_key: e.audio_key,
+  ...imageView(e),
+});
 
 /** Examples of the word itself (not of its phrases). */
 export const wordOnlyExamples = (db: Db, wordId: string) =>

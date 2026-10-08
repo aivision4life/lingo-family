@@ -6,16 +6,18 @@ import { consumeQuota } from "./quota";
 
 class QuotaExceeded extends Error {}
 
-const LLM_ERROR_STATUS = { not_configured: 503, unavailable: 502, invalid_output: 502 } as const;
+const LLM_ERROR_STATUS = { not_configured: 503, unavailable: 503, rejected: 502, invalid_output: 502 } as const;
 const LLM_ERROR_CODE = {
   not_configured: WORD_ERRORS.aiNotConfigured,
   unavailable: WORD_ERRORS.aiUnavailable,
+  rejected: WORD_ERRORS.aiRejected,
   invalid_output: WORD_ERRORS.aiInvalidOutput,
 } as const;
 
 /**
  * Runs a cache-first LLM task for a profile: the daily LLM quota is consumed only on a cache
- * miss (via `beforeLlmCall`), and LLM / quota errors become the API's error responses.
+ * miss (via `beforeLlmCall`, once per task: retries and the fallback model are not counted),
+ * and LLM / quota errors become the API's error responses.
  */
 export async function runAiTask<T>(
   c: Context<AppEnv>,

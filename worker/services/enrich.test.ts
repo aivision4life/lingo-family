@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { sampleEnrichment } from "../test/fakeLlm";
 import { enrichCacheKey, finalizeEnrichment, finalizePhrases } from "./enrich";
+import { buildEnrichPrompt, buildPhrasePrompt, ENRICH_PROMPT_VERSION } from "./enrichPrompt";
+import { IMAGE_PROMPT_RULES } from "./imagePrompt";
 
 describe("finalizeEnrichment", () => {
   it("Korean: keeps Hanja/Hán-Việt and empties the Korean translation of examples", () => {
@@ -51,5 +53,22 @@ describe("enrichCacheKey", () => {
     expect(await enrichCacheKey("m2", input)).not.toBe(key);
     expect(await enrichCacheKey("m1", { ...input, level: "kid" })).not.toBe(key);
     expect(await enrichCacheKey("m1", { ...input, term: "학교" })).not.toBe(key);
+  });
+});
+
+describe("image prompts in enrichment (M1.8)", () => {
+  it("keeps the image_prompt of the word, its examples, phrases and phrase examples", () => {
+    const out = finalizeEnrichment("ko", "학생", sampleEnrichment);
+    expect(out.image_prompt).toBe(sampleEnrichment.image_prompt);
+    expect(out.examples.every((e) => e.image_prompt.length > 0)).toBe(true);
+    expect(out.phrases.map((p) => [p.image_prompt.length > 0, p.example.image_prompt.length > 0])).toEqual([[true, true], [true, true]]);
+  });
+
+  it("the prompts ask for image_prompt with the shared rules and a new cache version", () => {
+    const { system } = buildEnrichPrompt("ko", "학생", "beginner");
+    expect(system).toContain("image_prompt");
+    expect(system).toContain(IMAGE_PROMPT_RULES);
+    expect(buildPhrasePrompt("ko", "학생", "beginner").system).toContain(IMAGE_PROMPT_RULES);
+    expect(ENRICH_PROMPT_VERSION).toBe("enrich-v4");
   });
 });

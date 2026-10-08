@@ -134,17 +134,18 @@ Audio:
 - [x] Media is **content-addressed**: the same text + voice always maps to the same file (no duplicates).
 
 Images (M1.8):
-- [ ] Every word, phrase and example sentence has an image. Sources:
+- [x] Every word, phrase and example sentence has an image. Sources:
   1. **AI drawing** with Cloudflare Workers AI (FLUX) through the `env.AI` binding — the default.
   2. **"My photo"**: the adult uploads a picture; the browser resizes it to ≤ 512 px (WebP) **before** uploading.
   3. While an image is not ready (or failed), the **emoji** is shown as a placeholder.
-- [ ] Every image has a **"Redraw"** button with an editable prompt, and a **"My photo"** button (adults only).
-- [ ] The prompt is built from the item's `image_prompt` (from Gemini, see F6) plus a **fixed style**:
-  `flat vector illustration, bright colors, simple shapes, plain background, no text, no letters`.
-- [ ] **When images are drawn:** right after saving, the **word** and its **selected phrases** are drawn. **Example sentence** images are drawn **lazily**, the first time the sentence is displayed. Unselected phrases are never drawn.
-- [ ] Generation runs **in the background with Workers `waitUntil`** (Cloudflare Queues later). Image status per item: `none` (lazy, not requested yet) → `pending` → `ready` | `failed`. The UI shows the emoji placeholder and updates automatically when the image is ready; `failed` shows a **"Try again"** button (plus "Redraw" with an editable prompt).
-- [ ] Stored in R2, **content-addressed**; an image that already exists is never drawn again. `image_prompt` and `image_source` (`ai` | `upload`) are stored with the item.
-- [ ] Daily quota: service `image` in `usage_daily`, default **60 images per profile per day**, plus a **family-wide daily cap** derived from the Workers AI free tier (provisional 150/day, must be measured in practice; see §7).
+- [x] Every image has a **"Redraw"** button with an editable prompt, and a **"My photo"** button (adults only).
+- [x] The prompt is built from the item's `image_prompt` (from Gemini, see F6) plus a **fixed style**:
+  `flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children` (`IMAGE_STYLE` in `worker/services/imagePrompt.ts`, `style-v1`).
+- [x] **When images are drawn:** right after saving, the **word** and its **selected phrases** are drawn. **Example sentence** images are drawn **lazily**, the first time the sentence is displayed. Unselected phrases are never drawn.
+- [x] Generation runs **in the background with Workers `waitUntil`** (Cloudflare Queues later). Image status per item: `none` (lazy, not requested yet) → `pending` → `ready` | `failed`. The UI shows the emoji placeholder and updates automatically when the image is ready; `failed` shows a **"Try again"** button (plus "Redraw" with an editable prompt).
+- [x] Stored in R2, **content-addressed**; an image that already exists is never drawn again. `image_prompt` and `image_source` (`ai` | `upload`) are stored with the item.
+- [x] Daily quota: service `image` in `usage_daily`, default **60 images per profile per day**, plus a **family-wide daily cap** of **150/day** (one atomic SQL statement checks both). Every real `env.AI` call counts (a fallback drawing costs 2); R2 hits are free. When a limit is reached the item keeps its placeholder (`none`) and a light notice is shown; nothing fails.
+- [x] Settings → **"Create images for older words"** (adults): draws words / phrases that were never drawn, one word per request, within the quotas; missing prompts come from one LLM call per word. Settings also shows **today's usage**: family images x/150, this profile's images y/60, LLM and TTS calls.
 
 Decisions (M1.3):
 - TTS: Azure Speech REST, output `audio-24khz-48kbitrate-mono-mp3` (mp3, mono, 24 kHz).
@@ -156,12 +157,23 @@ Decisions (M1.3):
 - Media is served by `/api/media/...` with immutable cache headers, so the browser keeps it; full offline caching comes with F11 (M2).
 
 Decisions (2026-10-08, images):
-- AI image R2 key: `images/ai/{sha1(model + full prompt incl. style + style_version + seed + size)}.webp|jpg`. The first drawing uses a fixed seed; **"Redraw"** uses a new random seed (and/or the edited prompt), so it produces a new key.
+- AI image R2 key: `images/ai/{sha1(model + full prompt incl. style + style_version + nonce + size)}.webp|jpg`. The first drawing uses nonce "0"; **"Redraw"** uses a new random nonce (passed as the seed when the model supports one) and/or the edited prompt, so it produces a new key.
+- **Seed support differs per model (checked 2026-10 with `wrangler ai models schema`):** `flux-1-schnell` accepts only `prompt` and `steps` (≤ 8); any other field (`seed`, `width`, `height`) is rejected with error 5006, and it picks the output size itself. `flux-2-klein-4b` (multipart) accepts `prompt`, `width`/`height` (256–1920), `seed`, `guidance`. So with schnell, **"Redraw" relies on the model's own randomness**, and the R2 key must use a random **nonce** instead of the seed: `sha1(model + full prompt + style_version + nonce + size)`, nonce = `"0"` for the first drawing and a new random value for every Redraw. With a seed-capable model the seed is the nonce. Each model's accepted input is a zod schema in `worker/services/imageModels.ts` (`inputSchema`, `supportsSeed`), checked before every call.
 - Uploaded image R2 key: `images/upload/{sha1(file bytes)}.webp`. The server checks type (WebP/JPEG/PNG) and size (≤ 512 px, ≤ ~300 KB).
 - Image size 512×512. Images are not regenerated when only glosses or translations change.
 - Kid profiles cannot redraw or upload (a kid's first display of an example may still trigger its lazy drawing, charged to the family cap).
 - Old images are **kept** in R2 after "Redraw" / "My photo" (no deletion); only the item's `image_key` changes.
-- Model: start with **`@cf/black-forest-labs/flux-1-schnell`**. M1.8 includes a **benchmark script** that draws 5 sample prompts with `flux-1-schnell` and `flux-2-klein-4b`, records Neurons per image and saves the images to a folder for a side-by-side comparison; the final model and family cap are chosen from it.
+- ~~Model: start with `flux-1-schnell`~~ **Decided after the benchmark (2026-10-09): primary `@cf/black-forest-labs/flux-2-klein-4b`, fallback `@cf/black-forest-labs/flux-1-schnell`** (used once when klein fails). `image_model` records which model drew each image, for fallback statistics.
+
+  Benchmark (M1.8A, 5 items × 2 models, prompts by Gemini, style `style-v1`, estimates from the price list):
+
+  | Model | Output | Time / image | File size | Neurons / image | Images per 10,000 Neurons |
+  |---|---|---|---|---|---|
+  | flux-2-klein-4b | 512×512 JPEG | 9–33 s (avg 19 s) | ≈ 90 KB | ≈ 26 | ≈ 383 |
+  | flux-1-schnell | 1024×1024 JPEG (no size parameter) | 2–3 s | ≈ 280 KB | ≈ 58 | ≈ 173 |
+
+  Klein is half the cost and already 512 px; it is slow, which is fine for background drawing. Schnell images (fallback only) are stored as they are (no image library in the Worker).
+- M1.8A (benchmark only, not wired into the app): `npm run bench:images` (needs `npx wrangler login` once). Gemini writes each `image_prompt` with `buildImagePromptRequest()` / `IMAGE_PROMPT_RULES` (the same rules go into the enrichment prompt in M1.8B); images and `report.html` are written to `benchmarks/` (images gitignored). `flux-2-klein-4b` takes multipart input and is drawn at 512×512; `flux-1-schnell` has no size parameter.
 
 ### F4. Review with spaced repetition (FSRS) — P0
 - [x] Scheduling uses the `ts-fsrs` library. Ratings: Again / Hard / Good / Easy.
@@ -211,8 +223,9 @@ Decisions (M1.4):
 
 ### F6. AI enrichment & explanations — P0 (enrich), P1 (explain)
 - [x] Enrichment (used by F2) returns **strict JSON** validated by a schema; invalid output → one retry → error message.
+- [x] Resilient LLM calls: 429/500/503 and network errors are retried 3 times (backoff 1s, 3s, 9s with jitter), then the optional `LLM_FALLBACK_MODEL` is tried once; 400/401/403 are not retried. Retries and the fallback do not use extra quota. `ai_cache.model` records the model that answered. If the AI is still busy, the UI says "AI is busy, try again in a few minutes" with a **Try again** button and keeps what was typed.
 - [x] Example sentences match the profile's level: kid → very short and concrete; beginner → simple; Korean (owner) → workplace/IT context allowed.
-- [~] Enrichment also returns (M1.7–M1.8; phrases done in M1.7 with 1 example each, `image_prompt` in M1.8): an **`image_prompt`** for the word, each example and each phrase; **1–3 suggested phrases**, each with reading, glosses, 1–2 examples (with translations and `image_prompt`).
+- [x] Enrichment also returns (M1.7: phrases with 1 example each; M1.8: `image_prompt`, prompt versions `enrich-v4` / `phrases-v2`): an **`image_prompt`** for the word, each example and each phrase; **1–3 suggested phrases**, each with reading, glosses, 1–2 examples (with translations and `image_prompt`).
   - `image_prompt` rules: **English**, one concrete scene with visible objects/people/actions; abstract words are illustrated by a typical situation (e.g. "promise" → two children hooking little fingers); no text or letters in the picture. The fixed style (F3) is appended by the server, not by the LLM.
 - [ ] "Explain" button on a card: short explanation in the profile's `gloss_lang` (nuance, common collocations, confusing look-alikes).
 - [~] All AI output is cached in the database. The same request is never paid for twice. (M1.2: enrichment cached; "Explain" comes with P1.)
@@ -269,13 +282,13 @@ words         id, lang ('ko'|'en') ← M1.6, term, reading, pos,
               hanja? ← M1.6 (renamed from hanzi_traditional; hanzi_simplified dropped), han_viet?,
               emoji?, audio_key?, notes?,
               image_key?, image_prompt?, image_source? ('ai'|'upload'),
-              image_status ('pending'|'ready'|'failed') ← M1.8,
+              image_status ('none'|'pending'|'ready'|'failed'), image_nonce?, image_requested_at?, image_model? ← M1.8,
               ai_generated, verified, created_by_profile, created_at, updated_at
               UNIQUE(lang, term)
 
 phrases       id, word_id → words (root word, ON DELETE CASCADE), lang, text, reading,  ← M1.7
               gloss_vi, gloss_en, gloss_ko, emoji?, audio_key?,
-              image_key?, image_prompt?, image_source?, image_status,
+              image_* (same columns as words) ← M1.8,
               ai_generated, verified, created_by_profile, created_at, updated_at
               UNIQUE(lang, text)
 
@@ -283,8 +296,7 @@ examples      id, word_id → words (root word, ON DELETE CASCADE),
               phrase_id? → phrases (ON DELETE CASCADE) ← M1.7,  -- NULL = example of the word itself
               sentence, translation_vi, translation_en, translation_ko,
               audio_key?, level ('kid'|'beginner'|'intermediate'), ai_generated,
-              image_key?, image_prompt?, image_source?,
-              image_status ('none'|'pending'|'ready'|'failed') ← M1.8   -- 'none' = lazy, not requested yet
+              image_* (same columns as words) ← M1.8   -- examples stay 'none' until first displayed
 
 decks         id, name, lang, is_kid_deck, created_at     -- default decks: default-ko, default-en
 deck_words    deck_id, word_id                          -- phrases follow their root word's decks
@@ -315,13 +327,13 @@ usage_daily   date, profile_id, service ('tts'|'pron'|'llm'|'image' ← M1.8), c
 Notes:
 - **Word or phrase (M1.7, option A, decided 2026-10-08):** D1/SQLite cannot add a CHECK or relax NOT NULL without rebuilding a table, and rebuilding `cards`/`examples` would cascade-delete their children. So `examples.word_id` and `cards.word_id` stay NOT NULL and always hold the **root word**; `phrase_id` is set when the row belongs to a phrase. Hand-written triggers (migration `0002_phrases`) enforce that `word_id` equals the phrase's root word, and that `phrases.word_id` never changes. Deleting a word therefore cascades to its phrases, their examples and all their cards.
 - `review_logs` was rebuilt in M1.7: `card_id` is nullable with `ON DELETE SET NULL` (logs survive card deletion), and `lang` was added and backfilled, so per-language stats and the daily new-card count stay correct after deletions.
-- New words and selected phrases start with `image_status = 'pending'`; new examples start with `'none'` and become `'pending'` when first displayed. `ready` when `image_key` is set; `failed` after the background job gives up ("Try again" sets it back to `pending`). Items saved before M1.8 get `pending` (words) / `none` (examples) via the migration and are drawn within quota.
+- Images (M1.8, migration `0004_images`): `image_status` = `none` (not requested: lazy example, quota reached, typed by hand without a prompt, or saved before M1.8) → `pending` → `ready` | `failed`. New words and selected phrases **with an AI prompt** start `pending` (drawn with `waitUntil` right after saving); everything saved before M1.8 starts `none` and is drawn by the Settings backfill (decided 2026-10-09, instead of drawing old items automatically). `image_nonce` ("0" first, random per Redraw) is part of the R2 key; a job only writes its result if the nonce is unchanged, so a newer Redraw/upload always wins. `image_requested_at` marks the claim: `waitUntil` may run only ~30 s after the response, so a `pending` item older than 2 minutes counts as stalled and the next display takes it over. Every claim is a conditional `UPDATE` — only the request that changes the row (`changes = 1`) calls Workers AI, so two requests never draw the same item. Examples without a prompt use their English translation as the scene. `image_model` = model that drew it (null for uploads).
 - The family-wide image cap is checked as the sum of today's `usage_daily` rows with service `image` across all profiles (no new table).
 - M1.6 data migration (destructive, approved 2026-10-08): delete `zh` words (cascades to examples, cards, review logs, deck links), the `default-zh` deck and its profile links; remove `zh` from `profiles.study_langs` (a profile left with no language gets `['ko']`); drop `words.hanzi_simplified`; rename `hanzi_traditional` → `hanja`; restructure `han_chars` / `word_chars` (empty so far); delete R2 objects under `audio/zh/`. `ai_cache` entries cannot be filtered by language (hashed keys), so the enrichment cache is cleared (the prompt version changes in M1.7 anyway).
 
 Media storage (R2) keys:
 - `audio/{lang}/{voice}/{sha1(text)}.mp3`
-- `images/ai/{sha1(model + prompt + style_version + seed + size)}.{webp|jpg}`
+- `images/ai/{sha1(model + prompt + style_version + nonce + size)}.{webp|jpg}`
 - `images/upload/{sha1(file bytes)}.webp`
 
 ---
@@ -355,7 +367,7 @@ Design: mobile-first, clean, images first, large Korean typography (Noto Sans KR
 | Cloudflare Workers (+ static assets) | Hosts the SPA and `/api` | — |
 | Cloudflare D1 | Database | — |
 | Cloudflare R2 | Audio & images | Media is small (images 512 px WebP/JPEG; target total < 2 GB) |
-| Cloudflare Workers AI (FLUX) | Image generation via the `env.AI` binding (word + selected phrases at save time, example sentences lazily) | Cache-first (content-addressed R2 key); never redraw an existing key; 60 images/profile/day + family cap (provisional 150/day; final value from the M1.8 benchmark). Free allocation: **10,000 Neurons/day** (checked 2026-10). `@cf/black-forest-labs/flux-1-schnell` at 512×512, 4 steps ≈ 4.8 + 4 × 9.6 ≈ **43 Neurons/image ⇒ ~230 images/day in theory**. **Must be measured in practice** (dashboard) before fixing the cap. |
+| Cloudflare Workers AI (FLUX) | Image generation via the `env.AI` binding (word + selected phrases at save time, example sentences lazily) | Cache-first (content-addressed R2 key); never redraw an existing key; 60 images/profile/day + family cap (provisional 150/day; final value from the M1.8 benchmark). Free allocation: **10,000 Neurons/day** (checked 2026-10). Benchmark (2026-10-09): `flux-2-klein-4b` (primary) ≈ **26 Neurons/image**, `flux-1-schnell` (fallback) ≈ 58 ⇒ 150 images/day ≈ 3,900 Neurons, well inside the free tier. Compare with the real Neurons in the dashboard after some use. |
 | Cloudflare Access | Family-only login | Allow-list of family emails |
 | Azure Speech: TTS | Generate audio once per text (words, phrases, examples) | Cache-first (R2 key = lang + voice + sha1(text)); never re-generate an existing key; 200 calls/profile/day. Free tier F0: 0.5M neural characters/month (checked 2026-10) |
 | Azure Speech: Pronunciation Assessment | Speaking score | Per-profile daily quota (`usage_daily`) |
@@ -389,7 +401,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M1.5 | Navigation | Shared navigation (desktop collapsible sidebar, mobile tab bar), add-word button, focused review screen | [x] |
 | M1.6 | Remove Chinese | Migration deleting `zh` data, Hanja field rename, code/UI/TTS/font clean-up | [x] |
 | M1.7 | Phrases | Phrases table, AI suggestions + selection, phrase audio/examples, phrase cards (recognition + listening) | [x] |
-| M1.8 | Image pipeline | Workers AI FLUX (benchmark flux-1-schnell vs flux-2-klein-4b), image prompts in enrichment, `waitUntil` background generation, lazy example images, R2, Try again / Redraw / My photo, quotas | [ ] |
+| M1.8 | Image pipeline | Workers AI FLUX (benchmark flux-1-schnell vs flux-2-klein-4b), image prompts in enrichment, `waitUntil` background generation, lazy example images, R2, Try again / Redraw / My photo, quotas | [x] |
 | M1.9 | Picture card + visual review | `picture` card type, unlock chain recognition → picture → listening, image-centred review UI | [ ] |
 | M2 | Online | Deploy to Cloudflare, Access login, F11 PWA + offline sync (incl. images) | [ ] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
