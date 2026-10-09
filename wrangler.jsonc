@@ -37,12 +37,12 @@
   // Non-secret settings. Every /api request must carry a Cloudflare Access JWT for this team
   // and application (worker/middleware/access.ts); if either value is missing the API answers 401.
   // ACCESS_AUD = "Application Audience (AUD) Tag" of the Access application (public, not a secret);
-  // empty until Access is set up (M2.1), which keeps the API closed.
+  // an empty value keeps the API closed (fail-closed).
   // TTS voices default to ko-KR-SunHiNeural and en-US-JennyNeural (worker/services/tts.ts); to
   // override add TTS_VOICE_KO / TTS_VOICE_EN here.
   "vars": {
     "ACCESS_TEAM_DOMAIN": "ai4life.cloudflareaccess.com",
-    "ACCESS_AUD": ""
+    "ACCESS_AUD": "902190725cc1087918e2449010517ba6f33a74aaa771d89847971cae1a855f60"
   },
   // Secrets live in .dev.vars / `wrangler secret put`, never here: AZURE_SPEECH_KEY,
   // AZURE_SPEECH_REGION, LLM_*, and ALLOWED_EMAILS (family emails, comma separated).
