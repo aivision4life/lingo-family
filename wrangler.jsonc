@@ -18,9 +18,9 @@
     {
       "binding": "DB",
       "database_name": "lingo-family",
-      // Placeholder: local dev does not need a real id. Replace with the id from
-      // `wrangler d1 create lingo-family` before the first remote deploy (M2).
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Production database (created in M2.1). Local dev (Miniflare) ignores the id; the migrate
+      // scripts say explicitly --local or --remote.
+      "database_id": "10da2bc0-1ba1-4ae2-80be-df43cd5b1931",
       "migrations_dir": "db/migrations"
     }
   ],
