@@ -3,7 +3,7 @@ import { resolveNow } from "./devNow";
 
 const real = new Date("2026-10-08T00:00:00Z");
 const LOCAL = "http://localhost:5173/api/review/queue";
-const PROD = "https://lingo-family.ai4life.workers.dev/api/review/queue";
+const PROD = "https://lingo.ai4life.workers.dev/api/review/queue";
 
 describe("resolveNow", () => {
   it("ignores X-Dev-Now unless DEV_TIME_TRAVEL=1", () => {

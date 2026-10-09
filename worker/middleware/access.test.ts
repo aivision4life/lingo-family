@@ -5,7 +5,7 @@ import { requireAccess } from "./access";
 
 const DOMAIN = "ai4life.cloudflareaccess.com";
 const AUD = "test-aud-tag";
-const PROD = "https://lingo-family.ai4life.workers.dev";
+const PROD = "https://lingo.ai4life.workers.dev";
 // A path that needs no D1/R2: when the gate lets the request through, the app answers 404.
 const OPEN_PATH = "/api/nope";
 const PASSED = 404;
