@@ -109,7 +109,9 @@ SPEC.md  CLAUDE.md  README.md
 - Secrets (`AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_FALLBACK_MODEL`) go in `.dev.vars` locally and in `wrangler secret` in production.
 - **Never** put secrets in frontend code, in `wrangler.jsonc` vars, or in git. Keep `.dev.vars` in `.gitignore`.
 - The browser only receives short-lived Azure tokens from `/api/speech-token`.
-- In production, the Worker must verify the Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) on every `/api` request.
+- In production, the Worker verifies the Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) on every `/api` request (`worker/middleware/access.ts`, installed first in `createApp()`): signature via the team JWKS, `iss`, `aud`, `exp`, then the email against `ALLOWED_EMAILS` (secret, comma separated). **Fail-closed**: missing JWT or missing `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` / `ALLOWED_EMAILS` → 401, email not allowed → 403. The verified email is `c.get("userEmail")`.
+- `DEV_AUTH_BYPASS=1` (local `.dev.vars` only) skips the check, and `DEV_TIME_TRAVEL=1` enables `X-Dev-Now`, **only when `new URL(request.url).hostname` is localhost / 127.0.0.1 / [::1]** (`worker/lib/localDev.ts`; never trust the Host header). Never set either in production. Tests run at `http://localhost` with the bypass on (`createTestEnv`); `worker/middleware/access.test.ts` tests the gate with a fake JWKS.
+- `workers_dev` is the only hostname; `preview_urls` is off in `wrangler.jsonc`.
 
 ## Cost rules (free tiers)
 - **Cache first** for every paid call: TTS audio (R2 key = hash of lang + voice + text), LLM responses (`ai_cache`).

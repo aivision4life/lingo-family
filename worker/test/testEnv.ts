@@ -16,12 +16,13 @@ export const testApp = (deps: AppDeps = {}) =>
 
 /**
  * `vars` override env values from .dev.vars so tests do not depend on the developer's local
- * settings (e.g. DEV_TIME_TRAVEL is off unless a test turns it on).
+ * settings (e.g. DEV_TIME_TRAVEL is off unless a test turns it on). Tests run at http://localhost,
+ * so DEV_AUTH_BYPASS=1 lets them skip Access; access.test.ts turns it off to test the gate.
  */
 export async function createTestEnv(app = testApp(), vars: Record<string, string> = {}) {
   const proxy: PlatformProxy<Env> = await getPlatformProxy<Env>({ persist: false, remoteBindings: false });
   // Bindings on proxy.env are not enumerable, so inherit them instead of copying them.
-  const env: Env = Object.assign(Object.create(proxy.env) as Env, { DEV_TIME_TRAVEL: "0" }, vars);
+  const env: Env = Object.assign(Object.create(proxy.env) as Env, { DEV_TIME_TRAVEL: "0", DEV_AUTH_BYPASS: "1" }, vars);
 
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
   for (const file of files) {

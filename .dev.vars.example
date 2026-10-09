@@ -12,3 +12,7 @@ CLOUDFLARE_SUBDOMAIN=ai4life
 
 # Local only: lets the review screen fake "today" (X-Dev-Now header). Never set in production.
 DEV_TIME_TRAVEL=1
+
+# Local only: skips the Cloudflare Access check (no Access in front of `npm run dev`). Honoured
+# only for requests to localhost / 127.0.0.1. Never set in production.
+DEV_AUTH_BYPASS=1

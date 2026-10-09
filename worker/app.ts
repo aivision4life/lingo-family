@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./env";
+import { requireAccess, type AccessVariables } from "./middleware/access";
 import { healthRoutes } from "./routes/health";
 import { imageRoutes } from "./routes/images";
 import { mediaRoutes } from "./routes/media";
@@ -11,6 +12,8 @@ import { createLlmClient } from "./services/llm";
 import { createTtsClient } from "./services/tts";
 
 export type AppDeps = {
+  /** Access gate; tests inject a fake JWKS fetch. */
+  access?: ReturnType<typeof requireAccess>;
   /** Build the paid-API clients from env; tests pass fakes. */
   makeLlm?: MakeLlm;
   makeTts?: MakeTts;
@@ -23,9 +26,13 @@ export function createApp({
   makeLlm = createLlmClient,
   makeTts = createTtsClient,
   makeImageAi = defaultImageAi,
+  access = requireAccess(),
 }: AppDeps = {}) {
   const deps = { makeLlm, makeTts, makeImageAi };
-  const app = new Hono<AppEnv>().basePath("/api");
+  const app = new Hono<{ Bindings: AppEnv["Bindings"]; Variables: AccessVariables }>().basePath("/api");
+
+  // Fail-closed: nothing under /api runs before the Access JWT (and the email allow-list) is checked.
+  app.use("*", access);
 
   app.route("/health", healthRoutes);
   app.route("/profiles", profileRoutes);

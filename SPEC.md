@@ -53,7 +53,7 @@ Requirements:
   - The daily new-card limit (`daily_new_limit`) is one profile setting applied **separately to each learning language**, and counts only new recognition cards (see F4).
   - Rationale: kids living in Korea may read Korean better than Vietnamese, so they may learn English with Korean glosses.
 - [x] Optional 4-digit PIN on adult profiles (to stop kids from changing settings; not real security).
-- [ ] Access to the whole app is protected by Cloudflare Access (family email allow-list). There is no in-app password system.
+- [~] Access to the whole app is protected by Cloudflare Access (family email allow-list). There is no in-app password system. (M2.1: the Worker verifies the Access JWT on every `/api` request and the email against `ALLOWED_EMAILS`, fail-closed; Access itself is switched on in the dashboard.)
 
 ---
 
@@ -408,7 +408,9 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M1.7 | Phrases | Phrases table, AI suggestions + selection, phrase audio/examples, phrase cards (recognition + listening) | [x] |
 | M1.8 | Image pipeline | Workers AI FLUX (benchmark flux-1-schnell vs flux-2-klein-4b), image prompts in enrichment, `waitUntil` background generation, lazy example images, R2, Try again / Redraw / My photo, quotas | [x] |
 | M1.9 | Picture card + visual review | `picture` card type, unlock chain recognition → picture → listening, image-centred review UI | [x] |
-| M2 | Online | Deploy to Cloudflare, Access login, F11 PWA + offline sync (incl. images) | [ ] |
+| M2 | Online | Sub-milestones below | [~] |
+| M2.1 | Deploy + Access | Production D1/R2, fail-closed JWT check, Cloudflare Access (One-time PIN, email allow-list), move local content | [~] |
+| M2.2 | PWA + offline | F11 installable PWA, offline reviews + media, sync queue | [ ] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |

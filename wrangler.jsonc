@@ -4,6 +4,10 @@
   "main": "./worker/index.ts",
   "compatibility_date": "2026-10-01",
   "observability": { "enabled": true },
+  // https://lingo-family.ai4life.workers.dev is the only entrance. Preview URLs are off, so no
+  // second hostname exists that Cloudflare Access would have to protect.
+  "workers_dev": true,
+  "preview_urls": false,
   "assets": {
     // Unknown paths return index.html so React Router can handle them.
     "not_found_handling": "single-page-application",
@@ -30,8 +34,17 @@
       "bucket_name": "lingo-family-media"
     }
   ],
-  // Optional, non-secret settings. TTS voices default to ko-KR-SunHiNeural and en-US-JennyNeural
-  // (worker/services/tts.ts). To override, uncomment and edit, e.g.:
-  // "vars": { "TTS_VOICE_KO": "ko-KR-SunHiNeural", "TTS_VOICE_EN": "en-US-JennyNeural" },
-  // Secrets (AZURE_SPEECH_KEY, LLM_API_KEY, ...) live in .dev.vars / `wrangler secret`, never here.
+  // Non-secret settings. Every /api request must carry a Cloudflare Access JWT for this team
+  // and application (worker/middleware/access.ts); if either value is missing the API answers 401.
+  // ACCESS_AUD = "Application Audience (AUD) Tag" of the Access application (public, not a secret);
+  // empty until Access is set up (M2.1), which keeps the API closed.
+  // TTS voices default to ko-KR-SunHiNeural and en-US-JennyNeural (worker/services/tts.ts); to
+  // override add TTS_VOICE_KO / TTS_VOICE_EN here.
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "ai4life.cloudflareaccess.com",
+    "ACCESS_AUD": ""
+  },
+  // Secrets live in .dev.vars / `wrangler secret put`, never here: AZURE_SPEECH_KEY,
+  // AZURE_SPEECH_REGION, LLM_*, and ALLOWED_EMAILS (family emails, comma separated).
+  // Never set DEV_AUTH_BYPASS or DEV_TIME_TRAVEL in production (they only work on localhost anyway).
 }

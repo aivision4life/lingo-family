@@ -14,7 +14,7 @@ export const reviewRoutes = new Hono<AppEnv>()
   .get("/summary", zv("query", summaryQuerySchema), async (c) => {
     const db = getDb(c.env);
     const { profile_id, tz } = c.req.valid("query");
-    const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER));
+    const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
 
     const profile = await syncProfileCards(db, c.env.DB, profile_id, now);
     if (!profile) return c.json({ error: "not_found" }, 404);
@@ -41,7 +41,7 @@ export const reviewRoutes = new Hono<AppEnv>()
   .get("/queue", zv("query", queueQuerySchema), async (c) => {
     const db = getDb(c.env);
     const { profile_id, lang, tz } = c.req.valid("query");
-    const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER));
+    const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
 
     const profile = await syncProfileCards(db, c.env.DB, profile_id, now);
     if (!profile) return c.json({ error: "not_found" }, 404);
@@ -62,7 +62,7 @@ export const reviewRoutes = new Hono<AppEnv>()
   .post("/answer", zv("json", answerRequestSchema), async (c) => {
     const db = getDb(c.env);
     const { profile_id, card_id, rating, duration_ms } = c.req.valid("json");
-    const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER));
+    const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
 
     // The language comes from the (root) word; it is stored on the log so stats survive card deletion.
     const row = await db
