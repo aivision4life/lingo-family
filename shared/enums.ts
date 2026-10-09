@@ -12,7 +12,7 @@ export const UI_LANGS = ["vi", "ko", "en"] as const;
 export const uiLangSchema = z.enum(UI_LANGS);
 export type UiLang = z.infer<typeof uiLangSchema>;
 
-export const CARD_TYPES = ["recognition", "listening", "speaking"] as const;
+export const CARD_TYPES = ["recognition", "picture", "listening", "speaking"] as const;
 export const cardTypeSchema = z.enum(CARD_TYPES);
 export type CardType = z.infer<typeof cardTypeSchema>;
 

@@ -31,7 +31,7 @@ export const reviewRoutes = new Hono<AppEnv>()
           dayStart,
           isKid: profile.is_kid,
         });
-        return { lang, due: q.due, new: q.new };
+        return { lang, due: q.due, new: q.new, by_type: q.byType };
       }),
     );
     return c.json(summary);

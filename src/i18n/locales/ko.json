@@ -243,8 +243,15 @@
       "good": "좋음",
       "easy": "쉬움"
     },
+    "byType": "유형별 카드 수",
+    "typeShort": {
+      "recognition": "글자",
+      "picture": "그림",
+      "listening": "듣기"
+    },
     "cardType": {
       "recognition": "인식",
+      "picture": "그림",
       "listening": "듣기",
       "speaking": "말하기"
     },

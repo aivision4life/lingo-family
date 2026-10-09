@@ -1,11 +1,12 @@
 // Default decks, card creation and queue data for /api/review.
-import { and, count, eq, gte, isNull } from "drizzle-orm";
+import { and, count, eq, gte, isNull, sql } from "drizzle-orm";
 import { State } from "ts-fsrs";
 import { LEARN_LANGS, type LearnLang } from "../../shared/enums";
-import type { CardDto, QueueItem } from "../../shared/review";
+import type { CardDto, QueueItem, TypeCounts } from "../../shared/review";
 import { buildQueue, emptyCardFields, type QueueCandidate } from "../../shared/scheduling";
-import { cards, phrases, profile_decks, profiles, review_logs, words } from "../../db/schema";
+import { cards, examples, phrases, profile_decks, profiles, review_logs, words } from "../../db/schema";
 import type { getDb } from "../env";
+import { toExample } from "./phrases";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -24,12 +25,16 @@ const SUPPORTED_LANGS_SQL = `(${LEARN_LANGS.map((l) => `'${l}'`).join(",")})`;
 
 /** Values bound by both card-creation statements (?1 = profile id, ?2..?11 = empty ts-fsrs card). */
 const CARD_VALUES = `?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11`;
+/** Item (alias `w`) with a drawn or uploaded image. */
+const READY_IMAGE_SQL = `w.image_status = 'ready' AND w.image_key IS NOT NULL`;
 const CARD_TYPES_SQL = `(SELECT 'recognition' AS card_type UNION ALL SELECT 'listening')`;
 
 /**
  * Idempotent: creates the default decks, puts every word in the deck of its language,
  * links the profile to the decks of its study_langs and creates missing cards
  * (recognition + listening) for words and — except for kid profiles — their phrases.
+ * Picture cards are created only for items whose image is ready (SPEC F4, M1.9); an item that
+ * gets its image later gets its picture card then, and its existing cards keep their progress.
  * Unlinked decks keep their cards, so progress is never lost.
  *
  * Uses the D1 API directly: drizzle's batch() cannot run raw SQL with parameters.
@@ -86,6 +91,18 @@ export async function syncProfileCards(db: Db, d1: D1Database, profileId: string
          WHERE pd.profile_id = ?1`,
       ),
     ),
+    // Picture cards of words: only when the word's image is ready.
+    bindCard(
+      d1.prepare(
+        `INSERT OR IGNORE INTO cards (id, profile_id, word_id, card_type, due, stability, difficulty,
+           elapsed_days, scheduled_days, learning_steps, reps, lapses, state, last_review, updated_at)
+         SELECT lower(hex(randomblob(16))), ?1, dw.word_id, 'picture', ${CARD_VALUES}
+         FROM profile_decks pd
+         JOIN deck_words dw ON dw.deck_id = pd.deck_id
+         JOIN words w ON w.id = dw.word_id
+         WHERE pd.profile_id = ?1 AND ${READY_IMAGE_SQL}`,
+      ),
+    ),
     // Phrase cards follow the deck of their root word (word_id = root, checked by a trigger).
     // Kid profiles get no phrase cards (SPEC M1.7).
     ...(profile.is_kid
@@ -101,6 +118,17 @@ export async function syncProfileCards(db: Db, d1: D1Database, profileId: string
                JOIN phrases p ON p.word_id = dw.word_id
                CROSS JOIN ${CARD_TYPES_SQL} t
                WHERE pd.profile_id = ?1`,
+            ),
+          ),
+          bindCard(
+            d1.prepare(
+              `INSERT OR IGNORE INTO cards (id, profile_id, word_id, phrase_id, card_type, due, stability, difficulty,
+                 elapsed_days, scheduled_days, learning_steps, reps, lapses, state, last_review, updated_at)
+               SELECT lower(hex(randomblob(16))), ?1, p.word_id, p.id, 'picture', ${CARD_VALUES}
+               FROM profile_decks pd
+               JOIN deck_words dw ON dw.deck_id = pd.deck_id
+               JOIN phrases p ON p.word_id = dw.word_id
+               WHERE pd.profile_id = ?1 AND ${READY_IMAGE_SQL.replaceAll("w.", "p.")}`,
             ),
           ),
         ]),
@@ -159,8 +187,12 @@ type CandidateRow = Awaited<ReturnType<typeof loadCandidates>>[number];
 /** Key of the study item a card belongs to (its phrase, else its word). */
 const itemKey = (c: typeof cards.$inferSelect) => c.phrase_id ?? `word:${c.word_id}`;
 
-const toQueueItem = ({ card, word, phrase }: CandidateRow): QueueItem => ({
+const toQueueItem = (
+  { card, word, phrase }: CandidateRow,
+  exampleMap: Map<string, ReturnType<typeof toExample>[]>,
+): QueueItem => ({
   card: toCardDto(card),
+  examples: exampleMap.get(itemKey(card)) ?? [],
   word: phrase
     ? {
         kind: "phrase",
@@ -200,26 +232,54 @@ const toQueueItem = ({ card, word, phrase }: CandidateRow): QueueItem => ({
       },
 });
 
+/** Examples of the studied language, grouped by the item they belong to (phrase id, else `word:<id>`). */
+async function loadExamples(db: Db, lang: LearnLang) {
+  const rows = await db
+    .select({ ex: examples })
+    .from(examples)
+    .innerJoin(words, eq(words.id, examples.word_id))
+    .where(eq(words.lang, lang))
+    .orderBy(sql`examples.rowid`);
+  const byItem = new Map<string, ReturnType<typeof toExample>[]>();
+  for (const { ex } of rows) {
+    const key = ex.phrase_id ?? `word:${ex.word_id}`;
+    byItem.set(key, [...(byItem.get(key) ?? []), toExample(ex)]);
+  }
+  return byItem;
+}
+
 export async function todaysQueue(db: Db, a: QueueArgs) {
   // Kid profiles never see phrase cards (even ones created before they became a kid profile).
   const rows = await loadCandidates(db, a.profileId, a.lang, !a.isKid);
   const introducedToday = await introducedSince(db, a.profileId, a.lang, a.dayStart);
 
-  // Listening unlocks after the recognition card of the same item (word or phrase).
-  const recognitionState = new Map(
-    rows.filter((r) => r.card.card_type === "recognition").map((r) => [itemKey(r.card), r.card.state]),
-  );
+  // Unlock chain per item (word or phrase): recognition → picture → listening. An item without a
+  // picture card (no ready image yet) goes recognition → listening.
+  const stateOf = (type: "recognition" | "picture") =>
+    new Map(rows.filter((r) => r.card.card_type === type).map((r) => [itemKey(r.card), r.card.state]));
+  const recognitionState = stateOf("recognition");
+  const pictureState = stateOf("picture");
+  const prevState = (c: typeof cards.$inferSelect) => {
+    const key = itemKey(c);
+    if (c.card_type === "picture") return recognitionState.get(key) ?? null;
+    if (c.card_type === "listening") return pictureState.get(key) ?? recognitionState.get(key) ?? null;
+    return null;
+  };
   const candidates: QueueCandidate[] = rows.map((r) => ({
     id: r.card.id,
     card_type: r.card.card_type,
     state: r.card.state,
     due: r.card.due.getTime(),
     word_created_at: (r.phrase?.created_at ?? r.word.created_at).getTime(),
-    recognition_state: recognitionState.get(itemKey(r.card)) ?? null,
+    prev_state: prevState(r.card),
   }));
   const queue = buildQueue(candidates, { now: a.now, dayStart: a.dayStart, newLimit: a.newLimit, introducedToday });
 
+  const exampleMap = await loadExamples(db, a.lang);
   const byId = new Map(rows.map((r) => [r.card.id, r]));
-  const items = queue.ids.map((id) => toQueueItem(byId.get(id)!));
-  return { items, due: queue.due.length, new: queue.newCards.length };
+  const items = queue.ids.map((id) => toQueueItem(byId.get(id)!, exampleMap));
+
+  const byType: TypeCounts = { recognition: 0, picture: 0, listening: 0 };
+  for (const c of [...queue.due, ...queue.newCards]) if (c.card_type in byType) byType[c.card_type as keyof TypeCounts]++;
+  return { items, due: queue.due.length, new: queue.newCards.length, byType };
 }

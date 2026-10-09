@@ -179,13 +179,13 @@ Decisions (2026-10-08, images):
 - [x] Scheduling uses the `ts-fsrs` library. Ratings: Again / Hard / Good / Easy.
 - [~] Card types per word **and per phrase** (each scheduled independently):
   - **Recognition**: see the word/phrase (+ audio auto-play) → recall meaning. P0 (M1.4 words, M1.7 phrases)
-  - **Picture**: see the image only → recall the word/phrase (and meaning). P0 (M1.9)
+  - **Picture**: see the image only → recall the word/phrase (and meaning). P0 (M1.9, done)
   - **Listening**: hear audio only → recall word/phrase and meaning. P0 (M1.4 words, M1.7 phrases)
   - **Speaking**: see image/meaning → say the word aloud → automatic score (see F5), then self-rate. P1
-- [ ] **Unlock order: recognition → picture → listening.** A new card of the next type only becomes available after the previous type's card of the same item has been reviewed at least once.
+- [x] **Unlock order: recognition → picture → listening.** A new card of the next type only becomes available after the previous type's card of the same item has been reviewed at least once. An item without a ready image has no picture card and goes recognition → listening; when its image becomes ready later, the picture card is added and an existing listening card keeps its progress. Picture and listening cards do not count toward `daily_new_limit`. (M1.9)
 - [x] Daily queue = due reviews + up to N new cards (per-profile setting, applied per language).
 - [x] Keyboard shortcuts on PC (Space = flip, 1–4 = rating); large tap targets on phone.
-- [ ] **Visual review screen (M1.9):** the image is the centre of the card. Back side: word/phrase, reading, meaning, audio, Hanja/Hán-Việt, and the example sentences, each with a small image + audio button.
+- [x] **Visual review screen (M1.9):** the image is the centre of the card. Back side: word/phrase, reading, meaning, audio, Hanja/Hán-Việt, and the example sentences, each with a small image + audio button.
 - [ ] Works **offline**: reviews are stored locally and synced when online.
 - [x] Each review is logged (for stats and FSRS optimization later).
 
@@ -207,6 +207,11 @@ Decisions (M1.4):
 - Cards answered "Again" (or still in learning steps) come back in the same session when due within 20 minutes.
 - The session starts after choosing a language; the review screen has no navigation, only an Exit button back to Home (M1.5).
 - Dev time travel: while running locally, a small panel (only in `import.meta.env.DEV`) shifts "today"; it sends `X-Dev-Now`, which the server reads **only** when `DEV_TIME_TRAVEL=1` (in `.dev.vars`). Production always ignores it.
+Decisions (M1.9):
+- Picture cards are created (by `syncProfileCards`, idempotent) only for words/phrases whose `image_status = 'ready'`; kid profiles get picture cards for words, not for phrases. No migration: `card_type` has no CHECK constraint.
+- Unlock chain in the queue: `prev_state` = recognition for picture; picture if the item has a picture card, else recognition, for listening.
+- Queue items now carry the item's example sentences (with image fields and audio); `/api/review/summary` returns `by_type` (recognition / picture / listening counts of due + new cards) for the Home screen.
+- Review UI: big square image, rating bar fixed at the bottom; desktop = image left, content right. The next 3 cards' images and audio are preloaded (`src/features/review/preload.ts`); preloading never asks for drawing. Picture cards play their audio on the flip, not on the front.
 - Not in M1.4: kid mode (F8), speaking cards (M3), offline sync (M2).
 
 ### F5. Pronunciation practice & scoring — P1
@@ -402,7 +407,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M1.6 | Remove Chinese | Migration deleting `zh` data, Hanja field rename, code/UI/TTS/font clean-up | [x] |
 | M1.7 | Phrases | Phrases table, AI suggestions + selection, phrase audio/examples, phrase cards (recognition + listening) | [x] |
 | M1.8 | Image pipeline | Workers AI FLUX (benchmark flux-1-schnell vs flux-2-klein-4b), image prompts in enrichment, `waitUntil` background generation, lazy example images, R2, Try again / Redraw / My photo, quotas | [x] |
-| M1.9 | Picture card + visual review | `picture` card type, unlock chain recognition → picture → listening, image-centred review UI | [ ] |
+| M1.9 | Picture card + visual review | `picture` card type, unlock chain recognition → picture → listening, image-centred review UI | [x] |
 | M2 | Online | Deploy to Cloudflare, Access login, F11 PWA + offline sync (incl. images) | [ ] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
@@ -415,6 +420,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 - ~~Which LLM provider to use as default (Gemini free tier vs Claude)?~~ **Decided (M1.2):** Gemini, model `gemini-3.8-flash` by default; switchable by `LLM_PROVIDER` / `LLM_MODEL`.
 - Is the Hán-Việt quality from the LLM good enough, or should we import an open Hán-Việt dictionary dataset?
 - Should kids' profiles get an English or a Korean UI by default?
+- **For M4 (kid mode):** consider picture-first order for kids (look at the image and listen first, text later), because young children may not read well yet; M1.9 keeps recognition → picture → listening for everyone.
 - Should the wife's profile have specific goals/levels? (Not yet specified.)
 - ~~Images per word?~~ **Decided (2026-10-08):** draw the word + selected phrases right away; example images lazily on first display; unselected phrases never; 2 examples per word, 1 per phrase.
 - ~~FLUX model?~~ **Decided:** start with `flux-1-schnell`; M1.8 benchmark (5 prompts × `flux-1-schnell` / `flux-2-klein-4b`, Neurons per image, saved images) to choose the final model and family cap.

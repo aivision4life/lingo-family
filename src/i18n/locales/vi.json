@@ -243,8 +243,15 @@
       "good": "Được",
       "easy": "Dễ"
     },
+    "byType": "Số thẻ theo loại",
+    "typeShort": {
+      "recognition": "Chữ",
+      "picture": "Ảnh",
+      "listening": "Nghe"
+    },
     "cardType": {
       "recognition": "Nhận diện",
+      "picture": "Nhìn ảnh",
       "listening": "Nghe",
       "speaking": "Nói"
     },

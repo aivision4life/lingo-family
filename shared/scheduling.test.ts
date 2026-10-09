@@ -71,7 +71,7 @@ describe("buildQueue", () => {
     state: State.New,
     due: now.getTime(),
     word_created_at: seq,
-    recognition_state: null,
+    prev_state: null,
     ...over,
   });
   const opts = { now, dayStart, newLimit: 2, introducedToday: 0 };
@@ -99,10 +99,19 @@ describe("buildQueue", () => {
     expect(q.ids.sort()).toEqual([laterToday.id, learningSoon.id].sort());
   });
 
-  it("new listening cards wait for their recognition card and are not limited", () => {
-    const waiting = c({ card_type: "listening", recognition_state: State.New });
-    const ready = [1, 2, 3].map(() => c({ card_type: "listening", recognition_state: State.Learning }));
+  it("new listening cards wait for their previous card and are not limited", () => {
+    const waiting = c({ card_type: "listening", prev_state: State.New });
+    const ready = [1, 2, 3].map(() => c({ card_type: "listening", prev_state: State.Learning }));
     const q = buildQueue([waiting, ...ready], { ...opts, newLimit: 0 });
     expect(q.ids).toEqual(ready.map((r) => r.id));
+  });
+
+  it("new picture cards wait for recognition, are not limited and come before listening", () => {
+    const waiting = c({ card_type: "picture", prev_state: State.New });
+    const picture = c({ card_type: "picture", prev_state: State.Review });
+    const listening = c({ card_type: "listening", prev_state: State.Learning });
+    const recognition = c({});
+    const q = buildQueue([waiting, listening, picture, recognition], { ...opts, newLimit: 1 });
+    expect(q.ids).toEqual([picture.id, listening.id, recognition.id]);
   });
 });

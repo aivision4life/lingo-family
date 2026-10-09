@@ -35,6 +35,7 @@ const item = (id: string): QueueItem => ({
     image_key: null,
     image_status: "none",
   },
+  examples: [],
 });
 
 describe("review session", () => {

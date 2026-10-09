@@ -64,7 +64,7 @@ beforeEach(async () => {
 
 describe("cards and queue", () => {
   it("creates recognition + listening cards for studied languages only", async () => {
-    expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 2 }]);
+    expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 2, by_type: { recognition: 2, picture: 0, listening: 0 } }]);
     expect(await cardCount(bo)).toBe(6); // 3 Korean words × 2 types, no English cards
   });
 
@@ -90,7 +90,7 @@ describe("cards and queue", () => {
     const kinds = items.map((i) => `${i.word.term}/${i.card.card_type}`);
     // Learning card due in 10 min (learn-ahead), listening of 학생 unlocked, 1 new recognition left today.
     expect(kinds).toEqual(["학생/recognition", "학생/listening", "학교/recognition"]);
-    expect(await summary(bo)).toEqual([{ lang: "ko", due: 1, new: 2 }]);
+    expect(await summary(bo)).toEqual([{ lang: "ko", due: 1, new: 2, by_type: { recognition: 2, picture: 0, listening: 1 } }]);
   });
 
   it("daily_new_limit applies per language", async () => {

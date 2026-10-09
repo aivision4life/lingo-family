@@ -1,5 +1,6 @@
 // API contract for /api/review.
 import { z } from "zod";
+import { exampleSchema } from "./base";
 import { cardTypeSchema, imageStatusSchema, learnLangSchema } from "./enums";
 import type { CardFields } from "./scheduling";
 
@@ -52,7 +53,12 @@ export const reviewWordSchema = z.object({
   image_status: imageStatusSchema,
 });
 
-export const queueItemSchema = z.object({ card: cardDtoSchema, word: reviewWordSchema });
+/** Example sentences of the item (shown on the back, each with a small image and audio). */
+export const queueItemSchema = z.object({
+  card: cardDtoSchema,
+  word: reviewWordSchema,
+  examples: z.array(exampleSchema),
+});
 export type QueueItem = z.infer<typeof queueItemSchema>;
 
 export const queueResponseSchema = z.object({ items: z.array(queueItemSchema), now: z.number() });
@@ -63,8 +69,16 @@ const tzSchema = z.coerce.number().int().min(-14 * 60).max(14 * 60);
 export const summaryQuerySchema = z.object({ profile_id: z.string().min(1), tz: tzSchema });
 export const queueQuerySchema = summaryQuerySchema.extend({ lang: learnLangSchema });
 
+/** Cards to study today (due + new) by type: text = recognition, picture, listening. */
+export const typeCountsSchema = z.object({
+  recognition: z.number().int(),
+  picture: z.number().int(),
+  listening: z.number().int(),
+});
+export type TypeCounts = z.infer<typeof typeCountsSchema>;
+
 export const summarySchema = z.array(
-  z.object({ lang: learnLangSchema, due: z.number().int(), new: z.number().int() }),
+  z.object({ lang: learnLangSchema, due: z.number().int(), new: z.number().int(), by_type: typeCountsSchema }),
 );
 export type ReviewSummary = z.infer<typeof summarySchema>;
 

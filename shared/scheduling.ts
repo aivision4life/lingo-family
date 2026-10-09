@@ -78,8 +78,12 @@ export type QueueCandidate = {
   due: number;
   /** Order of new cards: older words first. */
   word_created_at: number;
-  /** State of the recognition card of the same word (listening cards wait for it). */
-  recognition_state: number | null;
+  /**
+   * State of the card before this one in the unlock chain recognition → picture → listening
+   * (null = no such card). Picture waits for recognition; listening waits for picture when the
+   * item has one, else for recognition (items without a ready image skip picture).
+   */
+  prev_state: number | null;
 };
 
 export type QueueOptions = {
@@ -95,7 +99,8 @@ export type QueueOptions = {
 /**
  * Today's queue for one language (ids in order):
  * 1. due cards: learning cards up to 20 min ahead, review cards due before the end of today;
- * 2. new listening cards whose recognition card was already reviewed (not limited);
+ * 2. new picture, then new listening cards whose previous card in the chain was already
+ *    reviewed (not limited);
  * 3. new recognition cards, at most `newLimit - introducedToday`.
  */
 export function buildQueue(cands: QueueCandidate[], o: QueueOptions) {
@@ -106,16 +111,20 @@ export function buildQueue(cands: QueueCandidate[], o: QueueOptions) {
   const due = cands
     .filter((c) => c.state !== State.New && c.due <= (isLearning(c.state) ? now + LEARN_AHEAD_MS : endOfDay - 1))
     .sort((a, b) => a.due - b.due);
-  const newListening = cands
-    .filter((c) => c.state === State.New && c.card_type === "listening")
-    .filter((c) => c.recognition_state !== null && c.recognition_state !== State.New)
-    .sort(byWordAge);
+  const newUnlocked = (type: CardType) =>
+    cands
+      .filter((c) => c.state === State.New && c.card_type === type)
+      .filter((c) => c.prev_state !== null && c.prev_state !== State.New)
+      .sort(byWordAge);
+  const newPicture = newUnlocked("picture");
+  const newListening = newUnlocked("listening");
   const newRecognition = cands
     .filter((c) => c.state === State.New && c.card_type === "recognition")
     .sort(byWordAge)
     .slice(0, Math.max(0, o.newLimit - o.introducedToday));
 
-  return { due, newCards: [...newListening, ...newRecognition], ids: [...due, ...newListening, ...newRecognition].map((c) => c.id) };
+  const newCards = [...newPicture, ...newListening, ...newRecognition];
+  return { due, newCards, ids: [...due, ...newCards].map((c) => c.id) };
 }
 
 /** Whether an answered card should come back in the same session. */
