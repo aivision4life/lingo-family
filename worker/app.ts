@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./env";
 import { requireAccess, type AccessVariables } from "./middleware/access";
+import { albumRoutes } from "./routes/albums";
 import { healthRoutes } from "./routes/health";
 import { imageRoutes } from "./routes/images";
 import { mediaRoutes } from "./routes/media";
@@ -41,6 +42,7 @@ export function createApp({
   app.route("/", imageRoutes(deps));
   app.route("/media", mediaRoutes);
   app.route("/review", reviewRoutes);
+  app.route("/", albumRoutes);
 
   app.notFound((c) => c.json({ error: "not_found" }, 404));
   return app;

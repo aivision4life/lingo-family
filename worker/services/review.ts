@@ -248,10 +248,23 @@ async function loadExamples(db: Db, lang: LearnLang) {
   return byItem;
 }
 
-export async function todaysQueue(db: Db, a: QueueArgs) {
+/** What the queue is built from: the profile's cards of one language and today's new-card count. */
+export type QueueInputs = { rows: CandidateRow[]; introducedToday: number };
+
+export async function loadQueueInputs(db: Db, a: QueueArgs): Promise<QueueInputs> {
   // Kid profiles never see phrase cards (even ones created before they became a kid profile).
   const rows = await loadCandidates(db, a.profileId, a.lang, !a.isKid);
-  const introducedToday = await introducedSince(db, a.profileId, a.lang, a.dayStart);
+  return { rows, introducedToday: await introducedSince(db, a.profileId, a.lang, a.dayStart) };
+}
+
+/**
+ * Today's queue for one language from loaded inputs. `wordIds` (an album) only filters which
+ * cards take part; the FSRS schedule is shared, and the daily new-card limit still counts the whole
+ * language (`introducedToday` is not per album). Phrase cards belong to an album through their root
+ * word (`cards.word_id`).
+ */
+export function queueFrom({ rows: all, introducedToday }: QueueInputs, a: QueueArgs, wordIds?: ReadonlySet<string> | null) {
+  const rows = wordIds ? all.filter((r) => wordIds.has(r.card.word_id)) : all;
 
   // Unlock chain per item (word or phrase): recognition → picture → listening. An item without a
   // picture card (no ready image yet) goes recognition → listening.
@@ -275,11 +288,33 @@ export async function todaysQueue(db: Db, a: QueueArgs) {
   }));
   const queue = buildQueue(candidates, { now: a.now, dayStart: a.dayStart, newLimit: a.newLimit, introducedToday });
 
-  const exampleMap = await loadExamples(db, a.lang);
-  const byId = new Map(rows.map((r) => [r.card.id, r]));
-  const items = queue.ids.map((id) => toQueueItem(byId.get(id)!, exampleMap));
-
   const byType: TypeCounts = { recognition: 0, picture: 0, listening: 0 };
   for (const c of [...queue.due, ...queue.newCards]) if (c.card_type in byType) byType[c.card_type as keyof TypeCounts]++;
-  return { items, due: queue.due.length, new: queue.newCards.length, byType };
+  return { rows, queue, due: queue.due.length, new: queue.newCards.length, byType };
+}
+
+/** The review queue with the cards' words and examples (`/api/review/queue`). */
+export async function todaysQueue(db: Db, a: QueueArgs, wordIds?: ReadonlySet<string> | null) {
+  const q = queueFrom(await loadQueueInputs(db, a), a, wordIds);
+  const exampleMap = await loadExamples(db, a.lang);
+  const byId = new Map(q.rows.map((r) => [r.card.id, r]));
+  const items = q.queue.ids.map((id) => toQueueItem(byId.get(id)!, exampleMap));
+  return { items, due: q.due, new: q.new, byType: q.byType };
+}
+
+export type AlbumScope = { id: string; name: string; wordIds: ReadonlySet<string> };
+
+/** Counts for Home (`/api/review/summary`): the language, and each of its albums. No items are built. */
+export async function queueSummary(db: Db, a: QueueArgs, albums: AlbumScope[]) {
+  const inputs = await loadQueueInputs(db, a);
+  const all = queueFrom(inputs, a);
+  return {
+    due: all.due,
+    new: all.new,
+    byType: all.byType,
+    albums: albums.map((al) => {
+      const q = queueFrom(inputs, a, al.wordIds);
+      return { id: al.id, name: al.name, due: q.due, new: q.new };
+    }),
+  };
 }

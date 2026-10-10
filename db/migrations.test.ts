@@ -214,3 +214,52 @@ describe("migrations 0003_ai_cache_model and 0004_images", () => {
     expect(await count("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'")).toBe(5);
   });
 });
+
+describe("migration 0005_albums", () => {
+  let beforeRows: number;
+  beforeAll(async () => {
+    beforeRows = (await count("SELECT count(*) AS n FROM deck_words")) ?? 0;
+    await apply("0005_albums.sql");
+  });
+
+  const insertWord = (id: string, lang: string, term: string) =>
+    DB.prepare(
+      `INSERT INTO words (id, lang, term, reading, pos, gloss_vi, gloss_en, gloss_ko, ai_generated, verified, created_at, updated_at)
+       VALUES (?, ?, ?, '', 'noun', 'x', 'x', 'x', 0, 0, 1, 1)`,
+    ).bind(id, lang, term);
+
+  it("existing decks become 'default' and existing links keep their rows with a backfilled added_at", async () => {
+    expect(await count("SELECT count(*) AS n FROM decks WHERE kind != 'default'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM deck_words")).toBe(beforeRows);
+    expect(await count("SELECT count(*) AS n FROM deck_words WHERE added_at = 0")).toBe(0);
+  });
+
+  it("a new link left at added_at = 0 gets the insert time; an explicit value is kept", async () => {
+    await DB.batch([
+      insertWord("w-al-1", "ko", "앨범1"),
+      insertWord("w-al-2", "ko", "앨범2"),
+      DB.prepare("INSERT INTO decks (id, name, lang, kind, created_at) VALUES ('alb-ko', 'Office', 'ko', 'album', 1)"),
+    ]);
+    const before = Date.now();
+    await DB.prepare("INSERT INTO deck_words (deck_id, word_id) VALUES ('alb-ko', 'w-al-1')").run();
+    await DB.prepare("INSERT INTO deck_words (deck_id, word_id, added_at) VALUES ('alb-ko', 'w-al-2', 12345)").run();
+    const rows = await DB.prepare("SELECT word_id, added_at FROM deck_words WHERE deck_id = 'alb-ko' ORDER BY word_id").all<{ word_id: string; added_at: number }>();
+    expect(rows.results[0]!.added_at).toBeGreaterThanOrEqual(before - 1000);
+    expect(rows.results[1]!.added_at).toBe(12345);
+  });
+
+  it("a word cannot join a deck of another language", async () => {
+    await insertWord("w-al-en", "en", "album-en").run();
+    await expect(DB.prepare("INSERT INTO deck_words (deck_id, word_id) VALUES ('alb-ko', 'w-al-en')").run()).rejects.toThrow(/languages differ/);
+  });
+
+  it("deleting an album removes only its links; deleting a word removes it from albums", async () => {
+    await DB.prepare("DELETE FROM decks WHERE id = 'alb-ko'").run();
+    expect(await count("SELECT count(*) AS n FROM deck_words WHERE deck_id = 'alb-ko'")).toBe(0);
+    expect(await count("SELECT count(*) AS n FROM words WHERE id IN ('w-al-1', 'w-al-2')")).toBe(2);
+  });
+
+  it("adds the two triggers and keeps the earlier ones", async () => {
+    expect(await count("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'")).toBe(7);
+  });
+});

@@ -1,6 +1,7 @@
-import { and, count, desc, eq, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
+import { ALBUM_ERRORS, UNSORTED_ALBUM } from "../../shared/album";
 import type { LearnLang } from "../../shared/enums";
 import {
   deleteWordRequestSchema,
@@ -14,13 +15,14 @@ import {
   type WordDetail,
   type WordSummary,
 } from "../../shared/word";
-import { cards, examples, words } from "../../db/schema";
+import { cards, decks, examples, words } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { requireAdult } from "../lib/access";
 import { runAiTask } from "../lib/aiTask";
 import { runInBackground } from "../lib/background";
 import { zv } from "../lib/validate";
 import { generateWordAudio } from "../services/audio";
+import { addWordsStatements, albumsOfWord } from "../services/albums";
 import { enrichWithCache } from "../services/enrich";
 import { drawClaimedItems, initialImageFields } from "../services/imageJobs";
 import { isLocalHost } from "../lib/localDev";
@@ -115,12 +117,20 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
 
     .post("/", zv("json", wordCreateSchema), async (c) => {
       const db = getDb(c.env);
-      const { profile_id, examples: exampleInputs, phrases: phraseInputs, ...fields } = c.req.valid("json");
+      const { profile_id, examples: exampleInputs, phrases: phraseInputs, album_ids, ...fields } = c.req.valid("json");
       const denied = await requireAdult(c, profile_id);
       if (denied) return denied;
 
       const dup = await findDuplicate(db, fields.lang, fields.term);
       if (dup) return c.json({ error: WORD_ERRORS.duplicate, existing_id: dup.id }, 409);
+
+      // Albums must exist, be albums, and share the word's language: checked before anything is saved.
+      const wantedAlbums = [...new Set(album_ids)];
+      if (wantedAlbums.length > 0) {
+        const found = await db.select({ id: decks.id, lang: decks.lang }).from(decks).where(and(eq(decks.kind, "album"), inArray(decks.id, wantedAlbums)));
+        if (found.length !== wantedAlbums.length) return c.json({ error: ALBUM_ERRORS.notFound }, 404);
+        if (found.some((a) => a.lang !== fields.lang)) return c.json({ error: ALBUM_ERRORS.languageMismatch }, 400);
+      }
 
       const id = crypto.randomUUID();
       const imagesOn = makeImageAi(c.env, c.req.url) !== null;
@@ -134,6 +144,7 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       } else {
         await insertWord;
       }
+      if (wantedAlbums.length > 0) await c.env.DB.batch(wantedAlbums.flatMap((a) => addWordsStatements(c.env.DB, a, [id])));
       const { skipped, pendingImages } = await savePhrases(db, {
         wordId: id,
         wordTerm: fields.term,
@@ -173,9 +184,14 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
     })
 
     .get("/", zv("query", wordListQuerySchema), async (c) => {
-      const { lang, q } = c.req.valid("query");
+      const { lang, q, album } = c.req.valid("query");
       const conditions: SQL[] = [];
       if (lang) conditions.push(eq(words.lang, lang));
+      if (album === UNSORTED_ALBUM) {
+        conditions.push(sql`NOT EXISTS (SELECT 1 FROM deck_words dw JOIN decks d ON d.id = dw.deck_id WHERE dw.word_id = ${words.id} AND d.kind = 'album')`);
+      } else if (album) {
+        conditions.push(sql`EXISTS (SELECT 1 FROM deck_words dw JOIN decks d ON d.id = dw.deck_id WHERE dw.word_id = ${words.id} AND dw.deck_id = ${album} AND d.kind = 'album')`);
+      }
       if (q) {
         const pattern = likePattern(q);
         const fields = [words.term, words.reading, words.gloss_vi, words.gloss_en, words.gloss_ko];
@@ -185,7 +201,12 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
         .select({ word: words, phrase_count: phraseCount })
         .from(words)
         .where(and(...conditions))
-        .orderBy(desc(words.created_at))
+        // Album view: most recently added to the album first; otherwise newest words first.
+        .orderBy(
+          album && album !== UNSORTED_ALBUM
+            ? sql`(SELECT added_at FROM deck_words dw WHERE dw.word_id = ${words.id} AND dw.deck_id = ${album}) DESC`
+            : desc(words.created_at),
+        )
         .limit(200);
       return c.json(rows.map((r) => toSummary(r.word, r.phrase_count)));
     })
@@ -195,10 +216,11 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       const { id } = c.req.valid("param");
       const w = await db.select().from(words).where(eq(words.id, id)).get();
       if (!w) return c.json({ error: "not_found" }, 404);
-      const [exs, phs, cardRow] = await Promise.all([
+      const [exs, phs, cardRow, albums] = await Promise.all([
         wordOnlyExamples(db, id),
         loadPhrases(db, id),
         db.select({ n: count() }).from(cards).where(eq(cards.word_id, id)).get(),
+        albumsOfWord(db, id),
       ]);
 
       const detail: WordDetail = {
@@ -211,6 +233,7 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
         examples: exs.map(toExample),
         phrases: phs,
         card_count: cardRow?.n ?? 0,
+        albums,
       };
       return c.json(detail);
     })

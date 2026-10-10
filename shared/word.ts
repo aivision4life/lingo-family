@@ -8,6 +8,7 @@ import {
   TERM_MAX,
   termSchema,
 } from "./base";
+import { albumRefSchema } from "./album";
 import { exampleLevelSchema, learnLangSchema } from "./enums";
 import { imageViewSchema } from "./image";
 import { llmPhraseSchema, PHRASES_MAX, phraseInputSchema, phraseSchema, skippedPhraseSchema } from "./phrase";
@@ -101,6 +102,8 @@ export const wordCreateSchema = z.object({
   examples: z.array(exampleInputSchema).max(EXAMPLES_MAX),
   /** Ticked phrases saved together with the word (duplicates are skipped). */
   phrases: z.array(phraseInputSchema).max(PHRASES_MAX).default([]),
+  /** Albums (of the word's language) the new word is added to (M2.4). */
+  album_ids: z.array(z.string().min(1)).max(50).default([]),
 });
 export type WordCreate = z.input<typeof wordCreateSchema>;
 
@@ -134,6 +137,8 @@ export const wordDetailSchema = wordSummarySchema.extend({
   phrases: z.array(phraseSchema),
   /** Review cards of all profiles for this word and its phrases (shown before deleting). */
   card_count: z.number().int().nonnegative(),
+  /** Albums the word is in (M2.4). */
+  albums: z.array(albumRefSchema),
 });
 export type WordDetail = z.infer<typeof wordDetailSchema>;
 
@@ -143,6 +148,8 @@ export const deleteWordRequestSchema = z.object({ profile_id: z.string().min(1) 
 export const wordListQuerySchema = z.object({
   lang: learnLangSchema.optional(),
   q: z.string().trim().max(TERM_MAX).optional(),
+  /** An album id, or "none" for words that are in no album (the virtual "Unsorted" entry). */
+  album: z.string().min(1).optional(),
 });
 
 export const WORD_ERRORS = {

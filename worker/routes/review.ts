@@ -7,7 +7,9 @@ import { cards, review_logs, words } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
 import { zv } from "../lib/validate";
-import { syncProfileCards, toCardDto, todaysQueue } from "../services/review";
+import { ALBUM_ERRORS } from "../../shared/album";
+import { albumScopes, albumWordIds, loadAlbum } from "../services/albums";
+import { queueSummary, syncProfileCards, toCardDto, todaysQueue } from "../services/review";
 
 export const reviewRoutes = new Hono<AppEnv>()
   /** Due + new counts for each language the profile studies (Home screen). */
@@ -23,15 +25,12 @@ export const reviewRoutes = new Hono<AppEnv>()
     const langs = LEARN_LANGS.filter((l) => profile.study_langs.includes(l));
     const summary: ReviewSummary = await Promise.all(
       langs.map(async (lang) => {
-        const q = await todaysQueue(db, {
-          profileId: profile_id,
-          lang,
-          newLimit: profile.daily_new_limit,
-          now,
-          dayStart,
-          isKid: profile.is_kid,
-        });
-        return { lang, due: q.due, new: q.new, by_type: q.byType };
+        const q = await queueSummary(
+          db,
+          { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart, isKid: profile.is_kid },
+          await albumScopes(db, lang),
+        );
+        return { lang, due: q.due, new: q.new, by_type: q.byType, albums: q.albums };
       }),
     );
     return c.json(summary);
@@ -40,21 +39,26 @@ export const reviewRoutes = new Hono<AppEnv>()
   /** Today's queue for one language. */
   .get("/queue", zv("query", queueQuerySchema), async (c) => {
     const db = getDb(c.env);
-    const { profile_id, lang, tz } = c.req.valid("query");
+    const { profile_id, lang, tz, album } = c.req.valid("query");
     const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
 
     const profile = await syncProfileCards(db, c.env.DB, profile_id, now);
     if (!profile) return c.json({ error: "not_found" }, 404);
     if (!profile.study_langs.includes(lang)) return c.json({ items: [], now: now.getTime() });
 
-    const q = await todaysQueue(db, {
-      profileId: profile_id,
-      lang,
-      newLimit: profile.daily_new_limit,
-      now,
-      dayStart: localDayStart(now, tz),
-      isKid: profile.is_kid,
-    });
+    // An album filters the queue; it must be an album of the language being studied.
+    let wordIds: ReadonlySet<string> | null = null;
+    if (album) {
+      const found = await loadAlbum(db, album);
+      if (!found || found.lang !== lang) return c.json({ error: ALBUM_ERRORS.notFound }, 404);
+      wordIds = await albumWordIds(db, album);
+    }
+
+    const q = await todaysQueue(
+      db,
+      { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart: localDayStart(now, tz), isKid: profile.is_kid },
+      wordIds,
+    );
     return c.json({ items: q.items, now: now.getTime() });
   })
 

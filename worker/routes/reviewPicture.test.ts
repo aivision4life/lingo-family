@@ -120,7 +120,7 @@ describe("picture cards", () => {
   it("summary counts due + new cards by type; queue items carry the example sentences", async () => {
     await setReady("words");
     await answerType(bo, "recognition");
-    expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 1, by_type: { recognition: 0, picture: 1, listening: 0 } }]);
+    expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 1, by_type: { recognition: 0, picture: 1, listening: 0 }, albums: [] }]);
 
     const item = (await queue(bo)).find((i) => i.card.card_type === "picture")!;
     expect(item.examples.map((e) => e.sentence)).toEqual(["학생 예문"]);

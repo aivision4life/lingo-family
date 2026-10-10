@@ -67,7 +67,8 @@ export const queueResponseSchema = z.object({ items: z.array(queueItemSchema), n
 const tzSchema = z.coerce.number().int().min(-14 * 60).max(14 * 60);
 
 export const summaryQuerySchema = z.object({ profile_id: z.string().min(1), tz: tzSchema });
-export const queueQuerySchema = summaryQuerySchema.extend({ lang: learnLangSchema });
+/** `album` = an album id: only that album's cards are queued (the schedule and daily limit stay per language). */
+export const queueQuerySchema = summaryQuerySchema.extend({ lang: learnLangSchema, album: z.string().min(1).optional() });
 
 /** Cards to study today (due + new) by type: text = recognition, picture, listening. */
 export const typeCountsSchema = z.object({
@@ -77,8 +78,19 @@ export const typeCountsSchema = z.object({
 });
 export type TypeCounts = z.infer<typeof typeCountsSchema>;
 
+/** Due + new cards of one album (Home, M2.4). */
+export const albumCountsSchema = z.object({ id: z.string(), name: z.string(), due: z.number().int(), new: z.number().int() });
+export type AlbumCounts = z.infer<typeof albumCountsSchema>;
+
 export const summarySchema = z.array(
-  z.object({ lang: learnLangSchema, due: z.number().int(), new: z.number().int(), by_type: typeCountsSchema }),
+  z.object({
+    lang: learnLangSchema,
+    due: z.number().int(),
+    new: z.number().int(),
+    by_type: typeCountsSchema,
+    /** Albums of this language that have words, with their own counts. */
+    albums: z.array(albumCountsSchema),
+  }),
 );
 export type ReviewSummary = z.infer<typeof summarySchema>;
 

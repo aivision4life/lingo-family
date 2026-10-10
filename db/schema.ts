@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import {
   CARD_TYPES,
+  DECK_KINDS,
   EXAMPLE_LEVELS,
   IMAGE_SOURCES,
   IMAGE_STATUSES,
@@ -160,6 +161,8 @@ export const decks = sqliteTable("decks", {
   name: text("name").notNull(),
   lang: text("lang", { enum: LEARN_LANGS }).notNull(),
   is_kid_deck: bool("is_kid_deck").notNull().default(false),
+  /** `default` decks (default-ko, default-en) drive card creation; `album` decks are playlists (M2.4). */
+  kind: text("kind", { enum: DECK_KINDS }).notNull().default("default"),
   created_at: createdAt(),
 });
 
@@ -172,6 +175,12 @@ export const deck_words = sqliteTable(
     word_id: text("word_id")
       .notNull()
       .references(() => words.id, { onDelete: "cascade" }),
+    /**
+     * When the word joined the deck (epoch ms). A trigger in migration 0005 fills it on insert when
+     * it is left at 0; rows from before the migration were backfilled with the migration time.
+     * Orders "recently added" and picks an album's cover.
+     */
+    added_at: timestamp("added_at").notNull().default(sql`0`),
   },
   (t) => [primaryKey({ columns: [t.deck_id, t.word_id] }), index("deck_words_word_idx").on(t.word_id)],
 );
