@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router";
 import { AppLayout, FocusLayout } from "@/components/layout/AppLayout";
 import { RequireProfile, RootRedirect } from "@/features/profiles/guards";
+import { AlbumPage } from "@/pages/AlbumPage";
 import { AddWordPage } from "@/pages/AddWordPage";
 import { CharacterPage } from "@/pages/CharacterPage";
 import { HomePage } from "@/pages/HomePage";
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
           { path: "home", element: <HomePage /> }, // 2
           { path: "words", element: <WordLibraryPage /> }, // 4
           { path: "words/new", element: <AddWordPage /> }, // 5
+          { path: "albums/:id", element: <AlbumPage /> }, // 4 (album, or the virtual "Unsorted")
           { path: "words/:id", element: <WordDetailPage /> }, // 6
           { path: "practice/:wordId?", element: <PracticePage /> }, // 7
           { path: "chars/:char", element: <CharacterPage /> }, // 8

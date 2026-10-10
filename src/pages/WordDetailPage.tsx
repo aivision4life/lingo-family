@@ -4,6 +4,8 @@ import { UI_LANGS } from "@shared/enums";
 import type { WordDetail } from "@shared/word";
 import { LangText } from "@/components/LangText";
 import { LinkButton } from "@/components/LinkButton";
+import { Link } from "react-router";
+import { WordAlbumsButton } from "@/features/albums/WordAlbumsDialog";
 import { PageShell } from "@/components/PageShell";
 import { SpeakButton, SpeedToggle } from "@/features/audio/AudioButtons";
 import { AudioStatus } from "@/features/audio/AudioStatus";
@@ -61,6 +63,23 @@ function Detail({ w }: { w: WordDetail }) {
           </span>
         </div>
       </div>
+
+      {(w.albums.length > 0 || canManageProfiles(profile)) && (
+        <section className="flex flex-col gap-2" aria-label={t("albums.button")}>
+          {w.albums.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {w.albums.map((a) => (
+                <li key={a.id}>
+                  <Link to={`/albums/${a.id}`} className="inline-flex min-h-9 items-center rounded-full bg-secondary px-3 text-sm">
+                    {a.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {profile && canManageProfiles(profile) && <WordAlbumsButton wordId={w.id} lang={w.lang} current={w.albums} profileId={profile.id} />}
+        </section>
+      )}
 
       <div className="flex justify-end">
         <SpeedToggle />

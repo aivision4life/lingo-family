@@ -17,9 +17,11 @@ import { api } from "@/lib/api";
 
 const WORDS_KEY = ["words"] as const;
 
-export function useWords(filter: { lang?: LearnLang; q?: string }) {
+/** `album`: an album id, or "none" for words that are in no album. */
+export function useWords(filter: { lang?: LearnLang; q?: string; album?: string }) {
   const params = new URLSearchParams();
   if (filter.lang) params.set("lang", filter.lang);
+  if (filter.album) params.set("album", filter.album);
   if (filter.q) params.set("q", filter.q);
   const qs = params.toString();
   return useQuery({

@@ -34,7 +34,7 @@ async function apiFetch(input: string, init: RequestInit): Promise<Response> {
   return res;
 }
 
-type Method = "GET" | "POST" | "PATCH" | "DELETE";
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
  * Calls `/api{path}` and validates the JSON response with `schema`.

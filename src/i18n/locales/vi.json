@@ -366,5 +366,72 @@
       "iosNote": "Cần iOS 16.4 trở lên. Mở app từ biểu tượng mới trên màn hình chính.",
       "other": "Mở menu của trình duyệt và chọn “Cài đặt ứng dụng” hoặc “Thêm vào màn hình chính”."
     }
+  },
+  "albums": {
+    "tabsLabel": "Chế độ xem thư viện",
+    "tab": {
+      "all": "Tất cả",
+      "albums": "Album"
+    },
+    "unsorted": "Chưa phân loại",
+    "unsortedHint": "Các từ chưa thuộc album nào. Chọn nhiều từ rồi “Thêm vào album” để sắp xếp.",
+    "wordCount": "{{count}} từ",
+    "empty": "Chưa có album nào.",
+    "noneForLang": "Chưa có album nào cho ngôn ngữ này.",
+    "newAlbum": "Album mới",
+    "button": "Album",
+    "notFound": "Không tìm thấy album.",
+    "create": {
+      "title": "Tạo album",
+      "name": "Tên album",
+      "placeholder": "Ví dụ: Từ vựng công sở",
+      "lang": "Ngôn ngữ của album",
+      "submit": "Tạo album"
+    },
+    "rename": {
+      "button": "Đổi tên",
+      "title": "Đổi tên album",
+      "submit": "Lưu"
+    },
+    "delete": {
+      "button": "Xoá album",
+      "title": "Xoá album “{{name}}”?",
+      "description": "Các từ trong album vẫn còn trong thư viện, chỉ album bị xoá.",
+      "confirm": "Xoá album"
+    },
+    "addTo": {
+      "title": "Thêm vào album",
+      "hint": "{{count}} từ ({{lang}}). Chọn một album cùng ngôn ngữ hoặc tạo album mới.",
+      "submit": "Thêm"
+    },
+    "wordDialog": {
+      "title": "Album của từ này",
+      "hint": "Tích các album ({{lang}}) chứa từ này.",
+      "save": "Lưu"
+    },
+    "select": {
+      "start": "Chọn nhiều",
+      "done": "Xong",
+      "count": "Đã chọn {{count}}",
+      "all": "Chọn tất cả",
+      "addToAlbum": "Thêm vào album",
+      "removeFromAlbum": "Bỏ khỏi album",
+      "mixedLang": "Chọn các từ cùng một ngôn ngữ để thêm vào album."
+    },
+    "addWord": {
+      "title": "Album",
+      "hint": "Tuỳ chọn: thêm từ vào album ngay khi lưu."
+    },
+    "review": {
+      "label": "Ôn theo album",
+      "all": "Tất cả",
+      "option": "{{name}} ({{count}} thẻ)",
+      "inAlbum": "Album: {{name}}"
+    },
+    "errors": {
+      "duplicate": "Đã có album cùng tên trong ngôn ngữ này.",
+      "language": "Từ và album phải cùng ngôn ngữ.",
+      "generic": "Không thực hiện được, hãy thử lại."
+    }
   }
 }

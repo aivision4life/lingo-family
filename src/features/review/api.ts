@@ -20,12 +20,16 @@ export function useReviewSummary(profileId: string) {
 }
 
 /** Loaded once per session; the session then manages its own queue. */
-export function useReviewQueue(profileId: string, lang: LearnLang) {
+export function useReviewQueue(profileId: string, lang: LearnLang, album?: string) {
   const devOffset = useDevDayOffset();
   return useQuery({
-    queryKey: [...REVIEW_KEY, "queue", profileId, lang, devOffset],
+    queryKey: [...REVIEW_KEY, "queue", profileId, lang, album ?? null, devOffset],
     queryFn: () =>
-      api("GET", `/review/queue?profile_id=${profileId}&lang=${lang}&tz=${tzOffsetMinutes()}`, queueResponseSchema),
+      api(
+        "GET",
+        `/review/queue?profile_id=${profileId}&lang=${lang}&tz=${tzOffsetMinutes()}${album ? `&album=${encodeURIComponent(album)}` : ""}`,
+        queueResponseSchema,
+      ),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });

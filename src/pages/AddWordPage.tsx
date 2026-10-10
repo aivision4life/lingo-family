@@ -6,6 +6,8 @@ import type { ExampleLevel, LearnLang } from "@shared/enums";
 import { enrichRequestSchema } from "@shared/word";
 import { LangText } from "@/components/LangText";
 import { PageShell } from "@/components/PageShell";
+import { useAlbums } from "@/features/albums/api";
+import { AlbumTickList } from "@/features/albums/AlbumTickList";
 import { Button } from "@/components/ui/button";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { duplicateIdOf, useCreateWord, useEnrichWord } from "@/features/words/api";
@@ -61,9 +63,14 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
   // AI-suggested phrases (unticked by default); only ticked ones are saved.
   const [phraseDrafts, setPhraseDrafts] = useState<PhraseDraft[]>([]);
   const [phraseErrors, setPhraseErrors] = useState<Record<string, PhraseDraftErrors>>({});
+  // Albums (of the word's language) the word is added to when saved (optional, M2.4).
+  const [albumIds, setAlbumIds] = useState<string[]>([]);
+
+  const albums = useAlbums(lang);
 
   const changeLang = (l: LearnLang) => {
     setLang(l);
+    setAlbumIds([]);
     saveLastAddLang(l);
   };
 
@@ -106,7 +113,7 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
     setPhraseErrors(phrases.errors);
     if (result.input && phrases.ok) {
       create.mutate(
-        { ...result.input, phrases: phrases.inputs },
+        { ...result.input, phrases: phrases.inputs, album_ids: albumIds },
         {
           // Word detail shows light notices for missing audio and for phrases that already existed.
           onSuccess: ({ id, audio, skipped_phrases }) =>
@@ -187,6 +194,13 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
           <h2 className="text-lg font-semibold">{t("phrases.suggested")}</h2>
           <p className="text-sm text-muted-foreground">{t("phrases.suggestedHint")}</p>
           <PhraseSuggestionList lang={lang} drafts={phraseDrafts} errors={phraseErrors} onChange={setPhraseDrafts} />
+        </section>
+      )}
+      {(albums.data?.albums.length ?? 0) > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold">{t("albums.addWord.title")}</h2>
+          <p className="text-sm text-muted-foreground">{t("albums.addWord.hint")}</p>
+          <AlbumTickList chips albums={albums.data?.albums ?? []} ticked={albumIds} onChange={setAlbumIds} />
         </section>
       )}
       {errorNotice(create.error)}

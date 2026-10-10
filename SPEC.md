@@ -125,6 +125,14 @@ Decisions (M1.7):
 - Deleting a word asks for confirmation and deletes its phrases, examples and every profile's cards for them; review logs are kept (`card_id` → NULL).
 - **Kid profiles get no phrase cards** (and never see phrase cards created earlier).
 
+**Albums (M2.4)** — playlists of words, shared by the family.
+- [x] An album belongs to **one language**; a word can be in **many albums**; one level (no nesting). Adults create, rename, delete and change membership; **kid profiles only browse and review**. Deleting an album never deletes its words. Phrases belong to an album through their root word.
+- [x] Stored in the existing `decks` / `deck_words` tables: `decks.kind = 'album'` (default decks keep `kind = 'default'` and are hidden from album lists; they alone drive card creation). `deck_words.added_at` orders "recently added" and picks the cover. A trigger keeps a word and its album in the same language (the API checks too). Names: at most 60 characters, unique per language (case-insensitive), the same name in another language is fine.
+- [x] Library: tabs **All | Albums**. The Albums tab has a language filter and a grid with a cover (the image of the first-added word with a ready image, else an emoji), name and word count. A virtual **"Unsorted"** entry (words that are in no album, per language, not stored in the database) opens like an album and supports "select many → add to album". It is not offered when choosing an album to review.
+- [x] Adding words: choose albums on the Add word screen (saved with the word); **Album** button on Word detail (tick albums); Library / album page **Select many** (Words tab only) → "Add to album" (existing or new) / "Remove from album".
+- [x] Review: Home shows, under each language, an album chooser with the album's due + new cards; `/review?lang=ko&album=<id>` queues only that album's cards. The FSRS schedule is shared and `daily_new_limit` still counts the whole language (cards introduced today in any album count). Albums never create cards.
+- API: `GET/POST /api/albums`, `PATCH/DELETE /api/albums/:id`, `POST/DELETE /api/albums/:id/words`, `PUT /api/words/:id/albums`, `GET /api/words?album=<id|none>`, `album_ids` on `POST /api/words`, `album` on `/api/review/queue`, `albums` in `/api/review/summary`. Migration `0005_albums` only adds columns and triggers; existing rows were backfilled.
+
 **Done when:** typing `학생` and pressing "Add" produces a complete entry like the example in §3 within ~5 seconds, with audio playable; images appear shortly after (background generation).
 
 ### F3. Media: audio & images — P0
@@ -312,8 +320,9 @@ examples      id, word_id → words (root word, ON DELETE CASCADE),
               audio_key?, level ('kid'|'beginner'|'intermediate'), ai_generated,
               image_* (same columns as words) ← M1.8   -- examples stay 'none' until first displayed
 
-decks         id, name, lang, is_kid_deck, created_at     -- default decks: default-ko, default-en
-deck_words    deck_id, word_id                          -- phrases follow their root word's decks
+decks         id, name, lang, is_kid_deck, kind ('default'|'album') ← M2.4, created_at
+                                                        -- default decks: default-ko, default-en; albums: kind = 'album'
+deck_words    deck_id, word_id, added_at ← M2.4         -- phrases follow their root word's decks / albums
 profile_decks profile_id, deck_id                       -- which decks a profile studies
 
 cards         id, profile_id, word_id → words (root word, ON DELETE CASCADE),
@@ -355,9 +364,9 @@ Media storage (R2) keys:
 ## 6. Screens
 
 1. **Profile picker**
-2. **Home** (per profile): today's due/new count per language, "Start review", "Practice speaking", streak
+2. **Home** (per profile): today's due/new count per language (and per album, a chooser under each language), "Start review", "Practice speaking", streak
 3. **Review session** (no navigation, Exit button): image-centred card front → flip → back with examples (small image + audio) → rating buttons; progress bar
-4. **Word library**: list with thumbnail image (emoji while pending) + search + filters; words and phrases; "Add word"
+4. **Word library**: tabs "All | Albums" (M2.4); "All": list with thumbnail image (emoji while pending) + search + filters; words and phrases; "Add word"
 5. **Add / edit word**: language + term → AI enrich preview → edit fields → tick suggested phrases → save (images then appear in the background)
 6. **Word detail**: image (Redraw / My photo), audio, readings, glosses, Hanja/Hán-Việt, phrases (each with image, audio, meaning, examples), examples (each with image + audio + practice), related Hanja words
 7. **Pronunciation practice**: reference audio, record button, colored result, history
@@ -432,6 +441,8 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M2.1 | Deploy + Access | Production D1/R2, fail-closed JWT check, Cloudflare Access (One-time PIN, email allow-list), move local content | [x] |
 | M2.2 | PWA | F11 installable PWA, service worker, media cache, update + install UI | [x] |
 | M2.3 | Offline reviews | F11 offline queue + review sync (incl. images already cached) | [ ] |
+| M2.4 | Albums | Playlists of words (many-to-many, per language, family-shared), Library tabs, select-many, review by album | [x] |
+| M2.5 | Zoom | Enlarge pictures (pinch / tap) in review and Word detail | [ ] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |

@@ -366,5 +366,72 @@
       "iosNote": "Needs iOS 16.4 or later. Open the app from its new icon on the home screen.",
       "other": "Open the browser menu and choose “Install app” or “Add to Home screen”."
     }
+  },
+  "albums": {
+    "tabsLabel": "Library view",
+    "tab": {
+      "all": "All",
+      "albums": "Albums"
+    },
+    "unsorted": "Unsorted",
+    "unsortedHint": "Words that are in no album yet. Select several and choose “Add to album” to sort them.",
+    "wordCount": "{{count}} words",
+    "empty": "No albums yet.",
+    "noneForLang": "No albums for this language yet.",
+    "newAlbum": "New album",
+    "button": "Album",
+    "notFound": "Album not found.",
+    "create": {
+      "title": "Create album",
+      "name": "Album name",
+      "placeholder": "e.g. Office words",
+      "lang": "Album language",
+      "submit": "Create album"
+    },
+    "rename": {
+      "button": "Rename",
+      "title": "Rename album",
+      "submit": "Save"
+    },
+    "delete": {
+      "button": "Delete album",
+      "title": "Delete album “{{name}}”?",
+      "description": "The words in the album stay in the library; only the album is deleted.",
+      "confirm": "Delete album"
+    },
+    "addTo": {
+      "title": "Add to album",
+      "hint": "{{count}} words ({{lang}}). Pick an album of the same language or create a new one.",
+      "submit": "Add"
+    },
+    "wordDialog": {
+      "title": "Albums of this word",
+      "hint": "Tick the albums ({{lang}}) that contain this word.",
+      "save": "Save"
+    },
+    "select": {
+      "start": "Select many",
+      "done": "Done",
+      "count": "{{count}} selected",
+      "all": "Select all",
+      "addToAlbum": "Add to album",
+      "removeFromAlbum": "Remove from album",
+      "mixedLang": "Select words of one language to add them to an album."
+    },
+    "addWord": {
+      "title": "Albums",
+      "hint": "Optional: add the word to albums when saving."
+    },
+    "review": {
+      "label": "Review by album",
+      "all": "All",
+      "option": "{{name}} ({{count}} cards)",
+      "inAlbum": "Album: {{name}}"
+    },
+    "errors": {
+      "duplicate": "An album with this name already exists in this language.",
+      "language": "A word and an album must have the same language.",
+      "generic": "That did not work, please try again."
+    }
   }
 }
