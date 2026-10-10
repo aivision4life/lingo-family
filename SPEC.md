@@ -268,9 +268,18 @@ Decisions (M1.2):
 - [ ] Pronunciation trend per language.
 
 ### F11. PWA & offline — P0
-- [ ] Installable (manifest, icons), opens full-screen.
-- [ ] App shell and the current profile's due cards + media (audio **and images**) are cached for offline use.
-- [ ] Sync queue: offline reviews and edits are uploaded when back online. Conflict rule: review logs are append-only; for edits, last write wins.
+- [x] Installable (manifest, icons), opens full-screen. (M2.2)
+- [~] App shell and media (audio **and images**) are cached on the device (M2.2). Still to do in M2.3: the current profile's due cards (the queue itself) available offline.
+- [ ] Sync queue: offline reviews and edits are uploaded when back online. Conflict rule: review logs are append-only; for edits, last write wins. (M2.3)
+
+Decisions (M2.2):
+- `vite-plugin-pwa` (`injectManifest`, `registerType: "prompt"`) + a hand-written service worker `src/sw.ts` (Workbox). The worker exists only in the production build; `npm run dev` never registers one.
+- Manifest: name "Lingo Family", short name "Lingo", `display: standalone`, `start_url: /`, theme `#4f46e5`, icons 192/512 + maskable (own drawing: speech bubble with an "L", `public/icons/icon.svg`, PNGs from `scripts/make-icons.py`). `<link rel="manifest" crossorigin="use-credentials">`, because the site is behind Cloudflare Access and the manifest request must carry the session cookie.
+- Caching: app shell precached (JS/CSS/HTML/icons; the ~500 Noto Sans KR font pieces are cached when first used). `/api/media/*` cache-first, plain 200 only, Range requests supported (audio), max 800 entries, 60 days, purged when storage is full. All other `/api/*` network-only. Page loads network-first (4 s), and the precached shell answers only when the network fails; redirects (Access login) are never cached.
+- Session expiry: when an `/api` request throws a network error, the app probes `/api/health` with `redirect: "manual"`. An `opaqueredirect` means the Access session expired → reload once (cool-down 60 s, no loop) so the browser reaches the login page. Anything else (offline, flaky) shows "Connection lost. Try again" and never reloads.
+- Review preload: the first 30 cards of the session (3 downloads at a time; skipped when `navigator.connection.saveData`), then a window of the next 4 cards while reviewing. Preloading never asks for drawing.
+- Settings has an "Install app" card (browser install prompt, iPhone steps for Share → Add to Home Screen, or a hint). A small banner offers "New version — Reload"; updates are checked hourly.
+- `npm run preview` builds with `--mode preview` (production bundle and service worker, no Workers AI binding) so the production build can be tried locally.
 
 ---
 
@@ -421,7 +430,8 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M1.9 | Picture card + visual review | `picture` card type, unlock chain recognition → picture → listening, image-centred review UI | [x] |
 | M2 | Online | Sub-milestones below | [~] |
 | M2.1 | Deploy + Access | Production D1/R2, fail-closed JWT check, Cloudflare Access (One-time PIN, email allow-list), move local content | [x] |
-| M2.2 | PWA + offline | F11 installable PWA, offline reviews + media, sync queue | [ ] |
+| M2.2 | PWA | F11 installable PWA, service worker, media cache, update + install UI | [x] |
+| M2.3 | Offline reviews | F11 offline queue + review sync (incl. images already cached) | [ ] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |

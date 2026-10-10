@@ -344,5 +344,27 @@
       "aiFallback": "예비",
       "aiNone": "AI 상태: 아직 호출 기록이 없습니다."
     }
+  },
+  "pwa": {
+    "update": {
+      "message": "새 버전이 있습니다.",
+      "reload": "새로고침"
+    },
+    "connection": {
+      "lost": "연결이 끊어졌습니다.",
+      "retry": "다시 시도"
+    },
+    "install": {
+      "title": "앱 설치",
+      "intro": "Lingo를 홈 화면에 설치하면 앱처럼 열 수 있습니다.",
+      "button": "앱 설치",
+      "installed": "이 기기에 설치되어 있습니다.",
+      "iosIntro": "iPhone 또는 iPad에서는 Safari를 사용하세요.",
+      "iosShare": "아래쪽 공유 버튼을 누르세요.",
+      "iosAdd": "“홈 화면에 추가”를 선택하세요.",
+      "iosConfirm": "오른쪽 위의 “추가”를 누르세요.",
+      "iosNote": "iOS 16.4 이상이 필요합니다. 홈 화면의 새 아이콘으로 여세요.",
+      "other": "브라우저 메뉴에서 “앱 설치” 또는 “홈 화면에 추가”를 선택하세요."
+    }
   }
 }

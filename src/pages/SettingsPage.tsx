@@ -4,6 +4,7 @@ import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
 import { BackfillCard } from "@/features/images/BackfillCard";
 import { UsageCard } from "@/features/images/UsageCard";
+import { InstallCard } from "@/features/pwa/InstallCard";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useUpdateProfile } from "@/features/profiles/api";
 import { profileErrorMessage } from "@/features/profiles/errors";
@@ -60,6 +61,7 @@ export function SettingsPage() {
       <LinkButton to="/profiles" variant="outline">
         {t("pages.settings.manageProfiles")}
       </LinkButton>
+      <InstallCard />
       <UsageCard profileId={profile.id} />
       <BackfillCard profileId={profile.id} />
     </PageShell>

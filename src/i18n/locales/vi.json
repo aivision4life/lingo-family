@@ -344,5 +344,27 @@
       "aiFallback": "dự phòng",
       "aiNone": "Tình trạng AI: chưa có lần gọi nào."
     }
+  },
+  "pwa": {
+    "update": {
+      "message": "Có phiên bản mới.",
+      "reload": "Tải lại"
+    },
+    "connection": {
+      "lost": "Mất kết nối.",
+      "retry": "Thử lại"
+    },
+    "install": {
+      "title": "Cài app",
+      "intro": "Cài Lingo vào màn hình chính để mở như một ứng dụng.",
+      "button": "Cài app",
+      "installed": "Đã cài trên thiết bị này.",
+      "iosIntro": "Trên iPhone hoặc iPad, hãy dùng Safari:",
+      "iosShare": "Bấm nút Chia sẻ ở thanh dưới.",
+      "iosAdd": "Chọn “Thêm vào MH chính”.",
+      "iosConfirm": "Bấm “Thêm” ở góc trên bên phải.",
+      "iosNote": "Cần iOS 16.4 trở lên. Mở app từ biểu tượng mới trên màn hình chính.",
+      "other": "Mở menu của trình duyệt và chọn “Cài đặt ứng dụng” hoặc “Thêm vào màn hình chính”."
+    }
   }
 }

@@ -37,6 +37,14 @@ npm run dev:ai
 
 Production always uses the real binding; the fake provider only exists on a local host.
 
+## Try the production build (PWA)
+
+```bash
+npm run preview   # http://localhost:4173, with the service worker and manifest
+```
+
+The service worker only exists in this build (not in `npm run dev`). In DevTools → Application you can inspect the manifest, the service worker and the caches (`workbox-precache`, `media-v1`).
+
 ## Deploy (production)
 
 `npm run deploy` builds and deploys the Worker `lingo` to https://lingo.ai4life.workers.dev (behind Cloudflare Access, see SPEC §7.1). Secrets are set once with `npx wrangler secret bulk <file.json>` (a temporary file outside the repo, deleted afterwards) or in the dashboard, never by pasting with Ctrl+V in `cmd`. `npm run db:migrate:remote` applies migrations to the production D1.

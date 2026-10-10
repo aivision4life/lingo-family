@@ -344,5 +344,27 @@
       "aiFallback": "fallback",
       "aiNone": "AI status: no call yet."
     }
+  },
+  "pwa": {
+    "update": {
+      "message": "A new version is available.",
+      "reload": "Reload"
+    },
+    "connection": {
+      "lost": "Connection lost.",
+      "retry": "Try again"
+    },
+    "install": {
+      "title": "Install app",
+      "intro": "Install Lingo on your home screen to open it like an app.",
+      "button": "Install app",
+      "installed": "Installed on this device.",
+      "iosIntro": "On iPhone or iPad, use Safari:",
+      "iosShare": "Tap the Share button in the bottom bar.",
+      "iosAdd": "Choose “Add to Home Screen”.",
+      "iosConfirm": "Tap “Add” in the top-right corner.",
+      "iosNote": "Needs iOS 16.4 or later. Open the app from its new icon on the home screen.",
+      "other": "Open the browser menu and choose “Install app” or “Add to Home screen”."
+    }
   }
 }
