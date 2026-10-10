@@ -2,12 +2,12 @@ import { Plus, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { LearnLang } from "@shared/enums";
-import { AddWordFab } from "@/components/layout/AddWordFab";
+import { showAddWordButton } from "@/components/layout/addWordVisibility";
 import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
 import { Input } from "@/components/ui/input";
 import { usePhrases } from "@/features/phrases/api";
-import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
+import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useWords } from "@/features/words/api";
 import { LangChips } from "@/features/words/bits";
 import { PhraseRow, WordRow } from "@/features/words/LibraryRows";
@@ -32,9 +32,9 @@ export function WordLibraryPage() {
 
   return (
     <PageShell title={t("pages.words.title")}>
-      {/* Desktop: prominent button in the header; phones use the floating "+" instead. */}
-      {canManageProfiles(profile) && (
-        <LinkButton to="/words/new" size="lg" className="hidden md:inline-flex">
+      {/* On every screen size (the phone's floating "+" is a second way in). */}
+      {showAddWordButton(profile) && (
+        <LinkButton to="/words/new" size="lg">
           <Plus aria-hidden />
           {t("pages.words.addWord")}
         </LinkButton>
@@ -91,7 +91,6 @@ export function WordLibraryPage() {
           ))}
         </ul>
       )}
-      <AddWordFab />
     </PageShell>
   );
 }

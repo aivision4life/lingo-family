@@ -1,4 +1,5 @@
 import { Outlet } from "react-router";
+import { AddWordFab } from "./AddWordFab";
 import { BottomNav } from "./BottomNav";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -14,11 +15,13 @@ export function AppLayout() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-8">
+        {/* Extra bottom space on phones: the tab bar plus the floating "+" must not cover the last row. */}
+        <main className="flex-1 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-8">
           <Outlet />
         </main>
       </div>
       <BottomNav />
+      <AddWordFab />
     </div>
   );
 }

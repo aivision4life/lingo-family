@@ -366,7 +366,7 @@ Media storage (R2) keys:
 10. **Settings** (profile and app)
 11. **Stats** (P2)
 
-Navigation (M1.5): Home, Review, Library, Settings (room reserved for a later "Hanja" item, F7), each with an icon + i18n label; the active item is highlighted. Desktop (≥ 768 px): collapsible left sidebar with the active profile's avatar + name at the top. Phones (< 768 px): fixed bottom tab bar, avatar + name in the top-right corner. Tapping the avatar opens the profile picker. A prominent "+" (add word) button: in the Library header, and as a floating button above the tab bar on phones. The review screen and the profile picker hide all navigation (review keeps only its Exit button).
+Navigation (M1.5): Home, Review, Library, Settings (room reserved for a later "Hanja" item, F7), each with an icon + i18n label; the active item is highlighted. Desktop (≥ 768 px): collapsible left sidebar with the active profile's avatar + name at the top. Phones (< 768 px): fixed bottom tab bar, avatar + name in the top-right corner. Tapping the avatar opens the profile picker. Add-word shortcuts (adults only): a "+ Add word" button at the top of the Library on every screen size, and on phones a floating "+" on Home and the Library, above the tab bar (safe-area aware, rendered by AppLayout). Two independent ways in, so one can never be the only one. The review screen and the profile picker hide all navigation (review keeps only its Exit button).
 
 Image editing (adults only): "Redraw" opens a small dialog with the editable prompt (style is appended automatically and not editable); "My photo" picks a file / camera photo, resizes it in the browser to ≤ 512 px WebP, then uploads.
 
