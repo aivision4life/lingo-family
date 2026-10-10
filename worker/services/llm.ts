@@ -40,11 +40,13 @@ export type LlmClientOptions = RetryOptions & { fetch?: typeof fetch };
 
 /** Builds the client from env, or null when no API key / unknown provider is configured. */
 export function createLlmClient(env: LlmEnv, opts: LlmClientOptions = {}): LlmClient | null {
-  const provider = (env.LLM_PROVIDER || "gemini").toLowerCase();
-  if (!env.LLM_API_KEY || provider !== "gemini") return null;
-  const model = env.LLM_MODEL || DEFAULT_GEMINI_MODEL;
-  const fallback = env.LLM_FALLBACK_MODEL && env.LLM_FALLBACK_MODEL !== model ? env.LLM_FALLBACK_MODEL : null;
-  const apiKey = env.LLM_API_KEY;
+  // Values pasted into `wrangler secret put` can carry a trailing newline or space: trim them.
+  const provider = (env.LLM_PROVIDER?.trim() || "gemini").toLowerCase();
+  const apiKey = env.LLM_API_KEY?.trim();
+  if (!apiKey || provider !== "gemini") return null;
+  const model = env.LLM_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  const fallbackModel = env.LLM_FALLBACK_MODEL?.trim();
+  const fallback = fallbackModel && fallbackModel !== model ? fallbackModel : null;
   const doFetch = opts.fetch ?? fetch;
 
   return {
@@ -62,6 +64,36 @@ const geminiPartSchema = z.object({ text: z.string().optional(), thought: z.bool
 const geminiResponseSchema = z.object({
   candidates: z.array(z.object({ content: z.object({ parts: z.array(geminiPartSchema) }).optional() })).optional(),
 });
+
+const geminiErrorSchema = z.object({
+  error: z.object({ message: z.string().optional(), status: z.string().optional() }),
+});
+const DETAIL_MAX = 300;
+
+/**
+ * Short, key-free description of a failed Gemini response (max 300 chars): the API's
+ * `error.status: error.message` when the body is JSON, else the raw text, else — for an empty
+ * body — a few response headers that tell who answered (Google, a proxy, an edge rule).
+ */
+export function describeGeminiError(status: number, bodyText: string, headers: Headers): string {
+  let json: unknown = null;
+  try {
+    json = JSON.parse(bodyText);
+  } catch {
+    // not JSON
+  }
+  const parsed = geminiErrorSchema.safeParse(json);
+  let detail: string;
+  if (parsed.success && (parsed.data.error.status || parsed.data.error.message)) {
+    detail = `${parsed.data.error.status ?? status}: ${parsed.data.error.message ?? ""}`;
+  } else if (bodyText.trim()) {
+    detail = bodyText.trim();
+  } else {
+    const h = (name: string) => headers.get(name);
+    detail = `(empty body) content-type=${h("content-type") ?? "-"} server=${h("server") ?? "-"} via=${h("via") ?? "-"} cf-ray=${h("cf-ray") ?? "-"}`;
+  }
+  return detail.replace(/\s+/g, " ").slice(0, DETAIL_MAX);
+}
 
 /** One generateContent call. HTTP / network problems become AttemptError (retryable or not). */
 async function geminiAttempt(doFetch: typeof fetch, apiKey: string, model: string, req: LlmRequest, timeoutMs: number) {
@@ -85,8 +117,9 @@ async function geminiAttempt(doFetch: typeof fetch, apiKey: string, model: strin
     throw new AttemptError(`Gemini request failed (${model}): ${String(e)}`, null, true);
   }
   if (!res.ok) {
-    // Never include the request (it carries the key header) in errors.
-    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    // Never include the request (URL, headers) in errors or logs: the key travels in a header.
+    const detail = describeGeminiError(res.status, await res.text().catch(() => ""), res.headers);
+    console.error(`[llm] Gemini error (${model}): ${detail}`);
     const retryable = RETRYABLE_STATUS.has(res.status);
     throw new AttemptError(`Gemini HTTP ${res.status} (${model}): ${detail}`, res.status, retryable, retryAfterMs(res.headers.get("retry-after")));
   }
