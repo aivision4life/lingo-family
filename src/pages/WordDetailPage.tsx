@@ -5,6 +5,9 @@ import type { WordDetail } from "@shared/word";
 import { LangText } from "@/components/LangText";
 import { LinkButton } from "@/components/LinkButton";
 import { Link } from "react-router";
+import { FocusLayer } from "@/features/focus/FocusLayer";
+import { itemsFromWord } from "@/features/focus/focusItems";
+import { useFocusRoute } from "@/features/focus/useFocusRoute";
 import { WordAlbumsButton } from "@/features/albums/WordAlbumsDialog";
 import { PageShell } from "@/components/PageShell";
 import { SpeakButton, SpeedToggle } from "@/features/audio/AudioButtons";
@@ -43,8 +46,12 @@ function Detail({ w }: { w: WordDetail }) {
   const glossLangs = [...UI_LANGS].sort((a, b) => Number(b === profile?.gloss_lang) - Number(a === profile?.gloss_lang));
   const firstChar = w.hanja ? [...w.hanja][0] : undefined;
   const glossLang = profile?.gloss_lang ?? "vi";
+  // Tapping an example or a phrase enlarges it (M2.5); the items of this word can be swiped through.
+  const focusItems = itemsFromWord(w);
+  const focusRoute = useFocusRoute(focusItems);
 
   return (
+    <FocusLayer items={focusItems} route={focusRoute} glossLang={glossLang}>
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-center gap-2">
         <ItemImage kind="word" id={w.id} image={w} alt={glossFor(w, glossLang)} emoji={w.emoji} size="large" />
@@ -148,5 +155,6 @@ function Detail({ w }: { w: WordDetail }) {
       )}
       {profile && canManageProfiles(profile) && <DeleteWordButton word={w} profileId={profile.id} />}
     </div>
+    </FocusLayer>
   );
 }

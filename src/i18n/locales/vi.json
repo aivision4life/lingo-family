@@ -433,5 +433,26 @@
       "language": "Từ và album phải cùng ngôn ngữ.",
       "generic": "Không thực hiện được, hãy thử lại."
     }
+  },
+  "focus": {
+    "dialogTitle": "Phóng to",
+    "dialogDescription": "Xem và nghe câu hoặc cụm từ. Vuốt trái hoặc phải để chuyển mục.",
+    "open": "Phóng to: {{text}}",
+    "close": "Đóng",
+    "previous": "Mục trước",
+    "next": "Mục sau",
+    "position": "{{current}} / {{total}}",
+    "showTranslation": "Chạm để xem nghĩa",
+    "hideTranslation": "Chạm để ẩn nghĩa",
+    "listen": "Nghe",
+    "noAudio": "Chưa có audio",
+    "repeat": "Lặp",
+    "repeatStop": "Dừng lặp",
+    "autoplayOn": "Tự phát: bật",
+    "autoplayOff": "Tự phát: tắt",
+    "autoplayHint": "Bật hoặc tắt tự phát âm thanh khi mở và khi chuyển mục",
+    "record": "Ghi âm & chấm điểm",
+    "kindExample": "Câu ví dụ",
+    "kindPhrase": "Cụm từ"
   }
 }

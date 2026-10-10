@@ -433,5 +433,26 @@
       "language": "단어와 앨범의 언어가 같아야 합니다.",
       "generic": "실행하지 못했습니다. 다시 시도하세요."
     }
+  },
+  "focus": {
+    "dialogTitle": "확대 보기",
+    "dialogDescription": "문장이나 구를 크게 보고 들어 보세요. 좌우로 밀어 이동합니다.",
+    "open": "확대: {{text}}",
+    "close": "닫기",
+    "previous": "이전 항목",
+    "next": "다음 항목",
+    "position": "{{current}} / {{total}}",
+    "showTranslation": "눌러서 뜻 보기",
+    "hideTranslation": "눌러서 뜻 숨기기",
+    "listen": "듣기",
+    "noAudio": "오디오가 없습니다",
+    "repeat": "반복",
+    "repeatStop": "반복 중지",
+    "autoplayOn": "자동 재생: 켜짐",
+    "autoplayOff": "자동 재생: 꺼짐",
+    "autoplayHint": "열거나 항목을 바꿀 때 소리를 자동으로 재생할지 선택합니다",
+    "record": "녹음하고 채점",
+    "kindExample": "예문",
+    "kindPhrase": "구"
   }
 }

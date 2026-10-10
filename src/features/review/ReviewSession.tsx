@@ -5,6 +5,9 @@ import type { UiLang } from "@shared/enums";
 import { cardFieldsFromDto, type QueueItem } from "@shared/review";
 import { previewIntervals } from "@shared/scheduling";
 import { LinkButton } from "@/components/LinkButton";
+import { FocusLayer } from "@/features/focus/FocusLayer";
+import { itemsFromExamples } from "@/features/focus/focusItems";
+import { useFocusRoute } from "@/features/focus/useFocusRoute";
 import { Button } from "@/components/ui/button";
 import { SpeedToggle } from "@/features/audio/AudioButtons";
 import { playAudio } from "@/features/audio/player";
@@ -25,6 +28,11 @@ export function ReviewSession({ profileId, glossLang, items }: Props) {
   // Set when each card is shown (in the effect below), used for duration_ms.
   const shownAt = useRef(0);
   const item = currentItem(session);
+  // Enlarging an example (M2.5) only looks: it never flips or rates the card. The view lives in the
+  // URL (?focus=...), and this component keeps its state while the parameter changes.
+  const focusItems = item ? itemsFromExamples(item.examples, item.word.lang, item.word.emoji) : [];
+  const focus = useFocusRoute(focusItems);
+  const focusOpen = focus.activeIndex >= 0;
 
   // Each new front: restart the timer and auto-play its audio (the user already tapped "Start").
   const cardKey = item ? `${session.pos}:${item.card.id}` : null;
@@ -56,6 +64,7 @@ export function ReviewSession({ profileId, glossLang, items }: Props) {
   // Keyboard: Space flips, 1–4 rate (ignored while typing in a field).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (focusOpen) return; // the Focus view has the keyboard (←/→ there; Space and 1–4 do nothing)
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.code === "Space") {
         e.preventDefault();
@@ -82,6 +91,7 @@ export function ReviewSession({ profileId, glossLang, items }: Props) {
 
   const progress = Math.round((session.pos / session.queue.length) * 100);
   return (
+    <FocusLayer items={focusItems} route={focus} glossLang={glossLang}>
     <div className="flex flex-col gap-4 pb-32">
       <div className="flex items-center gap-3">
         <div
@@ -120,5 +130,6 @@ export function ReviewSession({ profileId, glossLang, items }: Props) {
       {answer.isError && <p role="alert" className="text-sm text-destructive">{t("review.saveError")}</p>}
       <p className="hidden text-center text-xs text-muted-foreground md:block">{t("review.shortcuts")}</p>
     </div>
+    </FocusLayer>
   );
 }

@@ -2,6 +2,8 @@ import type { z } from "zod";
 import { UI_LANGS, type LearnLang, type UiLang } from "@shared/enums";
 import type { exampleSchema } from "@shared/base";
 import { LangText } from "@/components/LangText";
+import { FocusTap } from "@/features/focus/FocusTap";
+import { focusKey } from "@/features/focus/focusItems";
 import { SpeakButton } from "@/features/audio/AudioButtons";
 import { ImageTools } from "@/features/images/ImageTools";
 import { ItemImage } from "@/features/images/ItemImage";
@@ -15,12 +17,16 @@ export function ExampleItem({ ex, lang, glossLang, audioLabel }: Props) {
   const meaning = ex[`translation_${glossLang}`] || ex.translation_en || ex.sentence;
   return (
     <div className="flex items-start gap-3">
-      <ItemImage kind="example" id={ex.id} image={ex} alt={meaning} size="small" lazy />
+      <FocusTap focusKey={focusKey("example", ex.id)} text={ex.sentence} className="shrink-0">
+        <ItemImage kind="example" id={ex.id} image={ex} alt={meaning} size="small" lazy />
+      </FocusTap>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start justify-between gap-2">
-          <LangText lang={lang} className="block text-lg">
-            {ex.sentence}
-          </LangText>
+          <FocusTap focusKey={focusKey("example", ex.id)} text={ex.sentence} className="min-w-0 flex-1">
+            <LangText lang={lang} className="block text-lg">
+              {ex.sentence}
+            </LangText>
+          </FocusTap>
           <SpeakButton audioKey={ex.audio_key} label={audioLabel} />
         </div>
         {UI_LANGS.filter((l) => ex[`translation_${l}`]).map((l) => (

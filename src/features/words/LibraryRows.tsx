@@ -1,10 +1,11 @@
-import { Check } from "lucide-react";
+import { Check, Maximize2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import type { UiLang } from "@shared/enums";
 import type { PhraseSummary } from "@shared/phrase";
 import type { WordSummary } from "@shared/word";
 import { LangText } from "@/components/LangText";
+import { Button } from "@/components/ui/button";
 import { SpeakButton } from "@/features/audio/AudioButtons";
 import { ItemImage } from "@/features/images/ItemImage";
 import { AiBadge } from "./bits";
@@ -77,7 +78,7 @@ export function WordRow({ w, glossLang, select }: { w: WordSummary; glossLang: U
 }
 
 /** A phrase opens the Word detail of its root word. */
-export function PhraseRow({ p, glossLang }: { p: PhraseSummary; glossLang: UiLang }) {
+export function PhraseRow({ p, glossLang, onExpand }: { p: PhraseSummary; glossLang: UiLang; onExpand?: () => void }) {
   const { t } = useTranslation();
   return (
     <li className="flex items-center pr-1">
@@ -100,6 +101,11 @@ export function PhraseRow({ p, glossLang }: { p: PhraseSummary; glossLang: UiLan
         {p.ai_generated && !p.verified && <AiBadge />}
       </Link>
       <SpeakButton audioKey={p.audio_key} label={t("phrases.play", { text: p.text })} />
+      {onExpand && (
+        <Button type="button" variant="ghost" size="icon" aria-label={t("focus.open", { text: p.text })} onClick={onExpand} className="shrink-0">
+          <Maximize2 className="size-5" aria-hidden />
+        </Button>
+      )}
     </li>
   );
 }

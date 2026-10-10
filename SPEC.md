@@ -133,6 +133,13 @@ Decisions (M1.7):
 - [x] Review: Home shows, under each language, an album chooser with the album's due + new cards; `/review?lang=ko&album=<id>` queues only that album's cards. The FSRS schedule is shared and `daily_new_limit` still counts the whole language (cards introduced today in any album count). Albums never create cards.
 - API: `GET/POST /api/albums`, `PATCH/DELETE /api/albums/:id`, `POST/DELETE /api/albums/:id/words`, `PUT /api/words/:id/albums`, `GET /api/words?album=<id|none>`, `album_ids` on `POST /api/words`, `album` on `/api/review/queue`, `albums` in `/api/review/summary`. Migration `0005_albums` only adds columns and triggers; existing rows were backfilled.
 
+**Focus view (M2.5)** — tap an example sentence or a phrase to see it full screen.
+- [x] Opens from **Word detail** (tap the picture or text of an example / phrase), the **back of a review card** (the card's examples) and the **Library** (an enlarge button on each phrase row; tapping the row still opens Word detail).
+- [x] Content: large picture (drawn on demand for an example), large text in the right `lang`, the phrase's reading (example sentences have none yet), the **meaning hidden until tapped** (profile's gloss language first, then the others), **Listen** (big), **1.0× / 0.75×**, **Repeat** (plays again 1.5 s after each play until pressed again; stops on a new item or when closed) and an **Auto-play on / off** switch kept per device in localStorage (default on; off = nothing plays by itself, Listen and Repeat still work).
+- [x] Moving: swipe left / right, ← / → keys, or the arrow buttons, through the word's examples and phrases (a phrase is followed by its example); dots + "n / total"; the neighbours' picture and sound are preloaded. In a review it moves only through the current card's examples. Esc or ✕ closes.
+- [x] History: the view is `?focus=example:<id>` / `?focus=phrase:<id>`. Opening pushes one history entry, so the Android / browser **Back** button closes the view and stays on the screen; moving between items replaces the entry. Closing a view opened by a direct URL removes the parameter. In a review, opening and closing never flips or rates the card (Space and 1–4 are ignored meanwhile) and sound stops when it closes.
+- [x] Kid profiles can use it (look and listen only). A hidden slot is reserved for "Record & score" (M3).
+
 **Done when:** typing `학생` and pressing "Add" produces a complete entry like the example in §3 within ~5 seconds, with audio playable; images appear shortly after (background generation).
 
 ### F3. Media: audio & images — P0
@@ -442,7 +449,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M2.2 | PWA | F11 installable PWA, service worker, media cache, update + install UI | [x] |
 | M2.3 | Offline reviews | F11 offline queue + review sync (incl. images already cached) | [ ] |
 | M2.4 | Albums | Playlists of words (many-to-many, per language, family-shared), Library tabs, select-many, review by album | [x] |
-| M2.5 | Zoom | Enlarge pictures (pinch / tap) in review and Word detail | [ ] |
+| M2.5 | Focus view | Full-screen view of an example sentence / phrase (big picture and text, hidden meaning, listen / repeat, swipe) in Word detail, review and the Library | [x] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |
@@ -454,6 +461,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 - ~~Which LLM provider to use as default (Gemini free tier vs Claude)?~~ **Decided (M1.2):** Gemini, model `gemini-3.8-flash` by default; switchable by `LLM_PROVIDER` / `LLM_MODEL`.
 - Is the Hán-Việt quality from the LLM good enough, or should we import an open Hán-Việt dictionary dataset?
 - Should kids' profiles get an English or a Korean UI by default?
+- **Backlog:** a reading for example sentences (romanization for Korean, IPA for English) shown in the Focus view. Needs the enrichment prompt / schema to return it (bump the prompt version) and a way to fill sentences saved before.
 - **For M4 (kid mode):** consider picture-first order for kids (look at the image and listen first, text later), because young children may not read well yet; M1.9 keeps recognition → picture → listening for everyone.
 - Should the wife's profile have specific goals/levels? (Not yet specified.)
 - ~~Images per word?~~ **Decided (2026-10-08):** draw the word + selected phrases right away; example images lazily on first display; unselected phrases never; 2 examples per word, 1 per phrase.

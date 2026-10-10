@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { SpeakButton } from "@/features/audio/AudioButtons";
+import { FocusTap } from "@/features/focus/FocusTap";
+import { focusKey } from "@/features/focus/focusItems";
 import { ImageTools } from "@/features/images/ImageTools";
 import { ItemImage } from "@/features/images/ItemImage";
 import { AiBadge } from "@/features/words/bits";
@@ -77,15 +79,19 @@ export function PhraseItem({ phrase, glossLang, editorId }: Props) {
   return (
     <li className="flex flex-col gap-2 rounded-lg border p-3">
       <div className="flex items-start gap-2">
-        <ItemImage kind="phrase" id={phrase.id} image={phrase} alt={glossFor(phrase, glossLang)} emoji={phrase.emoji} size="small" />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="flex flex-wrap items-baseline gap-2">
-            <LangText lang={phrase.lang} className="text-xl font-semibold">{phrase.text}</LangText>
-            <span className="text-sm text-muted-foreground">{phrase.reading}</span>
-            {phrase.ai_generated && !phrase.verified && <AiBadge />}
-          </span>
-          <span lang={glossLang}>{glossFor(phrase, glossLang)}</span>
-        </div>
+        <FocusTap focusKey={focusKey("phrase", phrase.id)} text={phrase.text} className="shrink-0">
+          <ItemImage kind="phrase" id={phrase.id} image={phrase} alt={glossFor(phrase, glossLang)} emoji={phrase.emoji} size="small" />
+        </FocusTap>
+        <FocusTap focusKey={focusKey("phrase", phrase.id)} text={phrase.text} className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-col">
+            <span className="flex flex-wrap items-baseline gap-2">
+              <LangText lang={phrase.lang} className="text-xl font-semibold">{phrase.text}</LangText>
+              <span className="text-sm text-muted-foreground">{phrase.reading}</span>
+              {phrase.ai_generated && !phrase.verified && <AiBadge />}
+            </span>
+            <span lang={glossLang}>{glossFor(phrase, glossLang)}</span>
+          </div>
+        </FocusTap>
         <SpeakButton audioKey={phrase.audio_key} label={t("phrases.play", { text: phrase.text })} />
         {editorId && (
           <>

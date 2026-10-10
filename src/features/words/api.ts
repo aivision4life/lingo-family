@@ -37,8 +37,9 @@ export function useWords(filter: { lang?: LearnLang; q?: string; album?: string 
 /** Every image on Word detail: the word, its examples, its phrases and their examples. */
 const detailImages = (w: WordDetail) => [w, ...w.examples, ...w.phrases.flatMap((p) => [p, ...p.examples])];
 
-export function useWord(id: string) {
+export function useWord(id: string, options: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: [...WORDS_KEY, "detail", id],
     queryFn: () => api("GET", `/words/${id}`, wordDetailSchema),
     refetchInterval: pollWhilePending(detailImages),

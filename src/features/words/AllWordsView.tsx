@@ -1,5 +1,6 @@
 import { ListChecks, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { LearnLang, UiLang } from "@shared/enums";
 import { Button } from "@/components/ui/button";
@@ -8,9 +9,12 @@ import { AddToAlbumDialog } from "@/features/albums/AddToAlbumDialog";
 import { SelectionBar } from "@/features/albums/SelectionBar";
 import { useWordSelection } from "@/features/albums/useWordSelection";
 import { WordList } from "@/features/albums/WordList";
+import { FocusLayer } from "@/features/focus/FocusLayer";
+import { focusKey, itemsFromWord, parseFocusKey } from "@/features/focus/focusItems";
+import { useFocusRoute } from "@/features/focus/useFocusRoute";
 import { usePhrases } from "@/features/phrases/api";
 import { cn } from "@/lib/utils";
-import { useWords } from "./api";
+import { useWord, useWords } from "./api";
 import { LangChips } from "./bits";
 import { PhraseRow } from "./LibraryRows";
 
@@ -32,11 +36,20 @@ export function AllWordsView({ glossLang, profileId, canEdit }: Props) {
   const phrases = usePhrases(filter, kind === "phrases");
   const list = kind === "words" ? words : phrases;
   const sel = useWordSelection(words.data ?? []);
+
+  // Enlarging a phrase from the list (M2.5): the view shows the phrase and its root word's other
+  // sentences / phrases, loaded when it opens (the list has only the phrase itself).
+  const [params] = useSearchParams();
+  const wantedFocus = parseFocusKey(params.get("focus"));
+  const focusedPhrase = wantedFocus?.kind === "phrase" ? phrases.data?.find((p) => p.id === wantedFocus.id) : undefined;
+  const focusWord = useWord(focusedPhrase?.word_id ?? "", { enabled: !!focusedPhrase });
+  const focusItems = focusedPhrase && focusWord.data ? itemsFromWord(focusWord.data) : [];
+  const focusRoute = useFocusRoute(focusItems);
   // Phrases follow their root word into albums, so selection only exists on the Words tab.
   const selecting = canEdit && kind === "words" && sel.selecting;
 
   return (
-    <>
+    <FocusLayer items={focusItems} route={focusRoute} glossLang={glossLang}>
       <div className="relative">
         <Search className="absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input
@@ -89,7 +102,7 @@ export function AllWordsView({ glossLang, profileId, canEdit }: Props) {
       {kind === "phrases" && !!phrases.data?.length && (
         <ul className="flex flex-col divide-y rounded-lg border">
           {phrases.data.map((p) => (
-            <PhraseRow key={p.id} p={p} glossLang={glossLang} />
+            <PhraseRow key={p.id} p={p} glossLang={glossLang} onExpand={() => focusRoute.open(focusKey("phrase", p.id))} />
           ))}
         </ul>
       )}
@@ -110,6 +123,6 @@ export function AllWordsView({ glossLang, profileId, canEdit }: Props) {
       {sel.lang && (
         <AddToAlbumDialog open={adding} onOpenChange={setAdding} profileId={profileId} lang={sel.lang} wordIds={sel.ids} onDone={sel.stop} />
       )}
-    </>
+    </FocusLayer>
   );
 }

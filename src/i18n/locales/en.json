@@ -433,5 +433,26 @@
       "language": "A word and an album must have the same language.",
       "generic": "That did not work, please try again."
     }
+  },
+  "focus": {
+    "dialogTitle": "Zoom",
+    "dialogDescription": "See and hear a sentence or phrase. Swipe left or right to move between items.",
+    "open": "Zoom: {{text}}",
+    "close": "Close",
+    "previous": "Previous item",
+    "next": "Next item",
+    "position": "{{current}} / {{total}}",
+    "showTranslation": "Tap to show the meaning",
+    "hideTranslation": "Tap to hide the meaning",
+    "listen": "Listen",
+    "noAudio": "No audio yet",
+    "repeat": "Repeat",
+    "repeatStop": "Stop repeating",
+    "autoplayOn": "Auto-play: on",
+    "autoplayOff": "Auto-play: off",
+    "autoplayHint": "Turn auto-play on or off when the view opens and when you change item",
+    "record": "Record & score",
+    "kindExample": "Example sentence",
+    "kindPhrase": "Phrase"
   }
 }

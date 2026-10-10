@@ -21,6 +21,7 @@ type State = { rate: PlaybackRate; playingKey: string | null };
 let state: State = { rate: readRate(), playingKey: null };
 let audio: HTMLAudioElement | null = null;
 const listeners = new Set<() => void>();
+const endedListeners = new Set<() => void>();
 
 function setState(patch: Partial<State>) {
   state = { ...state, ...patch };
@@ -38,7 +39,10 @@ export const mediaUrl = (key: string) => `/api/media/${key}`;
 export function playAudio(key: string) {
   if (!audio) {
     audio = new Audio();
-    audio.addEventListener("ended", () => setState({ playingKey: null }));
+    audio.addEventListener("ended", () => {
+      setState({ playingKey: null });
+      endedListeners.forEach((l) => l());
+    });
     audio.addEventListener("pause", () => setState({ playingKey: null }));
   }
   audio.pause();
@@ -48,6 +52,17 @@ export function playAudio(key: string) {
   audio.playbackRate = state.rate;
   setState({ playingKey: key });
   audio.play().catch(() => setState({ playingKey: null }));
+}
+
+/** Stops whatever is playing (e.g. when the Focus view closes). */
+export function stopAudio() {
+  audio?.pause();
+}
+
+/** Calls `listener` each time a sound finishes by itself (not when it is stopped). Returns an unsubscribe function. */
+export function onAudioEnded(listener: () => void) {
+  endedListeners.add(listener);
+  return () => void endedListeners.delete(listener);
 }
 
 export function setPlaybackRate(rate: PlaybackRate) {
