@@ -23,6 +23,8 @@ import { zv } from "../lib/validate";
 import { generateWordAudio } from "../services/audio";
 import { enrichWithCache } from "../services/enrich";
 import { drawClaimedItems, initialImageFields } from "../services/imageJobs";
+import { isLocalHost } from "../lib/localDev";
+import { createFakeImageAi } from "../services/fakeImage";
 import type { AiRunner } from "../services/imageModels";
 import { imageView } from "../services/imageStore";
 import type { LlmClient } from "../services/llm";
@@ -33,11 +35,21 @@ type Db = ReturnType<typeof getDb>;
 type WordRow = typeof words.$inferSelect;
 export type MakeLlm = (env: Env) => LlmClient | null;
 export type MakeTts = (env: Env) => TtsClient | null;
-export type MakeImageAi = (env: Env) => AiRunner | null;
+/** `requestUrl` decides whether the local-development fake provider may be used. */
+export type MakeImageAi = (env: Env, requestUrl: string) => AiRunner | null;
 export type ContentDeps = { makeLlm: MakeLlm; makeTts: MakeTts; makeImageAi: MakeImageAi };
 
-/** Workers AI binding (always remote, see wrangler.jsonc); null when missing. */
-export const defaultImageAi: MakeImageAi = (env) => (env.AI as unknown as AiRunner | undefined) ?? null;
+/**
+ * Image provider. The Workers AI binding (always remote, see wrangler.jsonc) when it exists, so
+ * production and `npm run dev:ai` draw for real. Without the binding (plain `npm run dev`) a
+ * local host gets the fake placeholder provider; any other host gets null (no drawing), so
+ * production can never fall back to fake images.
+ */
+export const defaultImageAi: MakeImageAi = (env, requestUrl) => {
+  const ai = env.AI as unknown as AiRunner | undefined;
+  if (ai) return ai;
+  return isLocalHost(requestUrl) ? createFakeImageAi() : null;
+};
 
 /** Draws the word / phrases claimed while saving, after the response (waitUntil). */
 export function drawAfterSave(
@@ -47,7 +59,7 @@ export function drawAfterSave(
   items: { kind: "word" | "phrase"; id: string }[],
 ) {
   if (items.length === 0) return;
-  const deps = { DB: c.env.DB, bucket: c.env.MEDIA, ai: makeImageAi(c.env), profileId };
+  const deps = { DB: c.env.DB, bucket: c.env.MEDIA, ai: makeImageAi(c.env, c.req.url), profileId };
   runInBackground(c, drawClaimedItems(deps, items));
 }
 
@@ -111,7 +123,7 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       if (dup) return c.json({ error: WORD_ERRORS.duplicate, existing_id: dup.id }, 409);
 
       const id = crypto.randomUUID();
-      const imagesOn = makeImageAi(c.env) !== null;
+      const imagesOn = makeImageAi(c.env, c.req.url) !== null;
       const image = initialImageFields(fields.image_prompt, imagesOn);
       const insertWord = db
         .insert(words)

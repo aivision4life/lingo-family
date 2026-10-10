@@ -4,7 +4,11 @@
 import { z } from "zod";
 
 /** The part of the `env.AI` binding we use (model ids not yet in the generated types are allowed). */
-export type AiRunner = { run(model: string, input: unknown): Promise<unknown> };
+export type AiRunner = {
+  run(model: string, input: unknown): Promise<unknown>;
+  /** Local-development placeholder provider (fakeImage.ts): no model call, no quota. */
+  fake?: true;
+};
 
 /** `seed` is used only by models that support it (see `supportsSeed`). */
 export type DrawOptions = { size: number; seed?: number };

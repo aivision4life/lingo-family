@@ -55,7 +55,7 @@ export const phraseRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       const word = await db.select().from(words).where(eq(words.id, id)).get();
       if (!word) return c.json({ error: "not_found" }, 404);
 
-      const imagesOn = makeImageAi(c.env) !== null;
+      const imagesOn = makeImageAi(c.env, c.req.url) !== null;
       const { pendingImages, ...result } = await savePhrases(db, {
         wordId: id, wordTerm: word.term, lang: word.lang, profileId: profile_id, inputs, imagesOn,
       });

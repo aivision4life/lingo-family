@@ -46,7 +46,7 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
   const deps = (c: Context<AppEnv>, profileId: string): ImageDeps => ({
     DB: c.env.DB,
     bucket: c.env.MEDIA,
-    ai: makeImageAi(c.env),
+    ai: makeImageAi(c.env, c.req.url),
     profileId,
   });
 
@@ -66,7 +66,7 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
         const { profile_id } = c.req.valid("json");
         const p = await getDb(c.env).select({ id: profiles.id }).from(profiles).where(eq(profiles.id, profile_id)).get();
         if (!p) return c.json({ error: "not_found" }, 404);
-        if (!makeImageAi(c.env)) {
+        if (!makeImageAi(c.env, c.req.url)) {
           const s = await state(c.env.DB, kind, id);
           return s ? c.json(s) : c.json({ error: "not_found" }, 404);
         }
@@ -79,7 +79,7 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
         const { profile_id } = c.req.valid("json");
         const denied = await requireAdult(c, profile_id);
         if (denied) return denied;
-        if (!makeImageAi(c.env)) return c.json({ error: IMAGE_ERRORS.notConfigured }, 503);
+        if (!makeImageAi(c.env, c.req.url)) return c.json({ error: IMAGE_ERRORS.notConfigured }, 503);
         return claimAndDraw(c, kind, id, profile_id, "retry");
       })
 
@@ -89,7 +89,7 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
         const { profile_id, image_prompt } = c.req.valid("json");
         const denied = await requireAdult(c, profile_id);
         if (denied) return denied;
-        if (!makeImageAi(c.env)) return c.json({ error: IMAGE_ERRORS.notConfigured }, 503);
+        if (!makeImageAi(c.env, c.req.url)) return c.json({ error: IMAGE_ERRORS.notConfigured }, 503);
         return claimAndDraw(c, kind, id, profile_id, "redraw", { nonce: newNonce(), prompt: image_prompt });
       })
 
@@ -130,7 +130,7 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
         const { profile_id } = c.req.valid("json");
         const denied = await requireAdult(c, profile_id);
         if (denied) return denied;
-        if (!makeImageAi(c.env)) return c.json({ error: IMAGE_ERRORS.notConfigured }, 503);
+        if (!makeImageAi(c.env, c.req.url)) return c.json({ error: IMAGE_ERRORS.notConfigured }, 503);
 
         const word = await nextBackfillWord(db);
         if (!word) return c.json(backfillResponseSchema.parse({ word: null, drawn: 0, remaining: 0, quota: false }));

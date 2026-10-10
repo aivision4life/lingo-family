@@ -3,6 +3,7 @@
 import { IMAGE_DAILY_QUOTA, IMAGE_FAMILY_DAILY_CAP, type ImageItemKind } from "../../shared/image";
 import { imageInfo } from "../lib/imageInfo";
 import { consumeImageQuota } from "../lib/quota";
+import { FAKE_IMAGE_KEY, FAKE_IMAGE_MODEL, fakePlaceholderBytes } from "./fakeImage";
 import { IMAGE_MODELS, type AiRunner, type ImageModel } from "./imageModels";
 import { withStyle } from "./imagePrompt";
 import { aiImageKey, finishImage, FIRST_NONCE, IMAGE_SIZE, loadImageRow, seedFromNonce } from "./imageStore";
@@ -42,6 +43,20 @@ export async function drawClaimedItem(deps: ImageDeps, kind: ImageItemKind, id: 
   if (!prompt || !deps.ai) {
     await finish({ status: "none" });
     return { status: "none", quota: false, drawn: 0 };
+  }
+  // Local development (`npm run dev`): one shared placeholder, no model call, no quota.
+  if (deps.ai.fake) {
+    try {
+      if (!(await deps.bucket.head(FAKE_IMAGE_KEY))) {
+        await deps.bucket.put(FAKE_IMAGE_KEY, fakePlaceholderBytes(), { httpMetadata: { contentType: "image/png" } });
+      }
+      await finish({ status: "ready", key: FAKE_IMAGE_KEY, model: FAKE_IMAGE_MODEL });
+      return { status: "ready", quota: false, drawn: 0 };
+    } catch (err) {
+      console.error(`Image ${kind} ${id} (fake) failed:`, err instanceof Error ? err.message : err);
+      await finish({ status: "failed" });
+      return { status: "failed", quota: false, drawn: 0 };
+    }
   }
   const fullPrompt = withStyle(prompt);
 

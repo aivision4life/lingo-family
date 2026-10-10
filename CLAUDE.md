@@ -47,7 +47,8 @@ SPEC.md  CLAUDE.md  README.md
 ```
 
 ## Commands
-- `npm run dev`: Vite dev server on http://localhost:5173 — SPA + Worker (`/api/*`) with local D1/R2 (Miniflare, data in `.wrangler/state`)
+- `npm run dev`: Vite dev server on http://localhost:5173 — SPA + Worker (`/api/*`) with local D1/R2 (Miniflare, data in `.wrangler/state`). The Workers AI binding is removed in `vite.config.ts` for this command, so images come from the **fake provider** (`worker/services/fakeImage.ts`: fixed placeholder, `image_model = fake`, no quota). Needs `DEV_AUTH_BYPASS=1` in `.dev.vars`.
+- `npm run dev:ai`: same with the real remote Workers AI binding (`vite --mode ai`); needs `cloudflared` (`winget install --id Cloudflare.cloudflared`) and a one-time Access login because the preview session runs on the Access-protected workers.dev domain.
 - `npm run build`: typecheck (`tsc -b`) + production build into `dist/`
 - `npm run preview`: build, then serve the production build locally
 - `npm run typecheck` / `npm run lint` / `npm test` (`npm run test:watch` for watch mode)
@@ -118,7 +119,7 @@ SPEC.md  CLAUDE.md  README.md
 - **Cache first** for every paid call: TTS audio (R2 key = hash of lang + voice + text), LLM responses (`ai_cache`).
 - Never regenerate media that already exists.
 - **Images (Workers AI):** primary model `flux-2-klein-4b` (512×512, ≈ 26 Neurons), fallback `flux-1-schnell` (≈ 58 Neurons, no seed, 1024×1024). Content-addressed R2 key = sha1(model + full prompt + style version + nonce + size) (nonce: "0" first, random per Redraw; flux-1-schnell has no seed, see SPEC F3). Check R2 before calling `env.AI`. The fixed style suffix (`flat vector illustration, bright colors, simple shapes, plain background, no text, no letters, family-friendly, safe for children`) lives in one constant (`IMAGE_STYLE` in `worker/services/imagePrompt.ts`) with `IMAGE_STYLE_VERSION`; changing it means bumping the version, never silently redrawing existing images.
-- Image generation after saving runs with `waitUntil` (never inside the save request; ~30 s limit, stalled items are taken over after 2 min). Redraw / Try again / lazy examples / backfill draw inside their own request. Always idempotent: a retried job finds the existing R2 object and only updates the row.
+- `defaultImageAi(env, requestUrl)` returns the AI binding when present, the fake provider only on a local host without the binding, else null — production can never draw fake images (tested in `worker/routes/imageProvider.test.ts`). Image generation after saving runs with `waitUntil` (never inside the save request; ~30 s limit, stalled items are taken over after 2 min). Redraw / Try again / lazy examples / backfill draw inside their own request. Always idempotent: a retried job finds the existing R2 object and only updates the row.
 - Image quota: `usage_daily` service `image`, 60/profile/day **and** a family-wide daily cap (sum over profiles; provisional 150, measure Neurons in the dashboard before changing). Count only real `env.AI` calls; R2 hits are free.
 - Uploads ("My photo") are resized in the browser to ≤ 512 px WebP before upload; the Worker re-checks type and size and never re-encodes.
 - Enforce daily quotas per profile through `usage_daily` (pronunciation, LLM, TTS).

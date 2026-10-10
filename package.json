@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:ai": "vite --mode ai",
     "build": "tsc -b && vite build",
     "preview": "npm run build && vite preview",
     "typecheck": "tsc -b",

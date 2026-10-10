@@ -53,7 +53,7 @@ Requirements:
   - The daily new-card limit (`daily_new_limit`) is one profile setting applied **separately to each learning language**, and counts only new recognition cards (see F4).
   - Rationale: kids living in Korea may read Korean better than Vietnamese, so they may learn English with Korean glosses.
 - [x] Optional 4-digit PIN on adult profiles (to stop kids from changing settings; not real security).
-- [~] Access to the whole app is protected by Cloudflare Access (family email allow-list). There is no in-app password system. (M2.1: the Worker verifies the Access JWT on every `/api` request and the email against `ALLOWED_EMAILS`, fail-closed; Access itself is switched on in the dashboard.)
+- [x] Access to the whole app is protected by Cloudflare Access (family email allow-list, One-time PIN, 1-month session). There is no in-app password system. The Worker also verifies the Access JWT on every `/api` request and the email against `ALLOWED_EMAILS` (M2.1, see §7.1).
 
 ---
 
@@ -383,6 +383,17 @@ Free-tier limits change, so check the providers' current pricing pages before re
 
 ---
 
+## 7.1 Deployment & security decisions (M2.1, done 2026-10-10)
+
+- **URL:** `https://lingo.ai4life.workers.dev` (Worker `lingo`; D1 `lingo-family`; R2 `lingo-family-media`). `workers_dev` is the only hostname; **preview URLs are off** (`preview_urls: false`) so there is no second hostname to protect.
+- **Fail-closed API:** `worker/middleware/access.ts` runs before every `/api/*` route (also `/api/health`). It verifies the `Cf-Access-Jwt-Assertion` JWT (RS256, team JWKS of `ai4life.cloudflareaccess.com`, `iss`, `aud` = `ACCESS_AUD`, `exp`) and then the email against the secret `ALLOWED_EMAILS` (comma separated, case-insensitive). Missing JWT, missing/blank `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` or `ALLOWED_EMAILS` → **401**; verified but not allowed → **403**. The verified email is `c.get("userEmail")`. So even before Access was switched on, nobody could use the paid APIs.
+- **Local-only switches:** `DEV_AUTH_BYPASS=1` and `DEV_TIME_TRAVEL=1` (`X-Dev-Now`) work only when `new URL(request.url).hostname` is localhost / 127.0.0.1 / [::1]; the Host header is never trusted. Tested for production hosts and look-alike hostnames.
+- **Gemini location:** Cloudflare's Hong Kong data center (HKG, where Korean users enter) is not a supported Gemini location. `wrangler.jsonc` pins **Placement to Seoul** (`gcp:asia-northeast3`); do not remove it. Settings shows an "AI status" line (which model answered last: primary or fallback).
+- **Secrets:** never pasted with Ctrl+V in `cmd` (it corrupted a key once). Use the dashboard or `npx wrangler secret bulk <file.json>` from a temporary file outside the repo, then delete the file. The LLM client trims whitespace.
+- **Local development:** `npm run dev` uses a **fake image provider** (one fixed 512×512 placeholder, `image_model = 'fake'`, no quota, no cost) because the real Workers AI binding is remote and would need a preview session behind Access (cloudflared). `npm run dev:ai` keeps the real binding (needs `cloudflared`, see README). Production always has the AI binding and can never use the fake provider (fake only on a local host and only without the binding).
+- **Moving local content ("B reduced"):** `npm run migrate:content` (dry run by default; `--apply`; `--verify`). Moves only words, phrases, examples, han_chars, word_chars, ai_cache and every R2 object. Never moves profiles, profile_decks, cards, review_logs, usage_daily, pron_attempts (their dates came from time travel). Production wins: a local row whose language + term / text or cache key already exists is skipped and logged; children of a skipped parent are skipped, new phrases of a skipped word are attached to the production word; profile references become NULL. Idempotent; production D1 is exported to `backups/` before any write. Profiles then get their cards from `syncProfileCards` on the next Home visit (`--verify` checks it).
+- Done 2026-10-10: 3 words, 1 phrase, 8 examples, 2 cache entries and 26 media files moved; profile Hiep has recognition / listening / picture cards for all Korean words.
+
 ## 8. Non-functional requirements
 
 - **Privacy:** family data only; voice recordings never leave the device except for the scoring request; uploaded photos are resized on the device and stored only in the family's R2 bucket; no analytics/trackers.
@@ -409,7 +420,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M1.8 | Image pipeline | Workers AI FLUX (benchmark flux-1-schnell vs flux-2-klein-4b), image prompts in enrichment, `waitUntil` background generation, lazy example images, R2, Try again / Redraw / My photo, quotas | [x] |
 | M1.9 | Picture card + visual review | `picture` card type, unlock chain recognition → picture → listening, image-centred review UI | [x] |
 | M2 | Online | Sub-milestones below | [~] |
-| M2.1 | Deploy + Access | Production D1/R2, fail-closed JWT check, Cloudflare Access (One-time PIN, email allow-list), move local content | [~] |
+| M2.1 | Deploy + Access | Production D1/R2, fail-closed JWT check, Cloudflare Access (One-time PIN, email allow-list), move local content | [x] |
 | M2.2 | PWA + offline | F11 installable PWA, offline reviews + media, sync queue | [ ] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
