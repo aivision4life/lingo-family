@@ -338,7 +338,11 @@
       "profileImages": "Ảnh (hồ sơ này)",
       "llm": "AI văn bản (hồ sơ này)",
       "tts": "Âm thanh (hồ sơ này)",
-      "note": "Tính theo ngày UTC: hạn mức mới lúc 7:00 sáng giờ Việt Nam."
+      "note": "Tính theo ngày UTC: hạn mức mới lúc 7:00 sáng giờ Việt Nam.",
+      "aiStatus": "Tình trạng AI: lần gần nhất do {{model}} ({{role}}) trả lời lúc {{time}}.",
+      "aiPrimary": "chính",
+      "aiFallback": "dự phòng",
+      "aiNone": "Tình trạng AI: chưa có lần gọi nào."
     }
   }
 }

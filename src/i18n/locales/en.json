@@ -338,7 +338,11 @@
       "profileImages": "Pictures (this profile)",
       "llm": "AI text (this profile)",
       "tts": "Audio (this profile)",
-      "note": "Counted per UTC day: limits reset at 7:00 a.m. Vietnam time."
+      "note": "Counted per UTC day: limits reset at 7:00 a.m. Vietnam time.",
+      "aiStatus": "AI status: last answered by {{model}} ({{role}}) at {{time}}.",
+      "aiPrimary": "primary",
+      "aiFallback": "fallback",
+      "aiNone": "AI status: no call yet."
     }
   }
 }

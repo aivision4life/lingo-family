@@ -66,6 +66,8 @@ export const usageSchema = z.object({
     tts: z.number(),
     tts_limit: z.number(),
   }),
+  /** Model that answered the most recent (uncached) LLM call; null before the first call. */
+  llm_last: z.object({ model: z.string(), fallback: z.boolean(), at: z.number() }).nullable(),
 });
 export type Usage = z.infer<typeof usageSchema>;
 

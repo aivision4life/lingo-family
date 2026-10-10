@@ -338,7 +338,11 @@
       "profileImages": "그림(이 프로필)",
       "llm": "AI 텍스트(이 프로필)",
       "tts": "음성(이 프로필)",
-      "note": "UTC 기준 하루: 베트남 시간 오전 7시에 초기화됩니다."
+      "note": "UTC 기준 하루: 베트남 시간 오전 7시에 초기화됩니다.",
+      "aiStatus": "AI 상태: 가장 최근 응답 모델 {{model}} ({{role}}), {{time}}.",
+      "aiPrimary": "기본",
+      "aiFallback": "예비",
+      "aiNone": "AI 상태: 아직 호출 기록이 없습니다."
     }
   }
 }

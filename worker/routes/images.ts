@@ -25,6 +25,7 @@ import { requireAdult } from "../lib/access";
 import { runAiTask } from "../lib/aiTask";
 import { imageInfo } from "../lib/imageInfo";
 import { usageDate } from "../lib/quota";
+import { DEFAULT_GEMINI_MODEL } from "../services/llm";
 import { zv } from "../lib/validate";
 import { backfillRemaining, drawWordBackfill, fillImagePrompts, nextBackfillWord } from "../services/imageBackfill";
 import { drawClaimedItem, type DrawResult, type ImageDeps } from "../services/imageJobs";
@@ -159,6 +160,12 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
           .all<{ profile_id: string; service: string; count: number }>();
         const mine = (service: string) =>
           rows.results.find((r) => r.profile_id === profile_id && r.service === service)?.count ?? 0;
+        // ai_cache.model = model that answered (primary or LLM_FALLBACK_MODEL); cache hits add no row.
+        const last = await c.env.DB.prepare("SELECT model, created_at FROM ai_cache WHERE model IS NOT NULL ORDER BY created_at DESC LIMIT 1").first<{
+          model: string;
+          created_at: number;
+        }>();
+        const primary = c.env.LLM_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
         const usage: Usage = {
           date,
           family: {
@@ -173,6 +180,7 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
             tts: mine("tts"),
             tts_limit: TTS_DAILY_QUOTA,
           },
+          llm_last: last ? { model: last.model, fallback: last.model !== primary, at: last.created_at } : null,
         };
         return c.json(usage);
       })

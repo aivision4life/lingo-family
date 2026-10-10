@@ -164,4 +164,19 @@ describe("GET /api/usage", () => {
     expect(u.family).toEqual({ image: 3, image_cap: 150 });
     expect(u.profile).toMatchObject({ image: 2, image_limit: 60, llm: 1, llm_limit: 50, tts: 0, tts_limit: 200 });
   });
+
+  it("tells which model answered the latest LLM call (primary or fallback)", async () => {
+    const llmLast = async () => usageSchema.parse((await t.api("GET", `/usage?profile_id=${adult}`)).body).llm_last;
+    const put = (key: string, model: string, at: number) =>
+      t.env.DB.prepare("INSERT INTO ai_cache (key, response_json, model, created_at) VALUES (?, '{}', ?, ?)").bind(key, model, at).run();
+    const primary = t.env.LLM_MODEL?.trim() || "gemini-3.8-flash";
+    await t.env.DB.prepare("DELETE FROM ai_cache").run();
+
+    expect(await llmLast()).toBeNull();
+    await put("a", primary, 1_000);
+    expect(await llmLast()).toEqual({ model: primary, fallback: false, at: 1_000 });
+    await put("b", "some-fallback-model", 2_000);
+    expect(await llmLast()).toEqual({ model: "some-fallback-model", fallback: true, at: 2_000 });
+    await t.env.DB.prepare("DELETE FROM ai_cache").run();
+  });
 });
