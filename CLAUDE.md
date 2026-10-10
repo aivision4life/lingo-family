@@ -56,6 +56,7 @@ SPEC.md  CLAUDE.md  README.md
 - `npm run cf-typegen`: regenerate `worker-configuration.d.ts` (the `Env` type) after editing `wrangler.jsonc` or `.dev.vars`
 - `npm run deploy`: build + `wrangler deploy` (needs a real `database_id` in `wrangler.jsonc`, see M2)
 - `npm run bench:images`: M1.8A image benchmark (Gemini image prompts + FLUX models), output in `benchmarks/report.html`
+- `npm run migrate:content [-- --apply | --verify]`: M2.1 one-off move of local words/phrases/examples/Hanja/AI cache + R2 media to production (`scripts/migrate/`). Default is a dry run; `--apply` backs up production D1 into `backups/` first; `--verify` checks that profiles got cards. Production rows always win; profiles/cards/review logs are never moved. Local D1/R2 are read straight from `.wrangler/state` (the SQLite file name depends on `database_id`).
 - Add a shadcn component: `npx shadcn@latest add <name>` (then keep tap targets >= 44px)
 
 ## Project setup notes
