@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./env";
 import { requireAccess, type AccessVariables } from "./middleware/access";
+import { debugLlmRoutes } from "./routes/debugLlm";
 import { healthRoutes } from "./routes/health";
 import { imageRoutes } from "./routes/images";
 import { mediaRoutes } from "./routes/media";
@@ -40,6 +41,8 @@ export function createApp({
   app.route("/", phraseRoutes(deps));
   app.route("/", imageRoutes(deps));
   app.route("/media", mediaRoutes);
+  // TODO(M2.1): remove with worker/routes/debugLlm.ts once the production Gemini 400 is fixed.
+  app.route("/debug", debugLlmRoutes);
   app.route("/review", reviewRoutes);
 
   app.notFound((c) => c.json({ error: "not_found" }, 404));
