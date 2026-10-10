@@ -146,3 +146,5 @@ SPEC.md  CLAUDE.md  README.md
 - `getPlatformProxy().env` bindings are not enumerable: `{...env}` / `Object.assign({}, env)` drops them; use `Object.create(env)` to add overrides.
 <!-- Add a line here whenever the AI repeats a mistake, e.g.:
 - Always use `lang="ko"` on Korean text (fixed glyph bug on 2026-10-xx). -->
+- **Never paste a secret with Ctrl+V in `cmd`** (it pasted 1 control character: `LLM_API_KEY` had length 1 and Gemini answered an empty-body 400). Set secrets in the Cloudflare dashboard (Workers → lingo → Settings → Variables and Secrets) or paste with a right-click, then check the length with the temporary debug endpoint. The LLM client trims secrets, but cannot repair a wrong value.
+- Gemini rejects requests from some Cloudflare data centers (Hong Kong `HKG` serves Korean users; "User location is not supported"). `wrangler.jsonc` pins Placement to Seoul (`gcp:asia-northeast3`). `request.cf.colo` shows where the user entered, not where the Worker's subrequests leave from; check `https://www.cloudflare.com/cdn-cgi/trace` from the Worker for that.

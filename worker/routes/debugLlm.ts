@@ -36,6 +36,26 @@ async function probe(url: string, key: string, init: { method: string; body?: st
   }
 }
 
+/**
+ * Where outgoing requests really leave from: Cloudflare's trace endpoint answers with the data
+ * center (`colo`) and country (`loc`) that served this subrequest. With Placement configured this
+ * is the placed location, which can differ from `request.cf.colo` (where the user entered).
+ */
+async function egressLocation() {
+  try {
+    const res = await fetch("https://www.cloudflare.com/cdn-cgi/trace", { signal: AbortSignal.timeout(10_000) });
+    const fields = Object.fromEntries(
+      (await res.text())
+        .split(/\r?\n/)
+        .map((l) => l.split("=") as [string, string | undefined])
+        .filter(([, v]) => v !== undefined),
+    );
+    return { colo: fields.colo ?? null, loc: fields.loc ?? null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.name : "error" };
+  }
+}
+
 export const debugLlmRoutes = new Hono<AppEnv>().get("/llm", async (c) => {
   const profileId = c.req.query("profile_id");
   if (!profileId) {
@@ -69,8 +89,11 @@ export const debugLlmRoutes = new Hono<AppEnv>().get("/llm", async (c) => {
     : null;
 
   return c.json({
+    // Where the user's request entered Cloudflare.
     colo: cf?.colo ?? null,
     country: cf?.country ?? null,
+    // Where this Worker's own requests (e.g. to Gemini) leave from; this is what Gemini sees.
+    egress: await egressLocation(),
     model: { raw_length: rawModel.length, trimmed: model, trimmed_length: model.length },
     key: key_info,
     list_models: models ?? "skipped: no LLM_API_KEY",

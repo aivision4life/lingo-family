@@ -6,6 +6,11 @@
   "observability": { "enabled": true },
   // https://lingo.ai4life.workers.dev is the only entrance. Preview URLs are off, so no
   // second hostname exists that Cloudflare Access would have to protect.
+  // Placement: Cloudflare's Hong Kong data center (HKG, where Korean users enter) cannot call the
+  // Gemini API ("User location is not supported"). Run the Worker in Seoul instead. If the
+  // region is not accepted, use { "mode": "smart" } or { "mode": "targeted", "hostname":
+  // "generativelanguage.googleapis.com" }.
+  "placement": { "mode": "targeted", "region": "gcp:asia-northeast3" },
   "workers_dev": true,
   "preview_urls": false,
   "assets": {

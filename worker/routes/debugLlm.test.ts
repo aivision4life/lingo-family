@@ -32,6 +32,7 @@ describe("GET /api/debug/llm", () => {
     const calls: { url: string; key: string | null }[] = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       calls.push({ url: String(url), key: new Headers(init.headers).get("x-goog-api-key") });
+      if (String(url).endsWith("/cdn-cgi/trace")) return new Response(["ip=1.2.3.4", "colo=ICN", "loc=KR", ""].join("\n"));
       if (String(url).endsWith("/models")) return new Response("", { status: 400, headers: { "x-test": "1" } });
       throw new TypeError("Invalid header value");
     });
@@ -42,8 +43,11 @@ describe("GET /api/debug/llm", () => {
     expect(body.model).toMatchObject({ trimmed: "gemini-x" });
     expect(body.list_models).toMatchObject({ status: 400, headers: { "x-test": "1" }, body: "" });
     expect(body.generate_content).toEqual({ exception: { name: "TypeError", message: "Invalid header value" } });
-    expect(calls.map((c) => c.key)).toEqual([SECRET, SECRET]);
-    expect(calls.every((c) => !c.url.includes(SECRET))).toBe(true);
+    expect(body.egress).toEqual({ colo: "ICN", loc: "KR" });
+    expect(JSON.stringify(body)).not.toContain("1.2.3.4");
+    const geminiCalls = calls.filter((c) => c.url.includes("generativelanguage"));
+    expect(geminiCalls.map((c) => c.key)).toEqual([SECRET, SECRET]);
+    expect(geminiCalls.every((c) => !c.url.includes(SECRET))).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain(SECRET);
   });
 });
