@@ -58,7 +58,7 @@ export function drawAfterSave(
   c: Context<AppEnv>,
   makeImageAi: MakeImageAi,
   profileId: string,
-  items: { kind: "word" | "phrase"; id: string }[],
+  items: { kind: "word" | "phrase" | "example"; id: string }[],
 ) {
   if (items.length === 0) return;
   const deps = { DB: c.env.DB, bucket: c.env.MEDIA, ai: makeImageAi(c.env, c.req.url), profileId };

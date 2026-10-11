@@ -68,10 +68,10 @@ export function finalizeEnrichment(lang: LearnLang, term: string, raw: LlmEnrich
   };
 }
 
-type Db = ReturnType<typeof getDb>;
+export type Db = ReturnType<typeof getDb>;
 
 /** Generic cache-first LLM task: returns the cached value, or produces, validates and stores a new one. */
-async function cachedTask<T>(o: {
+export async function cachedTask<T>(o: {
   db: Db;
   key: string;
   /** Validates a cached value (invalid or outdated entries are regenerated). */
