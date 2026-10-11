@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { countByTable, planAssignCreator, type CreatorRow } from "./plan";
 
 const row = (over: Partial<CreatorRow>): CreatorRow => ({
-  table: "words", id: "w1", lang: "ko", term: "학생", created_by_profile: null, ...over,
+  table: "words", id: "w1", lang: "ko", term: "학생", created_by_profile: null, created_at: 1, ...over,
 });
 
 describe("planAssignCreator", () => {

@@ -9,6 +9,8 @@ export type CreatorRow = {
   /** The word's term, or the phrase's text. */
   term: string;
   created_by_profile: string | null;
+  /** Epoch ms, for the dry-run listing. */
+  created_at: number;
 };
 
 export type AssignPlan = {

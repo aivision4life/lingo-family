@@ -49,19 +49,22 @@ function backupProduction() {
 const rows = async <T>(db: D1Like, sql: string) => (await db.prepare(sql).all<T>()).results;
 
 async function loadRows(db: D1Like): Promise<CreatorRow[]> {
-  const words = await rows<{ id: string; lang: string; term: string; created_by_profile: string | null }>(
+  const words = await rows<{ id: string; lang: string; term: string; created_by_profile: string | null; created_at: number }>(
     db,
-    "SELECT id, lang, term, created_by_profile FROM words ORDER BY lang, term",
+    "SELECT id, lang, term, created_by_profile, created_at FROM words ORDER BY lang, term",
   );
-  const phrases = await rows<{ id: string; lang: string; text: string; created_by_profile: string | null }>(
+  const phrases = await rows<{ id: string; lang: string; text: string; created_by_profile: string | null; created_at: number }>(
     db,
-    "SELECT id, lang, text, created_by_profile FROM phrases ORDER BY lang, text",
+    "SELECT id, lang, text, created_by_profile, created_at FROM phrases ORDER BY lang, text",
   );
   return [
-    ...words.map((w): CreatorRow => ({ table: "words", id: w.id, lang: w.lang, term: w.term, created_by_profile: w.created_by_profile })),
-    ...phrases.map((p): CreatorRow => ({ table: "phrases", id: p.id, lang: p.lang, term: p.text, created_by_profile: p.created_by_profile })),
+    ...words.map((w): CreatorRow => ({ table: "words", id: w.id, lang: w.lang, term: w.term, created_by_profile: w.created_by_profile, created_at: w.created_at })),
+    ...phrases.map((p): CreatorRow => ({ table: "phrases", id: p.id, lang: p.lang, term: p.text, created_by_profile: p.created_by_profile, created_at: p.created_at })),
   ];
 }
+
+/** `created_at` on words/phrases is epoch ms (integer mode "timestamp_ms" in db/schema.ts). */
+const isoOf = (epochMs: number) => new Date(epochMs).toISOString();
 
 async function main() {
   if (!profileId) {
@@ -81,8 +84,8 @@ async function main() {
 
     console.log(`\nWill assign (currently NULL): words ${counts.words}, phrases ${counts.phrases}`);
     if (plan.toUpdate.length > 0) {
-      console.log("\nRows:");
-      for (const r of plan.toUpdate) console.log(`  [${r.table}] ${r.lang} ${r.term}`);
+      console.log("\nRows (table, id, text, lang, created_at):");
+      for (const r of plan.toUpdate) console.log(`  ${r.table}\t${r.id}\t${r.term}\t${r.lang}\t${isoOf(r.created_at)}`);
     }
     console.log(`\nAlready have a creator (left untouched): ${plan.alreadySet.length}`);
 
