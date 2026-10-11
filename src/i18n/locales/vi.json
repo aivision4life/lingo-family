@@ -206,7 +206,17 @@
     },
     "kindLabel": "Loại",
     "kindWords": "Từ",
-    "kindPhrases": "Cụm từ"
+    "kindPhrases": "Cụm từ",
+    "scope": {
+      "label": "Phạm vi thư viện",
+      "learning": "Tôi đang học",
+      "mine": "Tôi đã thêm",
+      "all": "Tất cả",
+      "emptyLearning": "Bạn chưa học từ nào ở đây.",
+      "emptyMine": "Bạn chưa thêm từ nào ở đây.",
+      "viewAll": "Xem Tất cả"
+    },
+    "notInStudyLangs": "Đã lưu vào thư viện chung, nhưng chưa nằm trong danh sách đang học vì bạn chưa học ngôn ngữ này. Vào Cài đặt để thêm ngôn ngữ."
   },
   "audio": {
     "play": "Nghe phát âm",

@@ -69,9 +69,16 @@ export const phraseRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
 
     /** Library list of phrases (filter "Phrases"). */
     .get("/phrases", zv("query", wordListQuerySchema), async (c) => {
-      const { lang, q } = c.req.valid("query");
+      const { lang, q, scope, profile_id } = c.req.valid("query");
       const conditions: SQL[] = [];
       if (lang) conditions.push(eq(phrases.lang, lang));
+      // M2.7: "I'm learning" follows the root word (a phrase's cards are keyed by the root word's
+      // id); "I added" is the phrase's own creator, which may differ from the word's creator.
+      if (scope === "learning") {
+        conditions.push(sql`EXISTS (SELECT 1 FROM cards WHERE cards.profile_id = ${profile_id} AND cards.word_id = ${phrases.word_id})`);
+      } else if (scope === "mine") {
+        conditions.push(eq(phrases.created_by_profile, profile_id!));
+      }
       if (q) {
         const pattern = likePattern(q);
         const fields = [phrases.text, phrases.reading, phrases.gloss_vi, phrases.gloss_en, phrases.gloss_ko, words.term];

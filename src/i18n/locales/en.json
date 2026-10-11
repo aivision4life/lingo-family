@@ -206,7 +206,17 @@
     },
     "kindLabel": "Type",
     "kindWords": "Words",
-    "kindPhrases": "Phrases"
+    "kindPhrases": "Phrases",
+    "scope": {
+      "label": "Library scope",
+      "learning": "I'm learning",
+      "mine": "I added",
+      "all": "All",
+      "emptyLearning": "You are not learning any words here yet.",
+      "emptyMine": "You have not added any words here yet.",
+      "viewAll": "View All"
+    },
+    "notInStudyLangs": "Saved to the shared library, but not in your learning list because you are not studying this language yet. Add it in Settings."
   },
   "audio": {
     "play": "Play pronunciation",

@@ -116,8 +116,8 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
         { ...result.input, phrases: phrases.inputs, album_ids: albumIds },
         {
           // Word detail shows light notices for missing audio and for phrases that already existed.
-          onSuccess: ({ id, audio, skipped_phrases }) =>
-            void navigate(`/words/${id}`, { state: { audioMissing: audio.missing, skippedPhrases: skipped_phrases } }),
+          onSuccess: ({ id, audio, skipped_phrases, added_to_learning }) =>
+            void navigate(`/words/${id}`, { state: { audioMissing: audio.missing, skippedPhrases: skipped_phrases, addedToLearning: added_to_learning } }),
         },
       );
     }

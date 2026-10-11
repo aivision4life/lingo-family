@@ -2,7 +2,7 @@ import { ListChecks, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
-import type { LearnLang, UiLang } from "@shared/enums";
+import type { LearnLang, LibraryScope, UiLang } from "@shared/enums";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AddToAlbumDialog } from "@/features/albums/AddToAlbumDialog";
@@ -16,7 +16,10 @@ import { usePhrases } from "@/features/phrases/api";
 import { cn } from "@/lib/utils";
 import { useWord, useWords } from "./api";
 import { LangChips } from "./bits";
+import { readScope, writeScope } from "./libraryScope";
 import { PhraseRow } from "./LibraryRows";
+import { ScopeEmptyState } from "./ScopeEmptyState";
+import { LibraryScopeChips } from "./LibraryScopeChips";
 
 type Kind = "words" | "phrases";
 
@@ -29,9 +32,15 @@ export function AllWordsView({ glossLang, profileId, canEdit }: Props) {
   const [lang, setLang] = useState<LearnLang | null>(null);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
+  // Library scope (M2.7), remembered per profile per device.
+  const [scope, setScope] = useState<LibraryScope>(() => readScope(profileId));
+  const changeScope = (s: LibraryScope) => {
+    setScope(s);
+    writeScope(profileId, s);
+  };
   // Typing stays responsive; the search request follows slightly behind.
   const q = useDeferredValue(query.trim());
-  const filter = { lang: lang ?? undefined, q: q || undefined };
+  const filter = { lang: lang ?? undefined, q: q || undefined, scope, profileId };
   const words = useWords(filter);
   const phrases = usePhrases(filter, kind === "phrases");
   const list = kind === "words" ? words : phrases;
@@ -80,6 +89,7 @@ export function AllWordsView({ glossLang, profileId, canEdit }: Props) {
           </button>
         ))}
       </div>
+      <LibraryScopeChips value={scope} onChange={changeScope} />
       <LangChips allowAll label={t("words.add.lang")} value={lang} onChange={setLang} />
       {canEdit && kind === "words" && !selecting && !!words.data?.length && (
         <Button type="button" variant="ghost" className="self-end" onClick={sel.start}>
@@ -90,7 +100,8 @@ export function AllWordsView({ glossLang, profileId, canEdit }: Props) {
 
       {list.isPending && <p className="text-muted-foreground">{t("common.loading")}</p>}
       {list.isError && <p className="text-destructive">{t("common.loadError")}</p>}
-      {list.data?.length === 0 && (
+      {list.data?.length === 0 && scope !== "all" && <ScopeEmptyState scope={scope} onViewAll={() => changeScope("all")} />}
+      {list.data?.length === 0 && scope === "all" && (
         <p className="text-muted-foreground">
           {q || lang ? t("words.noResults") : kind === "words" ? t("words.empty") : t("phrases.none")}
         </p>

@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import type { ExampleLevel, LearnLang } from "@shared/enums";
+import type { ExampleLevel, LearnLang, LibraryScope } from "@shared/enums";
 import {
   phraseListSchema,
   savePhrasesResponseSchema,
@@ -20,10 +20,14 @@ const invalidateContent = (qc: ReturnType<typeof useQueryClient>) =>
     qc.invalidateQueries({ queryKey: ["review"] }),
   ]);
 
-export function usePhrases(filter: { lang?: LearnLang; q?: string }, enabled: boolean) {
+export function usePhrases(filter: { lang?: LearnLang; q?: string; scope?: LibraryScope; profileId?: string }, enabled: boolean) {
   const params = new URLSearchParams();
   if (filter.lang) params.set("lang", filter.lang);
   if (filter.q) params.set("q", filter.q);
+  if (filter.scope && filter.scope !== "all") {
+    params.set("scope", filter.scope);
+    if (filter.profileId) params.set("profile_id", filter.profileId);
+  }
   const qs = params.toString();
   return useQuery({
     queryKey: ["phrases", "list", filter],

@@ -206,7 +206,17 @@
     },
     "kindLabel": "종류",
     "kindWords": "단어",
-    "kindPhrases": "구"
+    "kindPhrases": "구",
+    "scope": {
+      "label": "라이브러리 범위",
+      "learning": "내가 배우는 중",
+      "mine": "내가 추가함",
+      "all": "전체",
+      "emptyLearning": "아직 여기서 배우는 단어가 없습니다.",
+      "emptyMine": "아직 여기에 추가한 단어가 없습니다.",
+      "viewAll": "전체 보기"
+    },
+    "notInStudyLangs": "공용 라이브러리에는 저장되었지만, 이 언어를 학습 중이 아니라서 학습 목록에는 없습니다. 설정에서 언어를 추가하세요."
   },
   "audio": {
     "play": "발음 듣기",

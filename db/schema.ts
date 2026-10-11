@@ -96,7 +96,11 @@ export const words = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
   },
-  (t) => [uniqueIndex("words_lang_term_uq").on(t.lang, t.term)],
+  (t) => [
+    uniqueIndex("words_lang_term_uq").on(t.lang, t.term),
+    // M2.7: "I added" library filter (GET /api/words?scope=mine).
+    index("words_created_by_idx").on(t.created_by_profile),
+  ],
 );
 
 /**
@@ -242,6 +246,9 @@ export const cards = sqliteTable(
       .on(t.profile_id, t.phrase_id, t.card_type)
       .where(sql`phrase_id IS NOT NULL`),
     index("cards_profile_due_idx").on(t.profile_id, t.due),
+    // M2.7: "I'm learning" library filter (GET /api/words?scope=learning) — EXISTS(cards WHERE
+    // profile_id=? AND word_id=?) over every card type/phrase, not just the partial uniques above.
+    index("cards_profile_word_idx").on(t.profile_id, t.word_id),
   ],
 );
 

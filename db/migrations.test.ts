@@ -322,3 +322,18 @@ describe("migration 0006_pron_attempts_set_null", () => {
     expect(await count("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'")).toBe(7);
   });
 });
+
+describe("migration 0007_library_scope_indexes", () => {
+  beforeAll(async () => {
+    await apply("0007_library_scope_indexes.sql");
+  });
+
+  it("adds the two indexes without touching data", async () => {
+    const names = (
+      await DB.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('cards_profile_word_idx', 'words_created_by_idx')").all<{
+        name: string;
+      }>()
+    ).results.map((r) => r.name);
+    expect(names.sort()).toEqual(["cards_profile_word_idx", "words_created_by_idx"]);
+  });
+});

@@ -14,6 +14,7 @@ import { WordAlbumsButton } from "@/features/albums/WordAlbumsDialog";
 import { PageShell } from "@/components/PageShell";
 import { SpeakButton, SpeedToggle } from "@/features/audio/AudioButtons";
 import { AudioStatus } from "@/features/audio/AudioStatus";
+import { LearningStatusNotice } from "@/features/words/LearningStatusNotice";
 import { PhrasesSection } from "@/features/phrases/PhrasesSection";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { DeleteWordButton } from "@/features/words/DeleteWordButton";
@@ -97,6 +98,7 @@ function Detail({ w }: { w: WordDetail }) {
       <div className="flex justify-end">
         <SpeedToggle />
       </div>
+      <LearningStatusNotice />
       <AudioStatus word={w} />
 
       {unverified && (

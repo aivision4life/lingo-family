@@ -148,6 +148,14 @@ Decisions (M1.7):
 - API: `POST /api/enrich/sentence`, `POST /api/enrich/phrase`, `POST /api/words/:id/examples`, `PATCH /api/examples/:id`, `DELETE /api/examples/:id` (adults only, zod).
 - **Decision (2026-10-11): deleting content does not delete practice history.** `pron_attempts.word_id / phrase_id / example_id` are `ON DELETE SET NULL` (migration `0006`, table rebuilt while empty); the history stays readable through `reference_text`. Deleting a profile still deletes its attempts.
 
+**Library scope filter (M2.7)** — the library stays one shared family list; this only filters the view.
+- [x] Three chips above the word/phrase list, on the "All" tab, an album page and "Unsorted": **I'm learning** (default; the profile has ≥1 card for the word — a phrase follows its root word's cards), **I added** (`created_by_profile` = the profile; a phrase's own creator, not the root word's), **All** (today's behaviour). Combines with language, search and album filters (all AND). The choice is remembered **per profile, per device** (localStorage). Kid profiles default to "I'm learning" and can switch to the others (view only). An album card's word count in the grid is never filtered (always the true total).
+- [x] A friendly empty state for "I'm learning" / "I added" ("You are not learning/have not added any words here yet." + a "View All" button).
+- [x] A new word appears in "I'm learning" **immediately**: `POST /api/words` syncs the creator's cards in the same request (`syncProfileCards`), not only on the next Home visit. Other profiles still sync when they open Home. If the word's language is not in the creator's `study_langs`, a light notice says it was saved to the shared library but is not yet in the learning list.
+- API: `GET /api/words` and `GET /api/phrases` take `scope` (`learning`\|`mine`\|`all`, default `all`) and `profile_id` (required unless `scope=all`). Migration `0007` only adds indexes (`cards(profile_id, word_id)`, `words(created_by_profile)`) for the `EXISTS` / equality filters.
+- `created_by_profile` is set on every creation path (word, phrase saved with a word, phrase added later) — already true before M2.7 (checked, test added); `examples` has no such column.
+- One-off `npm run assign-creator -- --profile <id> [--apply]`: content moved from local before M2.7 has `created_by_profile = NULL`; the script lists (dry run) or sets (`--apply`, after a production backup) those rows to one profile, touching only rows still NULL.
+
 **Done when:** typing `학생` and pressing "Add" produces a complete entry like the example in §3 within ~5 seconds, with audio playable; images appear shortly after (background generation).
 
 ### F3. Media: audio & images — P0
@@ -459,6 +467,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M2.4 | Albums | Playlists of words (many-to-many, per language, family-shared), Library tabs, select-many, review by album | [x] |
 | M2.5 | Focus view | Full-screen view of an example sentence / phrase (big picture and text, hidden meaning, listen / repeat, swipe) in Word detail, review and the Library | [x] |
 | M2.6 | Typed sentences + AI | AI help for sentences / phrases typed by hand (translate, picture prompt, check the sentence), add / edit / delete example sentences, pron_attempts keep history | [x] |
+| M2.7 | Library scope filter | Filter the shared library by profile ("I'm learning" / "I added" / "All"), cards synced right away on word creation | [x] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |

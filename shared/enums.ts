@@ -17,6 +17,11 @@ export const cardTypeSchema = z.enum(CARD_TYPES);
 export type CardType = z.infer<typeof cardTypeSchema>;
 
 /** `default` = the per-language deck that every word is in (cards come from it); `album` = a family-made playlist of words (M2.4). */
+/** Library filter (M2.7): which words/phrases to show, relative to a profile. */
+export const LIBRARY_SCOPES = ["learning", "mine", "all"] as const;
+export const libraryScopeSchema = z.enum(LIBRARY_SCOPES);
+export type LibraryScope = z.infer<typeof libraryScopeSchema>;
+
 export const DECK_KINDS = ["default", "album"] as const;
 export const deckKindSchema = z.enum(DECK_KINDS);
 export type DeckKind = z.infer<typeof deckKindSchema>;

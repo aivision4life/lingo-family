@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { LearnLang } from "@shared/enums";
+import type { LearnLang, LibraryScope } from "@shared/enums";
 import {
   audioResultSchema,
   duplicateErrorSchema,
@@ -17,11 +17,18 @@ import { api } from "@/lib/api";
 
 const WORDS_KEY = ["words"] as const;
 
-/** `album`: an album id, or "none" for words that are in no album. */
-export function useWords(filter: { lang?: LearnLang; q?: string; album?: string }) {
+/**
+ * `album`: an album id, or "none" for words that are in no album. `scope` + `profileId` is the
+ * library filter (M2.7): "learning" needs a card, "mine" needs profileId = created_by_profile.
+ */
+export function useWords(filter: { lang?: LearnLang; q?: string; album?: string; scope?: LibraryScope; profileId?: string }) {
   const params = new URLSearchParams();
   if (filter.lang) params.set("lang", filter.lang);
   if (filter.album) params.set("album", filter.album);
+  if (filter.scope && filter.scope !== "all") {
+    params.set("scope", filter.scope);
+    if (filter.profileId) params.set("profile_id", filter.profileId);
+  }
   if (filter.q) params.set("q", filter.q);
   const qs = params.toString();
   return useQuery({

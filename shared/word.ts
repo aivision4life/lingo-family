@@ -9,7 +9,7 @@ import {
   termSchema,
 } from "./base";
 import { albumRefSchema } from "./album";
-import { exampleLevelSchema, learnLangSchema } from "./enums";
+import { exampleLevelSchema, learnLangSchema, libraryScopeSchema } from "./enums";
 import { imageViewSchema } from "./image";
 import { llmPhraseSchema, PHRASES_MAX, phraseInputSchema, phraseSchema, skippedPhraseSchema } from "./phrase";
 
@@ -145,12 +145,18 @@ export type WordDetail = z.infer<typeof wordDetailSchema>;
 /** DELETE /api/words/:id (adults only). */
 export const deleteWordRequestSchema = z.object({ profile_id: z.string().min(1) });
 
-export const wordListQuerySchema = z.object({
-  lang: learnLangSchema.optional(),
-  q: z.string().trim().max(TERM_MAX).optional(),
-  /** An album id, or "none" for words that are in no album (the virtual "Unsorted" entry). */
-  album: z.string().min(1).optional(),
-});
+export const wordListQuerySchema = z
+  .object({
+    lang: learnLangSchema.optional(),
+    q: z.string().trim().max(TERM_MAX).optional(),
+    /** An album id, or "none" for words that are in no album (the virtual "Unsorted" entry). */
+    album: z.string().min(1).optional(),
+    /** Library filter (M2.7): "learning" (has a card), "mine" (I added it), or "all" (default). */
+    scope: libraryScopeSchema.default("all"),
+    /** Required when scope is not "all". */
+    profile_id: z.string().min(1).optional(),
+  })
+  .refine((v) => v.scope === "all" || !!v.profile_id, { message: "profile_id is required for this scope", path: ["profile_id"] });
 
 export const WORD_ERRORS = {
   /** Same language + term already exists; body has `existing_id`. */
@@ -186,6 +192,8 @@ export const wordCreatedSchema = z.object({
   audio: audioResultSchema,
   /** Ticked phrases not saved because they already exist (SPEC: shown as "already under word X"). */
   skipped_phrases: z.array(skippedPhraseSchema),
+  /** False when the word's language is not in the creator's study_langs (M2.7): no card was made for them. */
+  added_to_learning: z.boolean(),
 });
 
 /** POST /api/words/:id/audio */

@@ -31,6 +31,7 @@ import type { AiRunner } from "../services/imageModels";
 import { imageView } from "../services/imageStore";
 import type { LlmClient } from "../services/llm";
 import { loadPhrases, savePhrases, toExample, wordOnlyExamples } from "../services/phrases";
+import { supportedStudyLangs, syncProfileCards } from "../services/review";
 import type { TtsClient } from "../services/tts";
 
 type Db = ReturnType<typeof getDb>;
@@ -165,7 +166,13 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
         { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
         id,
       );
-      return c.json({ id, audio, skipped_phrases: skipped }, 201);
+
+      // So the new word shows up in "I'm learning" right away (M2.7), without waiting for Home.
+      // Only the creator's cards are made here; other profiles sync as usual when they open Home.
+      const creator = await syncProfileCards(db, c.env.DB, profile_id, new Date());
+      const added_to_learning = !!creator && supportedStudyLangs(creator.study_langs).includes(fields.lang);
+
+      return c.json({ id, audio, skipped_phrases: skipped, added_to_learning }, 201);
     })
 
     .post("/:id/audio", idParam, zv("json", generateAudioRequestSchema), async (c) => {
@@ -184,9 +191,14 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
     })
 
     .get("/", zv("query", wordListQuerySchema), async (c) => {
-      const { lang, q, album } = c.req.valid("query");
+      const { lang, q, album, scope, profile_id } = c.req.valid("query");
       const conditions: SQL[] = [];
       if (lang) conditions.push(eq(words.lang, lang));
+      if (scope === "learning") {
+        conditions.push(sql`EXISTS (SELECT 1 FROM cards WHERE cards.profile_id = ${profile_id} AND cards.word_id = ${words.id})`);
+      } else if (scope === "mine") {
+        conditions.push(eq(words.created_by_profile, profile_id!));
+      }
       if (album === UNSORTED_ALBUM) {
         conditions.push(sql`NOT EXISTS (SELECT 1 FROM deck_words dw JOIN decks d ON d.id = dw.deck_id WHERE dw.word_id = ${words.id} AND d.kind = 'album')`);
       } else if (album) {

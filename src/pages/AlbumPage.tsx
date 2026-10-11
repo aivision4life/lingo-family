@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearchParams } from "react-router";
 import { UNSORTED_ALBUM } from "@shared/album";
-import { learnLangSchema, type LearnLang } from "@shared/enums";
+import { learnLangSchema, type LearnLang, type LibraryScope } from "@shared/enums";
 import { showAddWordButton } from "@/components/layout/addWordVisibility";
 import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
@@ -16,6 +16,9 @@ import { useWordSelection } from "@/features/albums/useWordSelection";
 import { WordList } from "@/features/albums/WordList";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useWords } from "@/features/words/api";
+import { readScope, writeScope } from "@/features/words/libraryScope";
+import { LibraryScopeChips } from "@/features/words/LibraryScopeChips";
+import { ScopeEmptyState } from "@/features/words/ScopeEmptyState";
 
 /**
  * An album's words (`/albums/:id`), or the virtual "Unsorted" entry (`/albums/none?lang=ko`):
@@ -31,7 +34,13 @@ export function AlbumPage() {
   const unsortedLang = learnLangSchema.safeParse(params.get("lang"));
   const album = albums.data?.albums.find((a) => a.id === id);
   const lang: LearnLang | undefined = unsorted ? (unsortedLang.success ? unsortedLang.data : undefined) : album?.lang;
-  const words = useWords({ album: id, lang: unsorted ? lang : undefined });
+  // Library scope (M2.7), remembered per profile per device; also applies here and to "Unsorted".
+  const [scope, setScope] = useState<LibraryScope>(() => (profile ? readScope(profile.id) : "learning"));
+  const changeScope = (s: LibraryScope) => {
+    setScope(s);
+    if (profile) writeScope(profile.id, s);
+  };
+  const words = useWords({ album: id, lang: unsorted ? lang : undefined, scope, profileId: profile?.id });
   const sel = useWordSelection(words.data ?? []);
   const remove = useRemoveFromAlbum();
   const [adding, setAdding] = useState(false);
@@ -63,6 +72,7 @@ export function AlbumPage() {
               {canEdit && <AlbumActions profileId={profile.id} id={id} name={album?.name ?? ""} />}
             </div>
           )}
+          <LibraryScopeChips value={scope} onChange={changeScope} />
           {canEdit && !sel.selecting && !!words.data?.length && (
             <Button type="button" variant="ghost" className="self-end" onClick={sel.start}>
               <ListChecks aria-hidden />
@@ -71,7 +81,8 @@ export function AlbumPage() {
           )}
           {words.isPending && <p className="text-muted-foreground">{t("common.loading")}</p>}
           {words.isError && <p className="text-destructive">{t("common.loadError")}</p>}
-          {words.data?.length === 0 && <p className="text-muted-foreground">{t("words.empty")}</p>}
+          {words.data?.length === 0 && scope !== "all" && <ScopeEmptyState scope={scope} onViewAll={() => changeScope("all")} />}
+          {words.data?.length === 0 && scope === "all" && <p className="text-muted-foreground">{t("words.empty")}</p>}
           {!!words.data?.length && (
             <WordList words={words.data} glossLang={profile.gloss_lang} selecting={canEdit && sel.selecting} selected={sel.selected} onToggle={sel.toggle} />
           )}
