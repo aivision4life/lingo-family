@@ -115,7 +115,7 @@ describe("images drawn after saving", () => {
   });
 });
 
-describe("image quotas (60 per profile, 150 for the family)", () => {
+describe("image quotas (per profile, and for the family)", () => {
   it("profile limit reached → the item keeps its placeholder (none), no AI call, no error", async () => {
     await setUsage(adult, IMAGE_DAILY_QUOTA);
     const id = await create("자두"); // a prompt never drawn before (R2 hits are free)

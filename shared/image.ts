@@ -2,9 +2,9 @@
 import { z } from "zod";
 import { imageSourceSchema, imageStatusSchema } from "./enums";
 
-/** Daily image quota per profile, and for the whole family (sum over profiles). */
-export const IMAGE_DAILY_QUOTA = 60;
-export const IMAGE_FAMILY_DAILY_CAP = 150;
+/** Daily image quota per profile, and for the whole family (sum over profiles). Resets at UTC midnight (see `usageDate()`). */
+export const IMAGE_DAILY_QUOTA = 100;
+export const IMAGE_FAMILY_DAILY_CAP = 250;
 
 /** Uploads ("My photo"): resized in the browser; the Worker re-checks and never re-encodes. */
 export const IMAGE_MAX_SIDE = 512;

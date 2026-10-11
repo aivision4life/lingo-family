@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { wordErrorMessage } from "@/features/words/format";
 import { backfillStep, useBackfillStatus } from "./api";
+import { ImageQuotaNotice } from "./ImageQuotaNotice";
 
 type Phase = { kind: "idle" } | { kind: "running"; term: string | null } | { kind: "done" | "stopped" | "quota" } | { kind: "error"; message: string };
 
@@ -50,7 +51,6 @@ export function BackfillCard({ profileId }: { profileId: string }) {
     phase.kind === "running" ? (phase.term ? t("images.backfill.working", { term: phase.term }) : t("images.drawing"))
     : phase.kind === "done" ? t("images.backfill.done")
     : phase.kind === "stopped" ? t("images.backfill.stopped")
-    : phase.kind === "quota" ? t("images.backfill.quota")
     : phase.kind === "error" ? phase.message
     : null;
 
@@ -71,7 +71,8 @@ export function BackfillCard({ profileId }: { profileId: string }) {
           {t("images.backfill.start")}
         </Button>
       )}
-      {message && (
+      {phase.kind === "quota" && <ImageQuotaNotice />}
+      {(message || drawn > 0) && (
         <p role="status" className="text-sm text-muted-foreground">
           {message} {drawn > 0 && t("images.backfill.drawn", { count: drawn })}
         </p>

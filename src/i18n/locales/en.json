@@ -323,7 +323,7 @@
     "uploading": "Uploading…",
     "retry": "Try again",
     "failed": "The picture could not be drawn. You can try again.",
-    "quota": "No pictures left for today. It will be drawn later.",
+    "quotaBanner": "No pictures left for today. New quota at {{time}} (your device's time).",
     "invalidUpload": "This photo cannot be used (max 512 px, 300 KB, WebP/JPEG/PNG).",
     "notConfigured": "Workers AI for pictures is not set up.",
     "redrawTitle": "Redraw picture",
@@ -339,7 +339,6 @@
       "working": "Drawing “{{term}}”…",
       "done": "Done.",
       "stopped": "Stopped. Press again to continue.",
-      "quota": "Today's limit (pictures or AI) is used up. Continue tomorrow.",
       "drawn": "Drew {{count}} pictures."
     },
     "usage": {

@@ -1,6 +1,6 @@
 // Images (M1.8B): lazy example images, claiming (no double drawing, stalled items), backfill, usage.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { backfillResponseSchema, IMAGE_STALE_MS, usageSchema } from "../../shared/image";
+import { backfillResponseSchema, IMAGE_DAILY_QUOTA, IMAGE_FAMILY_DAILY_CAP, IMAGE_STALE_MS, usageSchema } from "../../shared/image";
 import type { ProfileCreate } from "../../shared/profile";
 import { wordDetailSchema } from "../../shared/word";
 import type { LlmClient } from "../services/llm";
@@ -161,8 +161,8 @@ describe("GET /api/usage", () => {
     await t.api("POST", `/images/example/${ex.id}/ensure`, { profile_id: kid }); // 1 image for the kid
 
     const u = usageSchema.parse((await t.api("GET", `/usage?profile_id=${adult}`)).body);
-    expect(u.family).toEqual({ image: 3, image_cap: 150 });
-    expect(u.profile).toMatchObject({ image: 2, image_limit: 60, llm: 1, llm_limit: 50, tts: 0, tts_limit: 200 });
+    expect(u.family).toEqual({ image: 3, image_cap: IMAGE_FAMILY_DAILY_CAP });
+    expect(u.profile).toMatchObject({ image: 2, image_limit: IMAGE_DAILY_QUOTA, llm: 1, llm_limit: 50, tts: 0, tts_limit: 200 });
   });
 
   it("tells which model answered the latest LLM call (primary or fallback)", async () => {

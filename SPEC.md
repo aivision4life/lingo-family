@@ -156,6 +156,10 @@ Decisions (M1.7):
 - `created_by_profile` is set on every creation path (word, phrase saved with a word, phrase added later) — already true before M2.7 (checked, test added); `examples` has no such column.
 - One-off `npm run assign-creator -- --profile <id> [--apply]`: content moved from local before M2.7 has `created_by_profile = NULL`; the script lists (dry run) or sets (`--apply`, after a production backup) those rows to one profile, touching only rows still NULL.
 
+**Image quota banner (M2.8)** — raised the daily image limits and made a skipped draw visible.
+- [x] Limits raised from 60/profile + 150/family to **100/profile/day, 250/family/day** (`IMAGE_DAILY_QUOTA`, `IMAGE_FAMILY_DAILY_CAP` in `shared/image.ts`, the single place both numbers live).
+- [x] When a draw is skipped because either limit is reached (API answers `quota: true`), every place with a draw button shows an amber banner (`ImageQuotaNotice`, same style as `AudioStatus` / `LearningStatusNotice`) naming when the quota resets (UTC midnight, formatted in the viewer's own device time/locale) — word, phrase and example `ImageTools`, and Settings → "Create images for older words". Previously this was a small grey line of text, easy to miss.
+
 **Done when:** typing `학생` and pressing "Add" produces a complete entry like the example in §3 within ~5 seconds, with audio playable; images appear shortly after (background generation).
 
 ### F3. Media: audio & images — P0
@@ -175,8 +179,8 @@ Images (M1.8):
 - [x] **When images are drawn:** right after saving, the **word** and its **selected phrases** are drawn. **Example sentence** images are drawn **lazily**, the first time the sentence is displayed. Unselected phrases are never drawn.
 - [x] Generation runs **in the background with Workers `waitUntil`** (Cloudflare Queues later). Image status per item: `none` (lazy, not requested yet) → `pending` → `ready` | `failed`. The UI shows the emoji placeholder and updates automatically when the image is ready; `failed` shows a **"Try again"** button (plus "Redraw" with an editable prompt).
 - [x] Stored in R2, **content-addressed**; an image that already exists is never drawn again. `image_prompt` and `image_source` (`ai` | `upload`) are stored with the item.
-- [x] Daily quota: service `image` in `usage_daily`, default **60 images per profile per day**, plus a **family-wide daily cap** of **150/day** (one atomic SQL statement checks both). Every real `env.AI` call counts (a fallback drawing costs 2); R2 hits are free. When a limit is reached the item keeps its placeholder (`none`) and a light notice is shown; nothing fails.
-- [x] Settings → **"Create images for older words"** (adults): draws words / phrases that were never drawn, one word per request, within the quotas; missing prompts come from one LLM call per word. Settings also shows **today's usage**: family images x/150, this profile's images y/60, LLM and TTS calls.
+- [x] Daily quota: service `image` in `usage_daily`, default **100 images per profile per day**, plus a **family-wide daily cap** of **250/day** (`IMAGE_DAILY_QUOTA` / `IMAGE_FAMILY_DAILY_CAP` in `shared/image.ts`, the one place to change both; one atomic SQL statement checks both, resets at UTC midnight). Every real `env.AI` call counts (a fallback drawing costs 2); R2 hits are free. When a limit is reached the item keeps its placeholder (`none`) and an amber **quota banner** is shown (M2.8) wherever a draw button exists (word/phrase/example `ImageTools`, "Create images for older words"), naming the reset time in the viewer's own device time; nothing fails.
+- [x] Settings → **"Create images for older words"** (adults): draws words / phrases that were never drawn, one word per request, within the quotas; missing prompts come from one LLM call per word. Settings also shows **today's usage**: family images x/250, this profile's images y/100, LLM and TTS calls.
 
 Decisions (M1.3):
 - TTS: Azure Speech REST, output `audio-24khz-48kbitrate-mono-mp3` (mp3, mono, 24 kHz).
@@ -413,7 +417,7 @@ Design: mobile-first, clean, images first, large Korean typography (Noto Sans KR
 | Cloudflare Workers (+ static assets) | Hosts the SPA and `/api` | — |
 | Cloudflare D1 | Database | — |
 | Cloudflare R2 | Audio & images | Media is small (images 512 px WebP/JPEG; target total < 2 GB) |
-| Cloudflare Workers AI (FLUX) | Image generation via the `env.AI` binding (word + selected phrases at save time, example sentences lazily) | Cache-first (content-addressed R2 key); never redraw an existing key; 60 images/profile/day + family cap (provisional 150/day; final value from the M1.8 benchmark). Free allocation: **10,000 Neurons/day** (checked 2026-10). Benchmark (2026-10-09): `flux-2-klein-4b` (primary) ≈ **26 Neurons/image**, `flux-1-schnell` (fallback) ≈ 58 ⇒ 150 images/day ≈ 3,900 Neurons, well inside the free tier. Compare with the real Neurons in the dashboard after some use. |
+| Cloudflare Workers AI (FLUX) | Image generation via the `env.AI` binding (word + selected phrases at save time, example sentences lazily) | Cache-first (content-addressed R2 key); never redraw an existing key; **100 images/profile/day + 250/day family cap** (raised from 60/150 in M2.8, still well under the free allocation). Free allocation: **10,000 Neurons/day** (checked 2026-10). Benchmark (2026-10-09): `flux-2-klein-4b` (primary) ≈ **26 Neurons/image**, `flux-1-schnell` (fallback) ≈ 58 ⇒ 250 images/day ≈ 6,500 Neurons at worst, well inside the free tier. Compare with the real Neurons in the dashboard after some use. |
 | Cloudflare Access | Family-only login | Allow-list of family emails |
 | Azure Speech: TTS | Generate audio once per text (words, phrases, examples) | Cache-first (R2 key = lang + voice + sha1(text)); never re-generate an existing key; 200 calls/profile/day. Free tier F0: 0.5M neural characters/month (checked 2026-10) |
 | Azure Speech: Pronunciation Assessment | Speaking score | Per-profile daily quota (`usage_daily`) |
@@ -468,6 +472,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M2.5 | Focus view | Full-screen view of an example sentence / phrase (big picture and text, hidden meaning, listen / repeat, swipe) in Word detail, review and the Library | [x] |
 | M2.6 | Typed sentences + AI | AI help for sentences / phrases typed by hand (translate, picture prompt, check the sentence), add / edit / delete example sentences, pron_attempts keep history | [x] |
 | M2.7 | Library scope filter | Filter the shared library by profile ("I'm learning" / "I added" / "All"), cards synced right away on word creation | [x] |
+| M2.8 | Image quota banner | Amber banner (reset time) wherever a draw is skipped for quota; limits raised to 100/profile, 250/family | [x] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |

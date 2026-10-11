@@ -323,7 +323,7 @@
     "uploading": "사진 올리는 중…",
     "retry": "다시 시도",
     "failed": "그림을 그리지 못했습니다. 다시 시도할 수 있습니다.",
-    "quota": "오늘 그림 횟수를 다 썼습니다. 나중에 그려집니다.",
+    "quotaBanner": "오늘 그림 횟수를 다 썼습니다. {{time}}(기기 시간 기준)에 새로 시작됩니다.",
     "invalidUpload": "이 사진은 사용할 수 없습니다(최대 512px, 300KB, WebP/JPEG/PNG).",
     "notConfigured": "그림을 위한 Workers AI가 설정되지 않았습니다.",
     "redrawTitle": "그림 다시 그리기",
@@ -339,7 +339,6 @@
       "working": "“{{term}}” 그림을 그리는 중…",
       "done": "완료했습니다.",
       "stopped": "멈췄습니다. 다시 누르면 이어서 합니다.",
-      "quota": "오늘 한도(그림 또는 AI)를 다 썼습니다. 내일 이어서 합니다.",
       "drawn": "그림 {{count}}개를 그렸습니다."
     },
     "usage": {

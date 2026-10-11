@@ -323,7 +323,7 @@
     "uploading": "Đang tải ảnh lên…",
     "retry": "Thử lại",
     "failed": "Chưa vẽ được ảnh. Bạn có thể thử lại.",
-    "quota": "Hôm nay đã hết lượt vẽ ảnh. Ảnh sẽ được vẽ sau.",
+    "quotaBanner": "Hôm nay đã hết lượt vẽ ảnh. Lượt mới vào lúc {{time}} (giờ máy của bạn).",
     "invalidUpload": "Không dùng được ảnh này (tối đa 512 px, 300 KB, WebP/JPEG/PNG).",
     "notConfigured": "Chưa bật Workers AI để vẽ ảnh.",
     "redrawTitle": "Vẽ lại ảnh",
@@ -339,7 +339,6 @@
       "working": "Đang vẽ ảnh cho “{{term}}”…",
       "done": "Đã xong.",
       "stopped": "Đã dừng. Bấm lại để chạy tiếp.",
-      "quota": "Hôm nay đã hết lượt (ảnh hoặc AI). Ngày mai chạy tiếp.",
       "drawn": "Đã vẽ {{count}} ảnh."
     },
     "usage": {
