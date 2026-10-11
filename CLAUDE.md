@@ -51,7 +51,7 @@ SPEC.md  CLAUDE.md  README.md
 - `npm run dev:ai`: same with the real remote Workers AI binding (`vite --mode ai`); needs `cloudflared` (`winget install --id Cloudflare.cloudflared`) and a one-time Access login because the preview session runs on the Access-protected workers.dev domain.
 - `npm run build`: typecheck (`tsc -b`) + production build into `dist/`
 - `npm run preview`: build with `--mode preview` (production bundle + service worker, but no Workers AI binding), then serve it on http://localhost:4173. Use it to try the PWA; the service worker exists only in production builds.
-- `npm run typecheck` / `npm run lint` / `npm test` (`npm run test:watch` for watch mode)
+- `npm run typecheck` / `npm run lint` / `npm test` (all tests: both vitest projects, ~70 s; `npm run test:watch` for watch mode). `npm run test:unit` runs only the `unit` project (src, shared, scripts, benchmarks: no Miniflare, a few seconds) for quick feedback while changing UI or pure logic. **Before every commit or deploy run the full `npm test`** (and `typecheck` + `lint`), not just `test:unit`.
 - `npm run db:generate -- --name <short_name>`: create a migration in `db/migrations/` from `db/schema.ts`
 - `npm run db:migrate:local` / `npm run db:migrate:remote`: apply pending migrations to D1
 - `npm run cf-typegen`: regenerate `worker-configuration.d.ts` (the `Env` type) after editing `wrangler.jsonc` or `.dev.vars`
