@@ -44,6 +44,7 @@ beforeEach(async () => {
   for (const table of ["pron_attempts", "examples", "phrases", "words", "usage_daily", "profiles"]) await t.env.DB.prepare(`DELETE FROM ${table}`).run();
   tts.calls.length = 0;
   images.calls.length = 0;
+  images.state.gate = null;
   adult = ((await t.api("POST", "/profiles", profile("Bố", false))).body as { id: string }).id;
   kid = ((await t.api("POST", "/profiles", profile("Bé", true))).body as { id: string }).id;
 });
@@ -63,8 +64,13 @@ describe("POST /api/words/:id/examples", () => {
 
   it("with an image prompt the picture is drawn in the background", async () => {
     const id = await create();
+    // Hold the drawing "in flight" so the pending state can be observed without a race.
+    let release!: () => void;
+    images.state.gate = new Promise<void>((r) => (release = r));
     const newId = ((await add(id, { sentence: "셋째 문장", image_prompt: "A child studying at a desk with books" })).body as { id: string }).id;
     expect((await row(newId))!.image_status).toBe("pending");
+    release();
+    images.state.gate = null;
     await t.settle();
     expect(await row(newId)).toMatchObject({ image_status: "ready" });
     expect(images.calls).toHaveLength(1);
