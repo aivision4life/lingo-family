@@ -285,9 +285,11 @@ export const pron_attempts = sqliteTable(
     profile_id: text("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    word_id: text("word_id").references(() => words.id, { onDelete: "cascade" }),
-    phrase_id: text("phrase_id").references(() => phrases.id, { onDelete: "cascade" }),
-    example_id: text("example_id").references(() => examples.id, { onDelete: "cascade" }),
+    // Deleting the content a practice attempt was about must not delete the practice history:
+    // the links become NULL and the history stays readable through `reference_text` (M2.6).
+    word_id: text("word_id").references(() => words.id, { onDelete: "set null" }),
+    phrase_id: text("phrase_id").references(() => phrases.id, { onDelete: "set null" }),
+    example_id: text("example_id").references(() => examples.id, { onDelete: "set null" }),
     lang: text("lang", { enum: LEARN_LANGS }).notNull(),
     reference_text: text("reference_text").notNull(),
     pron_score: real("pron_score").notNull(),

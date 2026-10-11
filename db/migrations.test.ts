@@ -263,3 +263,62 @@ describe("migration 0005_albums", () => {
     expect(await count("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'")).toBe(7);
   });
 });
+
+describe("migration 0006_pron_attempts_set_null", () => {
+  const attempt = (id: string, over: { word?: string | null; phrase?: string | null; example?: string | null } = {}) =>
+    DB.prepare(
+      `INSERT INTO pron_attempts (id, profile_id, word_id, phrase_id, example_id, lang, reference_text, pron_score, accuracy, fluency, completeness, created_at)
+       VALUES (?, 'p-ko', ?, ?, ?, 'ko', ?, 80, 80, 80, 100, 1)`,
+    ).bind(id, over.word ?? null, over.phrase ?? null, over.example ?? null, `text of ${id}`);
+
+  beforeAll(async () => {
+    // Rows written before the rebuild must survive it (in production the table is empty).
+    await DB.batch([
+      DB.prepare(
+        `INSERT INTO words (id, lang, term, reading, pos, gloss_vi, gloss_en, gloss_ko, ai_generated, verified, created_at, updated_at)
+         VALUES ('w-pa', 'ko', '연습', '', 'noun', 'x', 'x', 'x', 0, 0, 1, 1)`,
+      ),
+      DB.prepare(
+        `INSERT INTO phrases (id, word_id, lang, text, reading, gloss_vi, gloss_en, gloss_ko, ai_generated, verified, created_at, updated_at)
+         VALUES ('ph-pa', 'w-pa', 'ko', '연습장', 'x', 'x', 'x', 'x', 0, 0, 1, 1)`,
+      ),
+      DB.prepare(
+        `INSERT INTO examples (id, word_id, sentence, translation_vi, translation_en, translation_ko, level, ai_generated)
+         VALUES ('ex-pa', 'w-pa', '연습해요', '', '', '', 'beginner', 0)`,
+      ),
+      attempt("a-word", { word: "w-pa" }),
+      attempt("a-phrase", { word: "w-pa", phrase: "ph-pa" }),
+      attempt("a-example", { word: "w-pa", example: "ex-pa" }),
+    ]);
+    await apply("0006_pron_attempts_set_null.sql");
+  });
+
+  it("keeps every existing attempt with its scores and links", async () => {
+    expect(await count("SELECT count(*) AS n FROM pron_attempts")).toBe(3);
+    const row = await DB.prepare("SELECT word_id, example_id, reference_text, pron_score FROM pron_attempts WHERE id = 'a-example'").first();
+    expect(row).toEqual({ word_id: "w-pa", example_id: "ex-pa", reference_text: "text of a-example", pron_score: 80 });
+  });
+
+  it("deleting an example, a phrase or a word keeps the attempts; their link becomes NULL", async () => {
+    await DB.prepare("DELETE FROM examples WHERE id = 'ex-pa'").run();
+    await DB.prepare("DELETE FROM phrases WHERE id = 'ph-pa'").run();
+    expect(await count("SELECT count(*) AS n FROM pron_attempts")).toBe(3);
+    expect(await count("SELECT count(*) AS n FROM pron_attempts WHERE example_id IS NOT NULL OR phrase_id IS NOT NULL")).toBe(0);
+
+    await DB.prepare("DELETE FROM words WHERE id = 'w-pa'").run();
+    expect(await count("SELECT count(*) AS n FROM pron_attempts")).toBe(3);
+    expect(await count("SELECT count(*) AS n FROM pron_attempts WHERE word_id IS NOT NULL")).toBe(0);
+    // The history stays readable.
+    const texts = await DB.prepare("SELECT reference_text FROM pron_attempts ORDER BY id").all<{ reference_text: string }>();
+    expect(texts.results.map((r) => r.reference_text)).toEqual(["text of a-example", "text of a-phrase", "text of a-word"]);
+  });
+
+  it("deleting a profile still deletes its attempts; indexes and triggers are intact", async () => {
+    await DB.batch([DB.prepare("DELETE FROM profiles WHERE id = 'p-ko'")]);
+    expect(await count("SELECT count(*) AS n FROM pron_attempts")).toBe(0);
+    expect(
+      await count("SELECT count(*) AS n FROM sqlite_master WHERE type = 'index' AND name IN ('pron_attempts_profile_time_idx', 'pron_attempts_word_idx')"),
+    ).toBe(2);
+    expect(await count("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'")).toBe(7);
+  });
+});
