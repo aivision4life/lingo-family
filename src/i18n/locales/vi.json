@@ -454,5 +454,44 @@
     "record": "Ghi âm & chấm điểm",
     "kindExample": "Câu ví dụ",
     "kindPhrase": "Cụm từ"
+  },
+  "examples": {
+    "assist": {
+      "sentenceButton": "AI dịch & minh hoạ",
+      "phraseButton": "AI điền nghĩa & phiên âm",
+      "phraseExampleButton": "AI dịch & minh hoạ câu ví dụ",
+      "working": "AI đang xử lý…",
+      "done": "AI đã điền. Bạn có thể sửa trước khi lưu.",
+      "containsWord": "Có vẻ như không chứa từ “{{word}}”. Bạn vẫn có thể lưu.",
+      "suggestionTitle": "Gợi ý câu tự nhiên hơn",
+      "useSuggestion": "Dùng câu gợi ý",
+      "keepMine": "Giữ câu của tôi"
+    },
+    "imagePrompt": {
+      "summary": "Mô tả ảnh (có thể sửa)",
+      "hint": "Viết bằng tiếng Anh. Phong cách vẽ được thêm tự động."
+    },
+    "form": {
+      "sentence": "Câu ví dụ",
+      "add": "Thêm câu ví dụ",
+      "save": "Lưu",
+      "refresh": "Cập nhật nghĩa & ảnh bằng AI",
+      "refreshStep": "AI cập nhật rồi xem lại",
+      "reviewHint": "Kiểm tra bản dịch và mô tả ảnh, rồi bấm Lưu.",
+      "edit": "Sửa câu",
+      "editNamed": "Sửa câu: {{text}}",
+      "delete": "Xoá câu",
+      "deleteNamed": "Xoá câu: {{text}}"
+    },
+    "delete": {
+      "title": "Xoá câu ví dụ này?",
+      "description": "Chỉ xoá câu và ảnh của nó khỏi từ. Lịch sử luyện phát âm vẫn được giữ.",
+      "confirm": "Xoá câu"
+    },
+    "errors": {
+      "tooMany": "Đã đủ số câu ví dụ tối đa.",
+      "duplicate": "Câu này đã có.",
+      "generic": "Không thực hiện được, hãy thử lại."
+    }
   }
 }

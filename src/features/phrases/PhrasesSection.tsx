@@ -29,7 +29,7 @@ export function PhrasesSection({ word }: { word: WordDetail }) {
           <PhraseItem key={p.id} phrase={p} glossLang={profile?.gloss_lang ?? "vi"} editorId={adultId} />
         ))}
       </ul>
-      {adultId && <PhraseAdder wordId={word.id} lang={word.lang} profileId={adultId} level="beginner" />}
+      {adultId && <PhraseAdder wordId={word.id} lang={word.lang} profileId={adultId} level="beginner" rootTerm={word.term} rootGloss={word.gloss_vi || word.gloss_en} />}
     </section>
   );
 }

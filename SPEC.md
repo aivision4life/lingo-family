@@ -140,6 +140,14 @@ Decisions (M1.7):
 - [x] History: the view is `?focus=example:<id>` / `?focus=phrase:<id>`. Opening pushes one history entry, so the Android / browser **Back** button closes the view and stays on the screen; moving between items replaces the entry. Closing a view opened by a direct URL removes the parameter. In a review, opening and closing never flips or rates the card (Space and 1–4 are ignored meanwhile) and sound stops when it closes.
 - [x] Kid profiles can use it (look and listen only). A hidden slot is reserved for "Record & score" (M3).
 
+**Typed sentences and phrases with AI help; editing examples (M2.6)**
+- [x] **AI translate & illustrate** (Add word screen, Word detail): after typing a sentence the adult presses the button; one LLM call (task `enrich-sentence`, cached in `ai_cache`, counted in the daily LLM quota, same retry / fallback as other tasks) returns the three translations (never into the sentence's own language) and an `image_prompt` (`IMAGE_PROMPT_RULES`). Phrases (`enrich-phrase`) get reading, the three meanings and an `image_prompt`. Everything can be edited before saving; saving makes the audio at once and draws the picture in the background (as before).
+- [x] **Sentence check** (same call): `suggestion` (a more natural / correct sentence) + `note_vi` (short Vietnamese reason) only when the sentence has a mistake or sounds unnatural, otherwise null. The app offers **Use the suggestion** / **Keep mine**; it never changes the sentence by itself. Choosing the suggestion takes its own translations and image prompt. If the sentence does not seem to contain the root word (or an inflected form; the AI judges that) a light warning shows; saving is still allowed.
+- [x] **Edit / delete examples** of a word and of a phrase on Word detail (adults; kids get 403 and no buttons). Changing the text makes new audio (R2 key follows the text, old files stay); only changing translations never calls TTS, AI or the image model. "Update meaning & picture with AI" is on by default when the text changed: the first Save runs the AI so the translations can be reviewed, the second stores them and redraws the picture (new nonce; the old picture stays in R2). Deleting asks for confirmation.
+- [x] **Add example**: "+ Add example sentence" on Word detail (a word has at most **5** examples, a phrase **1**; a phrase shows the button only while it has none); "Add phrase by hand" also on the Add word screen. The number of sentences the AI writes when a word is added is unchanged (2 per word, 1 per phrase).
+- API: `POST /api/enrich/sentence`, `POST /api/enrich/phrase`, `POST /api/words/:id/examples`, `PATCH /api/examples/:id`, `DELETE /api/examples/:id` (adults only, zod).
+- **Decision (2026-10-11): deleting content does not delete practice history.** `pron_attempts.word_id / phrase_id / example_id` are `ON DELETE SET NULL` (migration `0006`, table rebuilt while empty); the history stays readable through `reference_text`. Deleting a profile still deletes its attempts.
+
 **Done when:** typing `학생` and pressing "Add" produces a complete entry like the example in §3 within ~5 seconds, with audio playable; images appear shortly after (background generation).
 
 ### F3. Media: audio & images — P0
@@ -450,6 +458,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M2.3 | Offline reviews | F11 offline queue + review sync (incl. images already cached) | [ ] |
 | M2.4 | Albums | Playlists of words (many-to-many, per language, family-shared), Library tabs, select-many, review by album | [x] |
 | M2.5 | Focus view | Full-screen view of an example sentence / phrase (big picture and text, hidden meaning, listen / repeat, swipe) in Word detail, review and the Library | [x] |
+| M2.6 | Typed sentences + AI | AI help for sentences / phrases typed by hand (translate, picture prompt, check the sentence), add / edit / delete example sentences, pron_attempts keep history | [x] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |

@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router";
@@ -17,7 +17,7 @@ import { draftFromEnrichment, draftToCreateInput, emptyDraft, type DraftErrors, 
 import { DraftFields } from "@/features/words/DraftFields";
 import { ExamplesEditor } from "@/features/words/ExamplesEditor";
 import { TermStep } from "@/features/words/TermStep";
-import { draftFromSuggestion, selectedPhraseInputs, type PhraseDraft, type PhraseDraftErrors } from "@/features/phrases/phraseDraft";
+import { draftFromSuggestion, emptyPhraseDraft, selectedPhraseInputs, type PhraseDraft, type PhraseDraftErrors } from "@/features/phrases/phraseDraft";
 import { PhraseSuggestionList } from "@/features/phrases/PhraseSuggestionList";
 
 /** Screen 5 — add a word: term → AI enrich (or manual) → review/edit → save (F2, F6). */
@@ -188,14 +188,28 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
         aiFilled={aiFilled}
         onChange={(patch) => setDraft({ ...draft, ...patch })}
       />
-      <ExamplesEditor lang={lang} examples={draft.examples} onChange={(examples) => setDraft({ ...draft, examples })} />
-      {phraseDrafts.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">{t("phrases.suggested")}</h2>
-          <p className="text-sm text-muted-foreground">{t("phrases.suggestedHint")}</p>
-          <PhraseSuggestionList lang={lang} drafts={phraseDrafts} errors={phraseErrors} onChange={setPhraseDrafts} />
-        </section>
-      )}
+      <ExamplesEditor
+        lang={lang}
+        examples={draft.examples}
+        onChange={(examples) => setDraft({ ...draft, examples })}
+        assist={{ profileId, rootTerm: term, rootGloss: draft.gloss_vi || draft.gloss_en }}
+      />
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">{t("phrases.suggested")}</h2>
+        {phraseDrafts.length > 0 && <p className="text-sm text-muted-foreground">{t("phrases.suggestedHint")}</p>}
+        <PhraseSuggestionList
+          lang={lang}
+          drafts={phraseDrafts}
+          errors={phraseErrors}
+          onChange={setPhraseDrafts}
+          assist={{ profileId, rootTerm: term, rootGloss: draft.gloss_vi || draft.gloss_en }}
+        />
+        {/* A phrase typed by hand (ticked, so it is saved); the AI button fills in its meaning and picture. */}
+        <Button type="button" variant="outline" className="self-start" onClick={() => setPhraseDrafts([...phraseDrafts, emptyPhraseDraft()])}>
+          <Plus aria-hidden />
+          {t("phrases.addManual")}
+        </Button>
+      </section>
       {(albums.data?.albums.length ?? 0) > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-lg font-semibold">{t("albums.addWord.title")}</h2>

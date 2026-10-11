@@ -1,5 +1,8 @@
 import { useTranslation } from "react-i18next";
 import type { LearnLang } from "@shared/enums";
+import { ImagePromptField } from "@/features/examples/ImagePromptField";
+import { PhraseAssist } from "@/features/examples/PhraseAssist";
+import { SentenceAssist } from "@/features/examples/SentenceAssist";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HTML_LANG } from "@/lib/htmlLang";
@@ -10,6 +13,8 @@ type Props = {
   draft: PhraseDraft;
   errors?: PhraseDraftErrors;
   onChange: (patch: Partial<PhraseDraft>) => void;
+  /** AI help for a phrase typed by hand (M2.6): rootTerm / rootGloss describe the word it belongs to. */
+  assist?: { profileId: string; rootTerm: string; rootGloss: string };
 };
 
 /** The `lang` attribute of each field's content (Korean glyphs need lang="ko"). */
@@ -22,7 +27,7 @@ const fieldLang = (f: PhraseTextField, lang: LearnLang): string | undefined => {
 };
 
 /** Edits one phrase draft: text, reading, meanings and its single example sentence. */
-export function PhraseFields({ lang, draft, errors = {}, onChange }: Props) {
+export function PhraseFields({ lang, draft, errors = {}, onChange, assist }: Props) {
   const { t } = useTranslation();
   // A sentence is never translated into its own language.
   const translations = (["translation_vi", "translation_en", "translation_ko"] as const).filter(
@@ -52,6 +57,37 @@ export function PhraseFields({ lang, draft, errors = {}, onChange }: Props) {
           </div>
         );
       })}
+      {assist && (
+        <div className="flex flex-col gap-3 sm:col-span-2">
+          <PhraseAssist
+            lang={lang}
+            text={draft.text}
+            {...assist}
+            onApply={(f) => onChange({ reading: f.reading, gloss_vi: f.gloss_vi, gloss_en: f.gloss_en, gloss_ko: f.gloss_ko, image_prompt: f.image_prompt, ai_generated: true })}
+          />
+          <ImagePromptField value={draft.image_prompt ?? ""} onChange={(v) => onChange({ image_prompt: v.trim() === "" ? null : v })} />
+          {/* The example sentence is checked against the phrase itself. */}
+          <SentenceAssist
+            lang={lang}
+            text={draft.sentence}
+            profileId={assist.profileId}
+            rootTerm={draft.text.trim() === "" ? assist.rootTerm : draft.text}
+            rootGloss={draft.gloss_vi || assist.rootGloss}
+            label={t("examples.assist.phraseExampleButton")}
+            onApply={(f) =>
+              onChange({
+                sentence: f.text,
+                translation_vi: f.translation_vi,
+                translation_en: f.translation_en,
+                translation_ko: f.translation_ko,
+                example_image_prompt: f.image_prompt,
+                ai_generated: true,
+              })
+            }
+          />
+          <ImagePromptField value={draft.example_image_prompt ?? ""} onChange={(v) => onChange({ example_image_prompt: v.trim() === "" ? null : v })} />
+        </div>
+      )}
     </div>
   );
 }

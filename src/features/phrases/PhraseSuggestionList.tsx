@@ -10,10 +10,11 @@ type Props = {
   drafts: PhraseDraft[];
   errors: Record<string, PhraseDraftErrors>;
   onChange: (drafts: PhraseDraft[]) => void;
+  assist?: { profileId: string; rootTerm: string; rootGloss: string };
 };
 
 /** Checkbox list of suggested phrases (unticked by default); a ticked phrase can be edited. */
-export function PhraseSuggestionList({ lang, drafts, errors, onChange }: Props) {
+export function PhraseSuggestionList({ lang, drafts, errors, onChange, assist }: Props) {
   const { t } = useTranslation();
   const update = (key: string, patch: Partial<PhraseDraft>) =>
     onChange(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
@@ -45,7 +46,7 @@ export function PhraseSuggestionList({ lang, drafts, errors, onChange }: Props) 
           </label>
           {d.selected && (
             <div className="mt-3 border-t pt-3">
-              <PhraseFields lang={lang} draft={d} errors={errors[d.key]} onChange={(p) => update(d.key, p)} />
+              <PhraseFields lang={lang} draft={d} errors={errors[d.key]} onChange={(p) => update(d.key, p)} assist={assist} />
             </div>
           )}
         </li>

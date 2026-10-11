@@ -17,11 +17,12 @@ import { PhraseFields } from "./PhraseFields";
 import { PhraseSuggestionList } from "./PhraseSuggestionList";
 import { SkippedNotice } from "./SkippedNotice";
 
-type Props = { wordId: string; lang: LearnLang; profileId: string; level: ExampleLevel };
+type Props = { wordId: string; lang: LearnLang; profileId: string; level: ExampleLevel; rootTerm: string; rootGloss: string };
 type Mode = "idle" | "suggest" | "manual";
 
 /** Adults: "Suggest phrases" (AI, tick to keep) or "Add a phrase by hand" for a saved word. */
-export function PhraseAdder({ wordId, lang, profileId, level }: Props) {
+export function PhraseAdder({ wordId, lang, profileId, level, rootTerm, rootGloss }: Props) {
+  const assist = { profileId, rootTerm, rootGloss };
   const { t } = useTranslation();
   const suggest = useSuggestPhrases(wordId);
   const save = useSavePhrases(wordId);
@@ -99,7 +100,7 @@ export function PhraseAdder({ wordId, lang, profileId, level }: Props) {
 
       {mode === "suggest" && drafts.length === 0 && <p className="text-muted-foreground">{t("phrases.noSuggestions")}</p>}
       {mode === "suggest" && drafts.length > 0 && (
-        <PhraseSuggestionList lang={lang} drafts={drafts} errors={errors} onChange={setDrafts} />
+        <PhraseSuggestionList lang={lang} drafts={drafts} errors={errors} onChange={setDrafts} assist={assist} />
       )}
       {mode === "manual" && drafts[0] && (
         <div className="rounded-lg border p-3">
@@ -108,6 +109,7 @@ export function PhraseAdder({ wordId, lang, profileId, level }: Props) {
             draft={drafts[0]}
             errors={errors[drafts[0].key]}
             onChange={(p) => setDrafts([{ ...drafts[0]!, ...p }])}
+            assist={assist}
           />
         </div>
       )}

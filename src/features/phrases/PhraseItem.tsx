@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { SpeakButton } from "@/features/audio/AudioButtons";
+import { AddExampleButton, type ExampleOwner } from "@/features/examples/ExampleActions";
 import { FocusTap } from "@/features/focus/FocusTap";
 import { focusKey } from "@/features/focus/focusItems";
 import { ImageTools } from "@/features/images/ImageTools";
@@ -45,6 +46,10 @@ export function PhraseItem({ phrase, glossLang, editorId }: Props) {
   const update = useUpdatePhrase();
   const del = useDeletePhrase();
   const ex = phrase.examples[0];
+  // A phrase's example is checked against the phrase itself; the picture / translations follow its meaning.
+  const owner: ExampleOwner | undefined = editorId
+    ? { wordId: phrase.word_id, lang: phrase.lang, profileId: editorId, rootTerm: phrase.text, rootGloss: glossFor(phrase, glossLang), phraseId: phrase.id }
+    : undefined;
 
   const save = () => {
     if (!editorId) return;
@@ -123,7 +128,12 @@ export function PhraseItem({ phrase, glossLang, editorId }: Props) {
       <ImageTools kind="phrase" id={phrase.id} image={phrase} suggestion={phrase.gloss_en} compact />
       {ex && (
         <div className="border-t pt-2">
-          <ExampleItem ex={ex} lang={phrase.lang} glossLang={glossLang} audioLabel={t("phrases.playExample", { text: phrase.text })} />
+          <ExampleItem ex={ex} lang={phrase.lang} glossLang={glossLang} audioLabel={t("phrases.playExample", { text: phrase.text })} owner={owner} />
+        </div>
+      )}
+      {!ex && owner && (
+        <div className="border-t pt-2">
+          <AddExampleButton owner={owner} />
         </div>
       )}
       {del.isError && <p role="alert" className="text-sm text-destructive">{t("words.errors.generic")}</p>}

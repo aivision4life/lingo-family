@@ -454,5 +454,44 @@
     "record": "Record & score",
     "kindExample": "Example sentence",
     "kindPhrase": "Phrase"
+  },
+  "examples": {
+    "assist": {
+      "sentenceButton": "AI translate & illustrate",
+      "phraseButton": "AI fill meaning & reading",
+      "phraseExampleButton": "AI translate & illustrate example",
+      "working": "AI is working…",
+      "done": "AI filled it in. You can edit before saving.",
+      "containsWord": "It may not contain “{{word}}”. You can still save it.",
+      "suggestionTitle": "A more natural sentence",
+      "useSuggestion": "Use the suggestion",
+      "keepMine": "Keep mine"
+    },
+    "imagePrompt": {
+      "summary": "Picture description (editable)",
+      "hint": "Write it in English. The drawing style is added automatically."
+    },
+    "form": {
+      "sentence": "Example sentence",
+      "add": "Add example sentence",
+      "save": "Save",
+      "refresh": "Update meaning & picture with AI",
+      "refreshStep": "Update with AI, then review",
+      "reviewHint": "Check the translations and the picture description, then press Save.",
+      "edit": "Edit sentence",
+      "editNamed": "Edit sentence: {{text}}",
+      "delete": "Delete sentence",
+      "deleteNamed": "Delete sentence: {{text}}"
+    },
+    "delete": {
+      "title": "Delete this example sentence?",
+      "description": "Only the sentence and its picture are removed from the word. Pronunciation practice history is kept.",
+      "confirm": "Delete sentence"
+    },
+    "errors": {
+      "tooMany": "The maximum number of example sentences is reached.",
+      "duplicate": "This sentence already exists.",
+      "generic": "That did not work, please try again."
+    }
   }
 }

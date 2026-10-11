@@ -2,6 +2,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { LearnLang } from "@shared/enums";
 import { EXAMPLES_MAX } from "@shared/word";
+import { ImagePromptField } from "@/features/examples/ImagePromptField";
+import { SentenceAssist } from "@/features/examples/SentenceAssist";
 import { HTML_LANG } from "@/lib/htmlLang";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +15,8 @@ type Props = {
   lang: LearnLang;
   examples: ExampleDraft[];
   onChange: (examples: ExampleDraft[]) => void;
+  /** The AI help (translate and illustrate) for typed sentences; the root word is the word being added. */
+  assist?: { profileId: string; rootTerm: string; rootGloss: string };
 };
 
 type TranslationField = "translation_vi" | "translation_en" | "translation_ko";
@@ -23,7 +27,7 @@ const TRANSLATION_LANG: Record<TranslationField, string> = {
 };
 
 /** Edit 0-5 example sentences; a sentence is never translated into its own language. */
-export function ExamplesEditor({ lang, examples, onChange }: Props) {
+export function ExamplesEditor({ lang, examples, onChange, assist }: Props) {
   const { t } = useTranslation();
   const translations = (Object.keys(TRANSLATION_LANG) as TranslationField[]).filter(
     (f) => TRANSLATION_LANG[f] !== lang,
@@ -58,6 +62,23 @@ export function ExamplesEditor({ lang, examples, onChange }: Props) {
             value={ex.sentence}
             onChange={(e) => update(ex.key, { sentence: e.target.value })}
           />
+          {assist && (
+            <SentenceAssist
+              lang={lang}
+              text={ex.sentence}
+              {...assist}
+              onApply={(f) =>
+                update(ex.key, {
+                  sentence: f.text,
+                  translation_vi: f.translation_vi,
+                  translation_en: f.translation_en,
+                  translation_ko: f.translation_ko,
+                  image_prompt: f.image_prompt,
+                  ai_generated: true,
+                })
+              }
+            />
+          )}
           {translations.map((f) => (
             <Input
               key={f}
@@ -68,6 +89,7 @@ export function ExamplesEditor({ lang, examples, onChange }: Props) {
               onChange={(e) => update(ex.key, { [f]: e.target.value })}
             />
           ))}
+          {assist && <ImagePromptField value={ex.image_prompt ?? ""} onChange={(v) => update(ex.key, { image_prompt: v.trim() === "" ? null : v })} />}
         </div>
       ))}
       {examples.length < EXAMPLES_MAX && (

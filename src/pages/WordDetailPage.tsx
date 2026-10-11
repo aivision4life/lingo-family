@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router";
 import { UI_LANGS } from "@shared/enums";
+import { WORD_EXAMPLES_MAX } from "@shared/exampleEdit";
 import type { WordDetail } from "@shared/word";
 import { LangText } from "@/components/LangText";
 import { LinkButton } from "@/components/LinkButton";
@@ -8,6 +9,7 @@ import { Link } from "react-router";
 import { FocusLayer } from "@/features/focus/FocusLayer";
 import { itemsFromWord } from "@/features/focus/focusItems";
 import { useFocusRoute } from "@/features/focus/useFocusRoute";
+import { AddExampleButton, type ExampleOwner } from "@/features/examples/ExampleActions";
 import { WordAlbumsButton } from "@/features/albums/WordAlbumsDialog";
 import { PageShell } from "@/components/PageShell";
 import { SpeakButton, SpeedToggle } from "@/features/audio/AudioButtons";
@@ -47,6 +49,10 @@ function Detail({ w }: { w: WordDetail }) {
   const firstChar = w.hanja ? [...w.hanja][0] : undefined;
   const glossLang = profile?.gloss_lang ?? "vi";
   // Tapping an example or a phrase enlarges it (M2.5); the items of this word can be swiped through.
+  const exampleOwner: ExampleOwner | undefined =
+    profile && canManageProfiles(profile)
+      ? { wordId: w.id, lang: w.lang, profileId: profile.id, rootTerm: w.term, rootGloss: glossFor(w, glossLang) }
+      : undefined;
   const focusItems = itemsFromWord(w);
   const focusRoute = useFocusRoute(focusItems);
 
@@ -130,16 +136,17 @@ function Detail({ w }: { w: WordDetail }) {
         </dl>
       </section>
 
-      {w.examples.length > 0 && (
+      {(w.examples.length > 0 || exampleOwner) && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold">{t("words.detail.examples")}</h2>
           <ul className="flex flex-col gap-3">
             {w.examples.map((ex, i) => (
               <li key={ex.id} className="rounded-lg border p-3">
-                <ExampleItem ex={ex} lang={w.lang} glossLang={glossLang} audioLabel={t("audio.playExample", { n: i + 1 })} />
+                <ExampleItem ex={ex} lang={w.lang} glossLang={glossLang} audioLabel={t("audio.playExample", { n: i + 1 })} owner={exampleOwner} />
               </li>
             ))}
           </ul>
+          {exampleOwner && w.examples.length < WORD_EXAMPLES_MAX && <AddExampleButton owner={exampleOwner} />}
         </section>
       )}
 
