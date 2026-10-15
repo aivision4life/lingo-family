@@ -48,7 +48,7 @@ export function createApp({
   app.route("/", albumRoutes);
   app.route("/enrich", customEnrichRoutes(deps));
   app.route("/", exampleRoutes(deps));
-  app.route("/", topikRoutes);
+  app.route("/", topikRoutes(deps));
 
   app.notFound((c) => c.json({ error: "not_found" }, 404));
   return app;

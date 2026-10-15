@@ -1,14 +1,16 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
-import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion } from "@shared/topik";
+import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion, type TopikVocabEntry } from "@shared/topik";
 import { LinkButton } from "@/components/LinkButton";
 import { Button } from "@/components/ui/button";
 import { imageUrl } from "@/features/images/api";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { cn } from "@/lib/utils";
 import { useSubmitTopikAttempt, useTopikSession } from "@/features/topik/api";
+import { TopikWordTap } from "@/features/topik/TopikWordPopover";
+import { segmentText } from "@/features/topik/vocabSegments";
 
 /** Outside the component so `react-hooks/purity` does not flag the `Date.now()` call itself. */
 const elapsedSince = (start: number) => Date.now() - start;
@@ -81,26 +83,45 @@ function Session({ profileId, questions }: { profileId: string; questions: Topik
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">{t("topik.practice.progress", { current: index + 1, total: questions.length })}</p>
-      {question.instruction && <p className="font-medium">{question.instruction}</p>}
+      {question.instruction && (
+        <p className="font-medium">
+          <TappableText text={question.instruction} vocab={question.vocab} />
+        </p>
+      )}
       <div className="flex flex-col gap-2 rounded-lg border p-4">
         {question.stem.image_key && (
           <img src={imageUrl(question.stem.image_key)} alt="" className="w-full rounded-md object-contain" />
         )}
-        {question.stem.text && <p lang="ko" className="text-lg">{question.stem.text}</p>}
+        {question.stem.text && (
+          <p className="text-lg">
+            <TappableText text={question.stem.text} vocab={question.vocab} />
+          </p>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => {
           const opt = question.options[n - 1]!;
           const isSelected = selected === n;
           const isCorrectOpt = result?.correct_option === n;
+          const disabled = selected !== null;
           return (
-            <button
+            // A tappable word inside the option's text (TopikWordTap) is itself a <button>; this
+            // can't be a <button> too (nested interactive elements), so it's a role="button" div —
+            // its own click stops at any inner word tap via stopPropagation (see TopikWordPopover).
+            <div
               key={n}
-              type="button"
-              disabled={selected !== null}
-              onClick={() => choose(n)}
+              role="button"
+              tabIndex={disabled ? -1 : 0}
+              aria-disabled={disabled}
+              onClick={() => !disabled && choose(n)}
+              onKeyDown={(e) => {
+                if (!disabled && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  choose(n);
+                }
+              }}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-lg border p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                 result
                   ? isCorrectOpt
                     ? "border-green-600 bg-green-50 dark:bg-green-950/40"
@@ -112,8 +133,8 @@ function Session({ profileId, questions }: { profileId: string; questions: Topik
             >
               <span className="font-medium">{n})</span>
               {opt.image_key && <img src={imageUrl(opt.image_key)} alt="" className="h-16 w-16 rounded object-cover" />}
-              {opt.text && <span lang="ko">{opt.text}</span>}
-            </button>
+              {opt.text && <TappableText text={opt.text} vocab={question.vocab} />}
+            </div>
           );
         })}
       </div>
@@ -126,5 +147,16 @@ function Session({ profileId, questions }: { profileId: string; questions: Topik
         </div>
       )}
     </div>
+  );
+}
+
+/** Renders `text` with its AI-found words tappable (M6.2): read-only, nothing is marked by default. */
+function TappableText({ text, vocab }: { text: string; vocab: TopikVocabEntry[] }) {
+  return (
+    <span lang="ko">
+      {segmentText(text, vocab).map((seg, i) =>
+        seg.entry ? <TopikWordTap key={i} entry={seg.entry} /> : <Fragment key={i}>{seg.text}</Fragment>,
+      )}
+    </span>
   );
 }

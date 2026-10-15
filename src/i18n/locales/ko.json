@@ -522,7 +522,12 @@
       "correct": "정답입니다!",
       "incorrect": "틀렸습니다.",
       "next": "다음 문제",
-      "finish": "완료"
+      "finish": "완료",
+      "word": {
+        "loadError": "뜻을 불러올 수 없습니다.",
+        "addToLibrary": "단어장에 추가",
+        "alreadyInLibrary": "단어장에서 보기"
+      }
     },
     "manage": {
       "title": "TOPIK 문제 관리",

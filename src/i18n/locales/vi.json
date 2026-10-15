@@ -522,7 +522,12 @@
       "correct": "Đúng!",
       "incorrect": "Sai rồi.",
       "next": "Câu tiếp",
-      "finish": "Hoàn thành"
+      "finish": "Hoàn thành",
+      "word": {
+        "loadError": "Không tải được nghĩa.",
+        "addToLibrary": "Thêm vào thư viện",
+        "alreadyInLibrary": "Xem trong thư viện"
+      }
     },
     "manage": {
       "title": "Quản lý câu hỏi TOPIK",

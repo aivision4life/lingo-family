@@ -30,6 +30,26 @@ export async function consumeQuota(
 }
 
 /**
+ * Logs one use of `service` for `profileId` today, with no daily cap (M6.2: generating a TOPIK
+ * question's tap-a-word vocabulary is exempt from the 50/day LLM quota — it is content work, not
+ * a practice action — but every call is still counted here so usage stays visible).
+ */
+export async function recordUsage(
+  db: ReturnType<typeof getDb>,
+  profileId: string,
+  service: UsageService,
+  now = new Date(),
+): Promise<void> {
+  await db
+    .insert(usage_daily)
+    .values({ date: usageDate(now), profile_id: profileId, service, count: 1 })
+    .onConflictDoUpdate({
+      target: [usage_daily.date, usage_daily.profile_id, usage_daily.service],
+      set: { count: sql`${usage_daily.count} + 1` },
+    });
+}
+
+/**
  * Image quota, two tiers (SPEC F3): at most `perProfile` images for this profile **and** at most
  * `familyCap` images for all profiles together today. One atomic statement, so two parallel
  * requests can never both take the last unit. Returns false (and counts nothing) when either

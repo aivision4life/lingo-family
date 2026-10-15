@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { TopikQuestionInput } from "../../shared/topik";
+import type { TopikQuestionInput, TopikVocabEntry } from "../../shared/topik";
+import { fakeLlm } from "../test/fakeLlm";
 import { FAKE_WEBP } from "../test/fakeUpload";
-import { createTestEnv } from "../test/testEnv";
+import { createTestEnv, testApp } from "../test/testEnv";
 
 let t: Awaited<ReturnType<typeof createTestEnv>>;
 let adult: string;
@@ -136,5 +137,87 @@ describe("blocks + practice session", () => {
 
   it("404s for an attempt on an unknown question", async () => {
     expect((await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: "nope", selected_option: 1 })).status).toBe(404);
+  });
+});
+
+describe("per-question vocabulary (M6.2, 'tap a word')", () => {
+  const sample = { words: [{ surface: "일어나서", lemma: "일어나다", pos: "verb", gloss_vi: "thức dậy" }] };
+  let tv: Awaited<ReturnType<typeof createTestEnv>>;
+  let llm: ReturnType<typeof fakeLlm>;
+  let adultV: string;
+
+  beforeAll(async () => {
+    llm = fakeLlm([JSON.stringify(sample)]);
+    tv = await createTestEnv(testApp({ makeLlm: () => llm.client }));
+  }, 60_000);
+  afterAll(() => tv.dispose());
+
+  beforeEach(async () => {
+    for (const table of ["usage_daily", "topik_attempts", "topik_cards", "topik_questions", "profiles"]) {
+      await tv.env.DB.prepare(`DELETE FROM ${table}`).run();
+    }
+    llm.requests.length = 0;
+    adultV = ((await tv.api("POST", "/profiles", profile())).body as { id: string }).id;
+  });
+
+  it("generates vocab in the background when a manual question is created, logging usage with no quota check", async () => {
+    const res = await tv.api("POST", "/topik/questions", { ...input(), profile_id: adultV });
+    expect((res.body as { vocab: unknown[] }).vocab).toEqual([]); // not generated yet: the response does not wait for it
+    await tv.settle();
+
+    const row = (await tv.api("GET", `/topik/questions?profile_id=${adultV}`)).body as { vocab: TopikVocabEntry[] }[];
+    expect(row[0]!.vocab).toEqual(sample.words);
+    expect(llm.requests).toHaveLength(1);
+
+    const usage = await tv.env.DB.prepare("SELECT count FROM usage_daily WHERE profile_id = ? AND service = 'topik_vocab'").bind(adultV).first();
+    expect(usage).toMatchObject({ count: 1 });
+  });
+
+  it("regenerates when the text changes, but not when an unrelated field changes", async () => {
+    const q = await tv.api("POST", "/topik/questions", { ...input(), profile_id: adultV });
+    await tv.settle();
+    llm.requests.length = 0;
+
+    // Same text, only `warning` cleared: no new LLM call.
+    await tv.api("PATCH", `/topik/questions/${(q.body as { id: string }).id}`, { profile_id: adultV, warning: null });
+    await tv.settle();
+    expect(llm.requests).toHaveLength(0);
+
+    // Text changes: regenerates.
+    await tv.api("PATCH", `/topik/questions/${(q.body as { id: string }).id}`, { profile_id: adultV, instruction: "새로운 지시문입니다." });
+    await tv.settle();
+    expect(llm.requests).toHaveLength(1);
+  });
+
+  it("verify-bulk generates vocab only for rows never checked before", async () => {
+    // q1: created through the normal (manual) flow, already verified → already has its vocab.
+    await tv.api("POST", "/topik/questions", { ...input({ number: 1 }), profile_id: adultV });
+    await tv.settle();
+    llm.requests.length = 0;
+
+    // q2: inserted directly like the import script would — unverified, vocab never checked.
+    await tv.env.DB.prepare(
+      `INSERT INTO topik_questions (id, section, exam, number, block, options, correct_option, verified, created_at, updated_at)
+       VALUES (?1, 'reading', 'Test/연습1', 2, '1~2', ?2, 1, 0, 0, 0)`,
+    )
+      .bind(
+        "q2",
+        JSON.stringify([
+          { text: "답1", image_key: null },
+          { text: "답2", image_key: null },
+          { text: "답3", image_key: null },
+          { text: "답4", image_key: null },
+        ]),
+      )
+      .run();
+
+    const bulk = await tv.api("POST", "/topik/questions/verify-bulk", { profile_id: adultV, exam: "Test/연습1" });
+    expect((bulk.body as { verified: number }).verified).toBe(2); // both rows match the exam filter
+    await tv.settle();
+
+    // Only q2 needed generation (q1 already had vocab_checked_at set) — exactly 1 new LLM call.
+    expect(llm.requests).toHaveLength(1);
+    const q2row = await tv.env.DB.prepare("SELECT vocab_checked_at FROM topik_questions WHERE id = 'q2'").first();
+    expect(q2row!.vocab_checked_at).not.toBeNull();
   });
 });

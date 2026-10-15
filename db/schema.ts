@@ -24,7 +24,7 @@ import {
   USAGE_SERVICES,
   type LearnLang,
 } from "../shared/enums";
-import type { TopikOptions } from "../shared/topik";
+import type { TopikOptions, TopikVocabEntry } from "../shared/topik";
 
 const id = () =>
   text("id")
@@ -393,6 +393,11 @@ export const topik_questions = sqliteTable(
     /** Set by the import script when it had to guess/cross-check something (e.g. a number
      * mismatch); shown on the review screen so those rows surface first. Null otherwise. */
     warning: text("warning"),
+    /** Tappable words found in the question's text (M6.2), generated once by AI; null until
+     * generated, [] once generated with nothing to show (e.g. an image-only question). */
+    vocab: text("vocab", { mode: "json" }).$type<TopikVocabEntry[]>(),
+    /** Set together with `vocab`; a null here (not an empty `vocab`) means "not generated yet". */
+    vocab_checked_at: timestamp("vocab_checked_at"),
     /** false until an adult reviews a freshly imported question and saves it. */
     verified: integer("verified", { mode: "boolean" }).notNull().default(false),
     created_by_profile: text("created_by_profile").references(() => profiles.id, { onDelete: "set null" }),

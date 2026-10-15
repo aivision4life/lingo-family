@@ -9,6 +9,7 @@ import {
   checkPhraseFill,
   checkSentence,
   checkSentenceCheck,
+  checkTopikVocabEntry,
   checkVietnameseText,
 } from "./contentCheck";
 
@@ -205,5 +206,19 @@ describe("checkPhraseFill", () => {
       'gloss_ko: a Latin word "university"',
       'gloss_ko: a Latin word "student"',
     ]);
+  });
+});
+
+describe("checkTopikVocabEntry", () => {
+  it("accepts a clean entry", () => {
+    expect(checkTopikVocabEntry({ surface: "일어나서", lemma: "일어나다", gloss_vi: "thức dậy" })).toEqual([]);
+  });
+
+  it("flags Hangul leaking into the Vietnamese gloss", () => {
+    expect(checkTopikVocabEntry({ surface: "전화", lemma: "전화", gloss_vi: "학생" })).toEqual(["gloss_vi: Hangul in Vietnamese text"]);
+  });
+
+  it("flags a stray Latin letter in the surface/lemma form", () => {
+    expect(checkTopikVocabEntry({ surface: "일어나a서", lemma: "일어나다", gloss_vi: "thức dậy" })).toEqual(['surface: a lone Latin letter "a"']);
   });
 });

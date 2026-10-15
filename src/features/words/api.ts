@@ -7,6 +7,7 @@ import {
   wordDetailSchema,
   wordCreatedSchema,
   wordListSchema,
+  wordLookupResponseSchema,
   type EnrichRequest,
   type WordCreate,
   type WordDetail,
@@ -71,6 +72,15 @@ export function useGenerateAudio(wordId: string) {
     mutationFn: (profileId: string) =>
       api("POST", `/words/${wordId}/audio`, audioResultSchema, { profile_id: profileId }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: WORDS_KEY }),
+  });
+}
+
+/** Whether `term` already exists in the library (M6.2's "tap a word" popup prefers its own gloss). */
+export function useWordLookup(lang: LearnLang, term: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: (options.enabled ?? true) && term !== "",
+    queryKey: [...WORDS_KEY, "lookup", lang, term],
+    queryFn: () => api("GET", `/words/lookup?lang=${lang}&term=${encodeURIComponent(term)}`, wordLookupResponseSchema),
   });
 }
 

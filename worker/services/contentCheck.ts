@@ -7,6 +7,7 @@ import type { LlmSentence } from "../../shared/base";
 import type { LlmEnrichment } from "../../shared/word";
 import type { LlmPhrase } from "../../shared/phrase";
 import type { LlmSentenceCheck } from "../../shared/customItem";
+import type { TopikVocabEntry } from "../../shared/topik";
 
 const HANGUL = /[가-힣ᄀ-ᇿ㄰-㆏]/;
 /** Han ideographs (Chinese/Hanja) and Japanese kana — never expected outside the dedicated Hanja field. */
@@ -135,4 +136,13 @@ export function checkSentenceCheck(lang: LearnLang, data: LlmSentenceCheck, allo
 /** Checks the gloss triple filled in for a user-typed phrase (M2.6; no text/example to check here). */
 export function checkPhraseFill(data: { gloss_vi: string; gloss_en: string; gloss_ko: string }, allowedWords?: readonly string[]): string[] {
   return checkGlosses(data, allowedWords);
+}
+
+/** One AI-generated vocabulary entry for a TOPIK question (M6.2): `surface`/`lemma` are Korean, `gloss_vi` is Vietnamese. */
+export function checkTopikVocabEntry(e: Pick<TopikVocabEntry, "surface" | "lemma" | "gloss_vi">): string[] {
+  return [
+    ...prefixed("surface", checkKoreanText(e.surface)),
+    ...prefixed("lemma", checkKoreanText(e.lemma)),
+    ...prefixed("gloss_vi", checkVietnameseText(e.gloss_vi)),
+  ];
 }

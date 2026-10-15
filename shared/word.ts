@@ -177,6 +177,10 @@ export const duplicateErrorSchema = z.object({
   existing_id: z.string(),
 });
 
+/** GET /api/words/lookup?lang=&term= (M6.2): whether a word already exists, and its own gloss if so. */
+export const wordLookupRequestSchema = z.object({ lang: learnLangSchema, term: z.string().trim().min(1) });
+export const wordLookupResponseSchema = z.object({ id: z.string(), gloss_vi: z.string() }).nullable();
+
 /** Daily LLM calls per profile (SPEC F6). Cache hits do not count. */
 export const LLM_DAILY_QUOTA = 50;
 

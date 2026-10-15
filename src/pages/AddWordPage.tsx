@@ -1,7 +1,7 @@
 import { Plus, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import type { ExampleLevel, LearnLang } from "@shared/enums";
 import { enrichRequestSchema } from "@shared/word";
 import { LangText } from "@/components/LangText";
@@ -50,9 +50,15 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
   const enrich = useEnrichWord();
   const create = useCreateWord();
 
-  // The last language chosen on this device wins over the profile default.
-  const [lang, setLang] = useState<LearnLang>(() => readLastAddLang() ?? defaultLang);
-  const [term, setTerm] = useState("");
+  // Coming from a "tap a word" popup (M6.2): ?lang=ko&term=...&autofill=1 prefills the term and
+  // its language, and the request below kicks off the AI fill right away. Otherwise, the last
+  // language chosen on this device wins over the profile default.
+  const [params] = useSearchParams();
+  const queryLang = params.get("lang");
+  const queryTerm = params.get("term");
+  const autofillOnMount = params.get("autofill") === "1" && !!queryTerm;
+  const [lang, setLang] = useState<LearnLang>(() => (queryLang === "ko" || queryLang === "en" ? queryLang : (readLastAddLang() ?? defaultLang)));
+  const [term, setTerm] = useState(() => queryTerm ?? "");
   const [level, setLevel] = useState<ExampleLevel>(defaultLevel);
   const [termError, setTermError] = useState(false);
   // null = still on the term step; otherwise the editable draft.
@@ -93,6 +99,16 @@ function AddWord({ profileId, defaultLang, defaultLevel }: AddWordProps) {
       },
     });
   };
+
+  // Runs the AI fill exactly once when arriving with ?autofill=1 (never again on a later re-render,
+  // e.g. after the mutation settles or the user edits the draft).
+  const autofillStarted = useRef(false);
+  useEffect(() => {
+    if (!autofillOnMount || autofillStarted.current) return;
+    autofillStarted.current = true;
+    aiFill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount only, by design
+  }, []);
 
   const manual = () => {
     const req = request();

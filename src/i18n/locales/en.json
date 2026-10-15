@@ -522,7 +522,12 @@
       "correct": "Correct!",
       "incorrect": "Not quite.",
       "next": "Next",
-      "finish": "Finish"
+      "finish": "Finish",
+      "word": {
+        "loadError": "Could not load the meaning.",
+        "addToLibrary": "Add to library",
+        "alreadyInLibrary": "View in library"
+      }
     },
     "manage": {
       "title": "Manage TOPIK questions",

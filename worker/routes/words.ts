@@ -12,6 +12,7 @@ import {
   WORD_ERRORS,
   wordCreateSchema,
   wordListQuerySchema,
+  wordLookupRequestSchema,
   type WordDetail,
   type WordSummary,
 } from "../../shared/word";
@@ -225,6 +226,16 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
         )
         .limit(200);
       return c.json(rows.map((r) => toSummary(r.word, r.phrase_count)));
+    })
+
+    /** Whether a word already exists (M6.2's "tap a word" popup prefers the library's own gloss over the AI's). */
+    .get("/lookup", zv("query", wordLookupRequestSchema), async (c) => {
+      const { lang, term } = c.req.valid("query");
+      const db = getDb(c.env);
+      const key = duplicateKey(lang, term);
+      const sameTerm = lang === "en" ? sql`lower(${words.term}) = ${key}` : eq(words.term, key);
+      const row = await db.select({ id: words.id, gloss_vi: words.gloss_vi }).from(words).where(and(eq(words.lang, lang), sameTerm)).get();
+      return c.json(row ?? null);
     })
 
     .get("/:id", idParam, async (c) => {
