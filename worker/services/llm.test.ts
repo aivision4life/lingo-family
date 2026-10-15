@@ -35,6 +35,28 @@ describe("generateStructured", () => {
     expect((err as LlmError).code).toBe("invalid_output");
     expect(requests).toHaveLength(2);
   });
+
+  it("retries once after a content problem, with the problems in the prompt", async () => {
+    const { client, requests } = fakeLlm([valid, valid]);
+    await generateStructured(client, llmEnrichmentSchema, prompt, () => ["gloss_ko: a lone Latin letter \"a\""]);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.user).toContain("content problems");
+  });
+
+  it("does not throw when a content problem is still present after the retry — it returns the data for the caller to filter", async () => {
+    const { client, requests } = fakeLlm([valid, valid]);
+    const result = await generateStructured(client, llmEnrichmentSchema, prompt, () => ["gloss_ko: still bad"]);
+    expect(result).toEqual({ data: sampleEnrichment, model: "fake-model" });
+    expect(requests).toHaveLength(2);
+  });
+
+  it("schema is still checked first: a schema mismatch retries even when validateContent is given", async () => {
+    const { client, requests } = fakeLlm([JSON.stringify({ ...sampleEnrichment, pos: "thing" }), valid]);
+    const validateContent = vi.fn(() => []);
+    await generateStructured(client, llmEnrichmentSchema, prompt, validateContent);
+    expect(requests[1]!.user).toContain("pos");
+    expect(validateContent).toHaveBeenCalledTimes(1); // only once the schema parsed
+  });
 });
 
 describe("createLlmClient", () => {

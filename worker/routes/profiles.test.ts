@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { profileListSchema, profileSchema, type ProfileCreate } from "../../shared/profile";
+import { FAKE_WEBP, oversizedWebp } from "../test/fakeUpload";
 import { createTestEnv } from "../test/testEnv";
 
 let t: Awaited<ReturnType<typeof createTestEnv>>;
@@ -98,5 +99,58 @@ describe("profiles API", () => {
   it("returns 404 for unknown ids", async () => {
     expect((await t.api("PATCH", "/profiles/nope", { name: "x" })).status).toBe(404);
     expect((await t.api("DELETE", "/profiles/nope")).status).toBe(404);
+  });
+});
+
+describe("profile avatar photo (M2.10)", () => {
+  const upload = (id: string, actorId: string, body: Uint8Array, type = "image/webp") =>
+    t.send(`/api/profiles/${id}/avatar-photo?profile_id=${actorId}`, { method: "POST", headers: { "content-type": type }, body });
+  const remove = (id: string, actorId: string) =>
+    t.send(`/api/profiles/${id}/avatar-photo?profile_id=${actorId}`, { method: "DELETE" });
+
+  it("an adult can upload a photo; it takes over from the emoji, bad files are refused", async () => {
+    const p = await create(adult);
+
+    expect((await upload(p.id, p.id, FAKE_WEBP, "image/png")).status).toBe(400); // type does not match the bytes
+    expect((await upload(p.id, p.id, oversizedWebp())).status).toBe(400);
+
+    const ok = await upload(p.id, p.id, FAKE_WEBP);
+    expect(ok.status).toBe(200);
+    const body = profileSchema.parse(await ok.json());
+    expect(body.avatar_photo).toMatch(/^images\/upload\/[0-9a-f]{40}\.webp$/);
+
+    const media = await t.raw(`/api/media/${body.avatar_photo}`);
+    expect(media.status).toBe(200);
+  });
+
+  it("a kid profile cannot upload or remove a photo (even its own)", async () => {
+    const a = await create(adult);
+    const k = await create(kid);
+    expect((await upload(k.id, k.id, FAKE_WEBP)).status).toBe(403);
+    expect((await remove(a.id, k.id)).status).toBe(403);
+  });
+
+  it("removing a photo reverts to the emoji; a key shared with a word image is kept in R2", async () => {
+    const a = await create(adult);
+    const b = await create({ ...adult, name: "Mẹ" });
+
+    const res1 = await upload(a.id, a.id, FAKE_WEBP);
+    const key = profileSchema.parse(await res1.json()).avatar_photo!;
+    await upload(b.id, a.id, FAKE_WEBP); // the exact same bytes → the exact same content-addressed key
+
+    const removed = await remove(a.id, a.id);
+    expect(removed.status).toBe(200);
+    expect(profileSchema.parse(await removed.json()).avatar_photo).toBeNull();
+
+    // b's profile (and the R2 object itself) are unaffected by a's removal.
+    const list = profileListSchema.parse((await t.api("GET", "/profiles")).body);
+    expect(list.find((p) => p.id === b.id)?.avatar_photo).toBe(key);
+    expect((await t.raw(`/api/media/${key}`)).status).toBe(200);
+  });
+
+  it("returns 404 for an unknown profile id", async () => {
+    const a = await create(adult);
+    expect((await upload("nope", a.id, FAKE_WEBP)).status).toBe(404);
+    expect((await remove("nope", a.id)).status).toBe(404);
   });
 });

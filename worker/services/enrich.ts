@@ -8,6 +8,7 @@ import { enrichmentSchema, llmEnrichmentSchema, type Enrichment, type LlmEnrichm
 import { ai_cache } from "../../db/schema";
 import type { getDb } from "../env";
 import { sha256Hex } from "../lib/hash";
+import { checkEnrichment, checkPhrase, checkSentence } from "./contentCheck";
 import { buildEnrichPrompt, buildPhrasePrompt, ENRICH_PROMPT_VERSION, PHRASES_PROMPT_VERSION } from "./enrichPrompt";
 import { generateStructured, type LlmClient } from "./llm";
 
@@ -33,15 +34,20 @@ const cleanSentence = (lang: LearnLang, ex: LlmSentence): LlmSentence => ({
   image_prompt: ex.image_prompt.trim(),
 });
 
-/** Trims phrases, drops ones equal to the word or to each other, keeps at most 3. */
+/**
+ * Trims phrases, drops ones equal to the word or to each other, keeps at most 3. Also drops any
+ * phrase whose text, glosses or own example still has a script problem after the one retry
+ * `generateStructured` already gave it (M2.11, e.g. a stray Latin letter) — logged, never saved.
+ */
 export function finalizePhrases(lang: LearnLang, term: string, raw: LlmPhrase[]): LlmPhrase[] {
   const seen = new Set([duplicateKey(lang, term)]);
+  const allowedWords = lang === "en" ? [term] : [];
   const out: LlmPhrase[] = [];
   for (const p of raw) {
     const key = duplicateKey(lang, p.text);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    out.push({
+    const phrase: LlmPhrase = {
       text: normalizeTerm(p.text),
       reading: p.reading.trim(),
       gloss_vi: p.gloss_vi.trim(),
@@ -49,21 +55,39 @@ export function finalizePhrases(lang: LearnLang, term: string, raw: LlmPhrase[])
       gloss_ko: p.gloss_ko.trim(),
       image_prompt: p.image_prompt.trim(),
       example: cleanSentence(lang, p.example),
-    });
+    };
+    const problems = checkPhrase(lang, phrase, allowedWords);
+    if (problems.length > 0) {
+      console.error(`[enrich] dropping suggested phrase "${phrase.text}" for "${term}": ${problems.join("; ")}`);
+      continue;
+    }
+    out.push(phrase);
   }
   return out.slice(0, PHRASES_MAX);
 }
 
-/** Applies per-language rules the model might not follow exactly, and "" → null. */
+/**
+ * Applies per-language rules the model might not follow exactly, "" → null, and drops any example
+ * that still has a script problem after the one retry (M2.11) — logged, never saved.
+ */
 export function finalizeEnrichment(lang: LearnLang, term: string, raw: LlmEnrichment): Enrichment {
   const isEnglish = lang === "en";
+  const allowedWords = isEnglish ? [term] : [];
+  const examples = raw.examples
+    .map((ex) => cleanSentence(lang, ex))
+    .filter((ex) => {
+      const problems = checkSentence(lang, ex, allowedWords);
+      if (problems.length > 0) console.error(`[enrich] dropping example for "${term}": ${problems.join("; ")}`);
+      return problems.length === 0;
+    })
+    .slice(0, WORD_EXAMPLES);
   return {
     ...raw,
     hanja: isEnglish ? null : orNull(raw.hanja),
     han_viet: isEnglish ? null : orNull(raw.han_viet),
     emoji: orNull(raw.emoji),
     image_prompt: raw.image_prompt.trim(),
-    examples: raw.examples.slice(0, WORD_EXAMPLES).map((ex) => cleanSentence(lang, ex)),
+    examples,
     phrases: finalizePhrases(lang, term, raw.phrases),
   };
 }
@@ -103,7 +127,13 @@ export async function enrichWithCache({ db, llm, input, beforeLlmCall }: Options
     cachedSchema: enrichmentSchema,
     beforeLlmCall,
     produce: async () => {
-      const { data, model } = await generateStructured(llm, llmEnrichmentSchema, buildEnrichPrompt(input.lang, input.term, input.level));
+      const allowedWords = input.lang === "en" ? [input.term] : [];
+      const { data, model } = await generateStructured(
+        llm,
+        llmEnrichmentSchema,
+        buildEnrichPrompt(input.lang, input.term, input.level),
+        (d) => checkEnrichment(input.lang, d, allowedWords),
+      );
       return { value: finalizeEnrichment(input.lang, input.term, data), model };
     },
   });
@@ -119,10 +149,12 @@ export async function suggestPhrasesWithCache({ db, llm, input, beforeLlmCall }:
     cachedSchema: z.object({ phrases: z.array(llmPhraseSchema).max(PHRASES_MAX) }),
     beforeLlmCall,
     produce: async () => {
+      const allowedWords = input.lang === "en" ? [input.term] : [];
       const { data: raw, model } = await generateStructured(
         llm,
         llmPhraseSuggestionsSchema,
         buildPhrasePrompt(input.lang, input.term, input.level),
+        (d) => d.phrases.flatMap((p, i) => checkPhrase(input.lang, p, allowedWords).map((x) => `phrases[${i}]: ${x}`)),
       );
       return { value: { phrases: finalizePhrases(input.lang, input.term, raw.phrases) }, model };
     },

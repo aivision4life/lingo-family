@@ -48,6 +48,9 @@
     "form": {
       "name": "Tên",
       "avatar": "Hình đại diện",
+      "avatarPhoto": "Ảnh đại diện",
+      "changePhoto": "Đổi ảnh",
+      "removePhoto": "Xoá ảnh",
       "uiLang": "Ngôn ngữ giao diện",
       "glossLang": "Ngôn ngữ nghĩa của từ",
       "glossLangHint": "Nghĩa trên thẻ học sẽ hiện bằng ngôn ngữ này.",
@@ -86,6 +89,7 @@
       "title": "Trang chủ",
       "startReview": "Bắt đầu ôn tập",
       "practiceSpeaking": "Luyện phát âm",
+      "topik": "Luyện TOPIK II",
       "stats": "Thống kê"
     },
     "review": {
@@ -324,6 +328,7 @@
     "retry": "Thử lại",
     "failed": "Chưa vẽ được ảnh. Bạn có thể thử lại.",
     "quotaBanner": "Hôm nay đã hết lượt vẽ ảnh. Lượt mới vào lúc {{time}} (giờ máy của bạn).",
+    "providerExhaustedBanner": "Hôm nay hết lượt vẽ ảnh miễn phí của hệ thống, thử lại vào ngày mai.",
     "invalidUpload": "Không dùng được ảnh này (tối đa 512 px, 300 KB, WebP/JPEG/PNG).",
     "notConfigured": "Chưa bật Workers AI để vẽ ảnh.",
     "redrawTitle": "Vẽ lại ảnh",
@@ -501,6 +506,56 @@
       "tooMany": "Đã đủ số câu ví dụ tối đa.",
       "duplicate": "Câu này đã có.",
       "generic": "Không thực hiện được, hãy thử lại."
+    }
+  },
+  "topik": {
+    "title": "Luyện TOPIK II",
+    "noBlocks": "Chưa có câu hỏi nào. Vào \"Quản lý câu hỏi\" để nhập hoặc thêm câu hỏi.",
+    "blockLabel": "Câu {{block}}",
+    "blockCount": "{{count}} câu",
+    "practice": {
+      "title": "Câu {{from}}-{{to}}",
+      "exit": "Thoát",
+      "nothingToday": "Không có câu nào để luyện trong khối này.",
+      "sessionDone": "Đã xong buổi luyện tập!",
+      "progress": "Câu {{current}}/{{total}}",
+      "correct": "Đúng!",
+      "incorrect": "Sai rồi.",
+      "next": "Câu tiếp",
+      "finish": "Hoàn thành"
+    },
+    "manage": {
+      "title": "Quản lý câu hỏi TOPIK",
+      "filter": {
+        "unverified": "Cần duyệt",
+        "verified": "Đã duyệt",
+        "all": "Tất cả"
+      },
+      "addManual": "+ Thêm câu hỏi",
+      "empty": "Không có câu hỏi nào.",
+      "verifyGroup": "Duyệt cả nhóm",
+      "unverifiedBadge": "chưa duyệt",
+      "imageOnly": "(chỉ có ảnh)",
+      "correctAnswer": "Đáp án đúng: {{n}}",
+      "edit": "Sửa",
+      "delete": "Xoá",
+      "form": {
+        "exam": "Đề / nhóm bài (exam)",
+        "number": "Số câu hỏi",
+        "block": "Khối câu (vd. 1~2)",
+        "instruction": "Hướng dẫn",
+        "stem": "Đề bài",
+        "correctOption": "Đáp án đúng",
+        "photo": "Ảnh",
+        "removePhoto": "Xoá ảnh",
+        "invalid": "Cần có đề/khối/số câu hợp lệ, đủ 4 lựa chọn (chữ hoặc ảnh) và đã chọn đáp án đúng.",
+        "saving": "Đang lưu…",
+        "save": "Lưu",
+        "saveAndNext": "Lưu và thêm câu tiếp",
+        "savedN": "Đã lưu câu {{n}}.",
+        "duplicate": "Câu này (đề + số câu) đã có, không ghi đè.",
+        "generic": "Không lưu được, hãy thử lại."
+      }
     }
   }
 }

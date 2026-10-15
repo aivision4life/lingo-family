@@ -24,7 +24,7 @@ import { zv } from "../lib/validate";
 import { generateWordAudio } from "../services/audio";
 import { addWordsStatements, albumsOfWord } from "../services/albums";
 import { enrichWithCache } from "../services/enrich";
-import { drawClaimedItems, initialImageFields } from "../services/imageJobs";
+import { drawClaimedItems, initialImageFields, isProviderExhausted } from "../services/imageJobs";
 import { isLocalHost } from "../lib/localDev";
 import { createFakeImageAi } from "../services/fakeImage";
 import type { AiRunner } from "../services/imageModels";
@@ -62,6 +62,10 @@ export function drawAfterSave(
   items: { kind: "word" | "phrase" | "example"; id: string }[],
 ) {
   if (items.length === 0) return;
+  // Workers AI's account-wide Neuron allocation was seen exhausted recently (M2.9): every drawing
+  // would fail the same way, so skip starting the background job. The items stay "pending" (set
+  // just before this call) and become claimable again once stale, same as a cut-off waitUntil.
+  if (isProviderExhausted()) return;
   const deps = { DB: c.env.DB, bucket: c.env.MEDIA, ai: makeImageAi(c.env, c.req.url), profileId };
   runInBackground(c, drawClaimedItems(deps, items));
 }

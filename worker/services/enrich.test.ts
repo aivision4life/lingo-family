@@ -34,10 +34,11 @@ describe("finalizePhrases", () => {
   });
 
   it("is case-insensitive for English", () => {
+    const englishExample = { ...phrase.example, sentence: "I love apple pie.", translation_ko: "" };
     const out = finalizePhrases("en", "apple", [
-      { ...phrase, text: "Apple" },
-      { ...phrase, text: "apple pie" },
-      { ...phrase, text: "Apple Pie" },
+      { ...phrase, text: "Apple", example: englishExample },
+      { ...phrase, text: "apple pie", example: englishExample },
+      { ...phrase, text: "Apple Pie", example: englishExample },
     ]);
     expect(out.map((p) => p.text)).toEqual(["apple pie"]);
   });

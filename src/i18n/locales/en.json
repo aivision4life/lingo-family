@@ -48,6 +48,9 @@
     "form": {
       "name": "Name",
       "avatar": "Avatar",
+      "avatarPhoto": "Profile photo",
+      "changePhoto": "Change photo",
+      "removePhoto": "Remove photo",
       "uiLang": "Interface language",
       "glossLang": "Meaning language",
       "glossLangHint": "Word meanings on cards are shown in this language.",
@@ -86,6 +89,7 @@
       "title": "Home",
       "startReview": "Start review",
       "practiceSpeaking": "Practice speaking",
+      "topik": "TOPIK II practice",
       "stats": "Stats"
     },
     "review": {
@@ -324,6 +328,7 @@
     "retry": "Try again",
     "failed": "The picture could not be drawn. You can try again.",
     "quotaBanner": "No pictures left for today. New quota at {{time}} (your device's time).",
+    "providerExhaustedBanner": "The system's free picture drawing is used up for today. Please try again tomorrow.",
     "invalidUpload": "This photo cannot be used (max 512 px, 300 KB, WebP/JPEG/PNG).",
     "notConfigured": "Workers AI for pictures is not set up.",
     "redrawTitle": "Redraw picture",
@@ -501,6 +506,56 @@
       "tooMany": "The maximum number of example sentences is reached.",
       "duplicate": "This sentence already exists.",
       "generic": "That did not work, please try again."
+    }
+  },
+  "topik": {
+    "title": "TOPIK II practice",
+    "noBlocks": "No questions yet. Go to \"Manage questions\" to import or add some.",
+    "blockLabel": "Questions {{block}}",
+    "blockCount": "{{count}} question(s)",
+    "practice": {
+      "title": "Questions {{from}}-{{to}}",
+      "exit": "Exit",
+      "nothingToday": "No questions to practice in this block.",
+      "sessionDone": "Session done!",
+      "progress": "Question {{current}}/{{total}}",
+      "correct": "Correct!",
+      "incorrect": "Not quite.",
+      "next": "Next",
+      "finish": "Finish"
+    },
+    "manage": {
+      "title": "Manage TOPIK questions",
+      "filter": {
+        "unverified": "Needs review",
+        "verified": "Approved",
+        "all": "All"
+      },
+      "addManual": "+ Add question",
+      "empty": "No questions.",
+      "verifyGroup": "Approve group",
+      "unverifiedBadge": "needs review",
+      "imageOnly": "(image only)",
+      "correctAnswer": "Correct answer: {{n}}",
+      "edit": "Edit",
+      "delete": "Delete",
+      "form": {
+        "exam": "Exam / exercise label",
+        "number": "Question number",
+        "block": "Question block (e.g. 1~2)",
+        "instruction": "Instruction",
+        "stem": "Stem",
+        "correctOption": "Correct option",
+        "photo": "Photo",
+        "removePhoto": "Remove photo",
+        "invalid": "Needs a valid exam/block/number, all 4 options (text or image), and a correct answer picked.",
+        "saving": "Saving…",
+        "save": "Save",
+        "saveAndNext": "Save and add next",
+        "savedN": "Saved question {{n}}.",
+        "duplicate": "This question (exam + number) already exists; not overwritten.",
+        "generic": "Could not save, please try again."
+      }
     }
   }
 }

@@ -1,0 +1,138 @@
+// Script sanity checks for LLM-generated language text (M2.11): the JSON-schema check only
+// enforces shape/non-empty, not script — it missed a stray Latin letter inside a Korean sentence
+// ("이야기에 a 빠져들다 보니..."). These are plain pure checks, reused both to decide whether to
+// retry a generation and, afterwards, to drop just the offending example/phrase.
+import type { LearnLang } from "../../shared/enums";
+import type { LlmSentence } from "../../shared/base";
+import type { LlmEnrichment } from "../../shared/word";
+import type { LlmPhrase } from "../../shared/phrase";
+import type { LlmSentenceCheck } from "../../shared/customItem";
+
+const HANGUL = /[가-힣ᄀ-ᇿ㄰-㆏]/;
+/** Han ideographs (Chinese/Hanja) and Japanese kana — never expected outside the dedicated Hanja field. */
+const HAN_OR_KANA = /[㐀-䶿一-鿿぀-ゟ゠-ヿ]/;
+const LATIN_WORD = /[A-Za-z]+/g;
+
+/** Common loanword acronyms that legitimately appear as-is inside Korean text. */
+const KOREAN_LATIN_ALLOWLIST = new Set(["TV", "AI", "PC", "CD", "DVD", "SNS", "PDF", "URL", "ID", "OK", "DIY", "VIP", "USB"]);
+
+/**
+ * Korean text should be Hangul (plus digits/punctuation): flags a Latin letter run unless it is a
+ * known loanword acronym (`KOREAN_LATIN_ALLOWLIST`) or in `allowedWords` (e.g. the term itself,
+ * when the item being studied is written in Latin script), and flags stray Han/Kana characters
+ * (never expected here — Hanja has its own field). A **lone single Latin letter is always wrong**:
+ * that is the exact shape of the bug this was written for.
+ */
+export function checkKoreanText(text: string, allowedWords: readonly string[] = []): string[] {
+  const allow = new Set(allowedWords.map((w) => w.toUpperCase()));
+  const problems: string[] = [];
+  for (const [word] of text.matchAll(LATIN_WORD)) {
+    if (word.length === 1) problems.push(`a lone Latin letter "${word}"`);
+    else if (!KOREAN_LATIN_ALLOWLIST.has(word.toUpperCase()) && !allow.has(word.toUpperCase())) problems.push(`a Latin word "${word}"`);
+  }
+  if (HAN_OR_KANA.test(text)) problems.push("Chinese/Japanese characters outside the Hanja field");
+  return problems;
+}
+
+/** English text should not contain Hangul or Han/Kana. */
+export function checkEnglishText(text: string): string[] {
+  const problems: string[] = [];
+  if (HANGUL.test(text)) problems.push("Hangul in English text");
+  if (HAN_OR_KANA.test(text)) problems.push("Chinese/Japanese characters in English text");
+  return problems;
+}
+
+/** Vietnamese text should not contain Hangul. */
+export function checkVietnameseText(text: string): string[] {
+  return HANGUL.test(text) ? ["Hangul in Vietnamese text"] : [];
+}
+
+/** Picks the Korean or English check for a learning-language field (word term, phrase text, sentence). */
+export function checkLangText(lang: LearnLang, text: string, allowedWords?: readonly string[]): string[] {
+  return lang === "ko" ? checkKoreanText(text, allowedWords) : checkEnglishText(text);
+}
+
+const prefixed = (prefix: string, problems: string[]) => problems.map((p) => `${prefix}: ${p}`);
+
+/**
+ * One example sentence: the sentence itself (checked against `lang`) plus every translation that
+ * is not the sentence's own language. The sentence's own-language translation is never checked —
+ * the LLM is told to leave it "" and the server discards whatever it actually put there (M2.11:
+ * checking it caused false positives, e.g. a one-character placeholder read as a stray Latin letter).
+ */
+export function checkSentence(lang: LearnLang, s: LlmSentence, allowedWords?: readonly string[]): string[] {
+  const problems = prefixed("sentence", checkLangText(lang, s.sentence, allowedWords));
+  if (s.translation_vi) problems.push(...prefixed("translation_vi", checkVietnameseText(s.translation_vi)));
+  if (lang !== "en" && s.translation_en) problems.push(...prefixed("translation_en", checkEnglishText(s.translation_en)));
+  if (lang !== "ko" && s.translation_ko) problems.push(...prefixed("translation_ko", checkKoreanText(s.translation_ko, allowedWords)));
+  return problems;
+}
+
+/**
+ * The vi/en/ko meaning triple present on words and phrases. `allowedWords` matters for `gloss_ko`
+ * when the item being studied is itself written in Latin script (lang=en): its Korean meaning may
+ * reasonably keep the term as a loanword.
+ */
+export function checkGlosses(g: { gloss_vi: string; gloss_en: string; gloss_ko: string }, allowedWords?: readonly string[]): string[] {
+  return [
+    ...prefixed("gloss_vi", checkVietnameseText(g.gloss_vi)),
+    ...prefixed("gloss_en", checkEnglishText(g.gloss_en)),
+    ...prefixed("gloss_ko", checkKoreanText(g.gloss_ko, allowedWords)),
+  ];
+}
+
+/** One suggested phrase: its text, glosses and own example sentence. */
+export function checkPhrase(lang: LearnLang, p: LlmPhrase, allowedWords?: readonly string[]): string[] {
+  return [
+    ...prefixed("text", checkLangText(lang, p.text, allowedWords)),
+    ...checkGlosses(p, allowedWords),
+    ...prefixed("example", checkSentence(lang, p.example, allowedWords)),
+  ];
+}
+
+/**
+ * The whole word-enrichment answer (gloss + every example + every suggested phrase), for deciding
+ * whether to ask the model to redo its answer. Prefixed with the array index so a caller could
+ * in principle tell which item is at fault, though the finalize step re-checks each item itself.
+ */
+export function checkEnrichment(
+  lang: LearnLang,
+  data: Pick<LlmEnrichment, "gloss_vi" | "gloss_en" | "gloss_ko" | "examples" | "phrases">,
+  allowedWords?: readonly string[],
+): string[] {
+  return [
+    ...checkGlosses(data, allowedWords),
+    ...data.examples.flatMap((e, i) => prefixed(`examples[${i}]`, checkSentence(lang, e, allowedWords))),
+    ...data.phrases.flatMap((p, i) => prefixed(`phrases[${i}]`, checkPhrase(lang, p, allowedWords))),
+  ];
+}
+
+/** Checks every LLM-generated text in a "check my sentence" answer (M2.6): translations, the
+ * suggested rewrite (if any) and its translations, and the Vietnamese reason. */
+export function checkSentenceCheck(lang: LearnLang, data: LlmSentenceCheck, allowedWords?: readonly string[]): string[] {
+  const own: LlmSentence = {
+    sentence: "", // the user's own text, not LLM output: not checked here
+    translation_vi: data.translation_vi,
+    translation_en: data.translation_en,
+    translation_ko: data.translation_ko,
+    image_prompt: "x",
+  };
+  const problems = checkSentence(lang, own, allowedWords).filter((p) => !p.startsWith("sentence:"));
+  if (data.suggestion) {
+    const suggestion: LlmSentence = {
+      sentence: data.suggestion,
+      translation_vi: data.suggestion_translation_vi,
+      translation_en: data.suggestion_translation_en,
+      translation_ko: data.suggestion_translation_ko,
+      image_prompt: "x",
+    };
+    problems.push(...prefixed("suggestion", checkSentence(lang, suggestion, allowedWords)));
+  }
+  if (data.note_vi) problems.push(...prefixed("note_vi", checkVietnameseText(data.note_vi)));
+  return problems;
+}
+
+/** Checks the gloss triple filled in for a user-typed phrase (M2.6; no text/example to check here). */
+export function checkPhraseFill(data: { gloss_vi: string; gloss_en: string; gloss_ko: string }, allowedWords?: readonly string[]): string[] {
+  return checkGlosses(data, allowedWords);
+}

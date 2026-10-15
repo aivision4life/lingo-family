@@ -55,3 +55,14 @@ export async function consumeImageQuota(
     .first<{ count: number }>();
   return row !== null;
 }
+
+/**
+ * Gives back one unit of today's image quota for `profileId` (M2.9): a drawing was attempted and
+ * failed, so in the end it should not count against the daily limit. Never goes below 0; does
+ * nothing if there is no row yet (nothing was ever consumed for this profile today).
+ */
+export async function refundImageQuota(DB: D1Database, profileId: string, now = new Date()): Promise<void> {
+  await DB.prepare("UPDATE usage_daily SET count = max(count - 1, 0) WHERE date = ?1 AND profile_id = ?2 AND service = 'image'")
+    .bind(usageDate(now), profileId)
+    .run();
+}

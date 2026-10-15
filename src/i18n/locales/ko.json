@@ -48,6 +48,9 @@
     "form": {
       "name": "이름",
       "avatar": "아바타",
+      "avatarPhoto": "프로필 사진",
+      "changePhoto": "사진 변경",
+      "removePhoto": "사진 삭제",
       "uiLang": "화면 언어",
       "glossLang": "단어 뜻 언어",
       "glossLangHint": "학습 카드의 뜻이 이 언어로 표시됩니다.",
@@ -86,6 +89,7 @@
       "title": "홈",
       "startReview": "복습 시작",
       "practiceSpeaking": "발음 연습",
+      "topik": "TOPIK II 연습",
       "stats": "통계"
     },
     "review": {
@@ -324,6 +328,7 @@
     "retry": "다시 시도",
     "failed": "그림을 그리지 못했습니다. 다시 시도할 수 있습니다.",
     "quotaBanner": "오늘 그림 횟수를 다 썼습니다. {{time}}(기기 시간 기준)에 새로 시작됩니다.",
+    "providerExhaustedBanner": "오늘 시스템의 무료 그림 생성 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.",
     "invalidUpload": "이 사진은 사용할 수 없습니다(최대 512px, 300KB, WebP/JPEG/PNG).",
     "notConfigured": "그림을 위한 Workers AI가 설정되지 않았습니다.",
     "redrawTitle": "그림 다시 그리기",
@@ -501,6 +506,56 @@
       "tooMany": "예문을 더 추가할 수 없습니다.",
       "duplicate": "이미 있는 문장입니다.",
       "generic": "실행하지 못했습니다. 다시 시도하세요."
+    }
+  },
+  "topik": {
+    "title": "TOPIK II 연습",
+    "noBlocks": "아직 문제가 없습니다. \"문제 관리\"에서 가져오거나 추가하세요.",
+    "blockLabel": "{{block}}번 문제",
+    "blockCount": "{{count}}문제",
+    "practice": {
+      "title": "{{from}}-{{to}}번 문제",
+      "exit": "나가기",
+      "nothingToday": "이 구간에 연습할 문제가 없습니다.",
+      "sessionDone": "연습을 마쳤습니다!",
+      "progress": "{{current}}/{{total}}번째",
+      "correct": "정답입니다!",
+      "incorrect": "틀렸습니다.",
+      "next": "다음 문제",
+      "finish": "완료"
+    },
+    "manage": {
+      "title": "TOPIK 문제 관리",
+      "filter": {
+        "unverified": "검토 필요",
+        "verified": "검토 완료",
+        "all": "전체"
+      },
+      "addManual": "+ 문제 추가",
+      "empty": "문제가 없습니다.",
+      "verifyGroup": "그룹 승인",
+      "unverifiedBadge": "검토 필요",
+      "imageOnly": "(이미지만)",
+      "correctAnswer": "정답: {{n}}",
+      "edit": "수정",
+      "delete": "삭제",
+      "form": {
+        "exam": "시험/연습 이름",
+        "number": "문제 번호",
+        "block": "문제 구간 (예: 1~2)",
+        "instruction": "지시문",
+        "stem": "지문",
+        "correctOption": "정답",
+        "photo": "사진",
+        "removePhoto": "사진 삭제",
+        "invalid": "시험/구간/번호, 4개 선택지(글자 또는 사진), 정답 선택이 모두 필요합니다.",
+        "saving": "저장 중…",
+        "save": "저장",
+        "saveAndNext": "저장하고 다음 문제 추가",
+        "savedN": "{{n}}번 문제를 저장했습니다.",
+        "duplicate": "이 문제(시험 + 번호)는 이미 있습니다. 덮어쓰지 않았습니다.",
+        "generic": "저장하지 못했습니다. 다시 시도하세요."
+      }
     }
   }
 }

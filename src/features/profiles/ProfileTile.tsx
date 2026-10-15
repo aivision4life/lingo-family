@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Profile } from "@shared/profile";
 import { cn } from "@/lib/utils";
+import { ProfileAvatar } from "./ProfileAvatar";
 
 type TileProps = {
   label: string;
@@ -58,7 +59,7 @@ export function ProfileTile({ profile, isActive, managing, onClick }: ProfileTil
         )
       }
     >
-      <span aria-hidden>{profile.avatar}</span>
+      <ProfileAvatar profile={profile} variant="tile" />
       {profile.has_pin && !managing && (
         <>
           <Lock className="absolute right-2 bottom-2 size-5 text-muted-foreground" aria-hidden />

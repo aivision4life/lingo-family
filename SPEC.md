@@ -94,6 +94,7 @@ Priority: **P0** = MVP, **P1** = next, **P2** = later.
 - [x] Create / edit / delete profile (adult only can delete).
 - [x] Profile picker, remember last profile per device.
 - [x] Per-profile settings listed in §2.
+- [x] **Avatar photo (M2.10):** besides the 16-emoji picker, an adult can upload a real photo ("My photo": resized in the browser ≤ 512 px WebP, the server only re-checks — no AI drawing, no quota). The photo, when set, takes priority over the emoji everywhere the avatar is shown. It is stored content-addressed (same `images/upload/<sha1>.<ext>` R2 scheme as word/phrase/example photos — `storeUploadedImage()` in `worker/services/imageUpload.ts`, shared by both), so an identical upload elsewhere is reused for free. `POST` / `DELETE /api/profiles/:id/avatar-photo` require the calling profile (`profile_id`) to be an adult (`requireAdult`, same as word/phrase/example image uploads); editing is only reachable through the editor page already gated to adults. Removing a photo clears `profiles.avatar_photo` but never deletes the R2 object (it may be shared with a word/phrase/example image). Only available in edit mode (not while creating the very first profile, which has no id yet).
 
 **Done when:** two profiles on the same device have completely separate review queues.
 (Verified in M1.4: profiles cannot see or answer each other's cards.)
@@ -157,8 +158,15 @@ Decisions (M1.7):
 - One-off `npm run assign-creator -- --profile <id> [--apply]`: content moved from local before M2.7 has `created_by_profile = NULL`; the script lists (dry run) or sets (`--apply`, after a production backup) those rows to one profile, touching only rows still NULL.
 
 **Image quota banner (M2.8)** — raised the daily image limits and made a skipped draw visible.
-- [x] Limits raised from 60/profile + 150/family to **100/profile/day, 250/family/day** (`IMAGE_DAILY_QUOTA`, `IMAGE_FAMILY_DAILY_CAP` in `shared/image.ts`, the single place both numbers live).
+- [x] Limits raised from 60/profile + 150/family to 100/profile/day, 250/family/day (superseded by M2.9 below).
 - [x] When a draw is skipped because either limit is reached (API answers `quota: true`), every place with a draw button shows an amber banner (`ImageQuotaNotice`, same style as `AudioStatus` / `LearningStatusNotice`) naming when the quota resets (UTC midnight, formatted in the viewer's own device time/locale) — word, phrase and example `ImageTools`, and Settings → "Create images for older words". Previously this was a small grey line of text, easy to miss.
+
+**Billing fix + account-wide exhaustion (M2.9)** — on production, Workers AI's own account-wide daily Neuron allocation (10,000/day) ran out ("4006"), and the app was double-charging its own quota for drawings that never produced an image.
+- [x] `usage_daily`'s image quota is now billed **only when a drawing actually succeeds** (including a success via the fallback model); a model call that errors refunds its unit at once (`refundImageQuota` in `worker/lib/quota.ts`). The existing atomic check-then-consume step is unchanged, so two concurrent drawings still can never take the same last unit.
+- [x] Error 4006 (account-wide Neuron allocation used up) is detected (`isProviderExhaustedError` in `worker/services/imageModels.ts`) and short-circuits: no fallback-model attempt, no further items in the same batch, and the item is left `none` (never `failed`) so it stays retryable once the allocation resets. The result carries a separate `provider_exhausted: true` flag (distinct from `quota`), threaded through `ensure`/`retry`/`redraw`/`backfill` to the `ImageState` / `BackfillResponse` API contracts.
+- [x] The UI shows a distinct amber banner (`ProviderExhaustedNotice`, i18n `images.providerExhaustedBanner`) wherever a draw button exists, separate from the per-profile/family `ImageQuotaNotice`.
+- [x] While a 4006 was seen recently, drawing new words' images in the background is paused: a module-scoped flag (`isProviderExhausted()` / `markProviderExhausted()` in `worker/services/imageJobs.ts`, 10-minute window) makes `drawAfterSave()` skip starting the background job entirely. This is a best-effort, per-Worker-isolate cache (Cloudflare may recycle the isolate sooner), not a durable guarantee — Workers AI's own error is always the source of truth. New items stay `pending` (claimed at save time) and become claimable again once stale, same as any cut-off `waitUntil` job.
+- [x] Limits lowered again to **60/profile/day, 100/family/day** (`IMAGE_DAILY_QUOTA`, `IMAGE_FAMILY_DAILY_CAP` in `shared/image.ts`, the single place both numbers live) after measuring real usage against the account's free Neuron allocation.
 
 **Done when:** typing `학생` and pressing "Add" produces a complete entry like the example in §3 within ~5 seconds, with audio playable; images appear shortly after (background generation).
 
@@ -179,8 +187,8 @@ Images (M1.8):
 - [x] **When images are drawn:** right after saving, the **word** and its **selected phrases** are drawn. **Example sentence** images are drawn **lazily**, the first time the sentence is displayed. Unselected phrases are never drawn.
 - [x] Generation runs **in the background with Workers `waitUntil`** (Cloudflare Queues later). Image status per item: `none` (lazy, not requested yet) → `pending` → `ready` | `failed`. The UI shows the emoji placeholder and updates automatically when the image is ready; `failed` shows a **"Try again"** button (plus "Redraw" with an editable prompt).
 - [x] Stored in R2, **content-addressed**; an image that already exists is never drawn again. `image_prompt` and `image_source` (`ai` | `upload`) are stored with the item.
-- [x] Daily quota: service `image` in `usage_daily`, default **100 images per profile per day**, plus a **family-wide daily cap** of **250/day** (`IMAGE_DAILY_QUOTA` / `IMAGE_FAMILY_DAILY_CAP` in `shared/image.ts`, the one place to change both; one atomic SQL statement checks both, resets at UTC midnight). Every real `env.AI` call counts (a fallback drawing costs 2); R2 hits are free. When a limit is reached the item keeps its placeholder (`none`) and an amber **quota banner** is shown (M2.8) wherever a draw button exists (word/phrase/example `ImageTools`, "Create images for older words"), naming the reset time in the viewer's own device time; nothing fails.
-- [x] Settings → **"Create images for older words"** (adults): draws words / phrases that were never drawn, one word per request, within the quotas; missing prompts come from one LLM call per word. Settings also shows **today's usage**: family images x/250, this profile's images y/100, LLM and TTS calls.
+- [x] Daily quota: service `image` in `usage_daily`, default **60 images per profile per day**, plus a **family-wide daily cap** of **100/day** (`IMAGE_DAILY_QUOTA` / `IMAGE_FAMILY_DAILY_CAP` in `shared/image.ts`, the one place to change both; one atomic SQL statement checks both, resets at UTC midnight). Only a drawing that actually succeeds is billed (M2.9: a failed attempt, including one superseded by the fallback model, refunds its unit); R2 hits are free. When our own limit is reached the item keeps its placeholder (`none`) and an amber **quota banner** is shown (M2.8) wherever a draw button exists; when Workers AI's own account-wide allocation is used up (error 4006, M2.9) a separate **provider-exhausted banner** is shown instead, and the background auto-draw on new words pauses for a short while — nothing fails either way.
+- [x] Settings → **"Create images for older words"** (adults): draws words / phrases that were never drawn, one word per request, within the quotas; missing prompts come from one LLM call per word. Settings also shows **today's usage**: family images x/100, this profile's images y/60, LLM and TTS calls.
 
 Decisions (M1.3):
 - TTS: Azure Speech REST, output `audio-24khz-48kbitrate-mono-mp3` (mp3, mono, 24 kHz).
@@ -263,6 +271,7 @@ Decisions (M1.9):
 
 ### F6. AI enrichment & explanations — P0 (enrich), P1 (explain)
 - [x] Enrichment (used by F2) returns **strict JSON** validated by a schema; invalid output → one retry → error message.
+- [x] **Content sanity check (M2.11):** the schema only checks shape, not script — it missed a stray Latin letter inside a Korean sentence ("이야기에 a 빠져들다..."). Every vi/en/ko string the LLM generates (word & phrase glosses, example sentences and their translations, a typed sentence's AI translations/suggested rewrite) is also checked for the wrong script (`worker/services/contentCheck.ts`): Korean text must be Hangul (digits/punctuation/common loanword acronyms like TV/AI allowed; a lone Latin letter is always wrong), English text must not contain Hangul/Han/Kana, Vietnamese text must not contain Hangul. A violation shares the schema's one-retry budget (`generateStructured`'s optional `validateContent`); if it is still wrong afterwards, that one example/phrase/suggestion is dropped (logged, never saved) rather than failing the whole enrichment — a required, non-droppable field (e.g. a word's own gloss) is only logged. `npm run scan-llm-content` lists (never fixes) existing rows that would be flagged.
 - [x] Resilient LLM calls: 429/500/503 and network errors are retried 3 times (backoff 1s, 3s, 9s with jitter), then the optional `LLM_FALLBACK_MODEL` is tried once; 400/401/403 are not retried. Retries and the fallback do not use extra quota. `ai_cache.model` records the model that answered. If the AI is still busy, the UI says "AI is busy, try again in a few minutes" with a **Try again** button and keeps what was typed.
 - [x] Example sentences match the profile's level: kid → very short and concrete; beginner → simple; Korean (owner) → workplace/IT context allowed.
 - [x] Enrichment also returns (M1.7: phrases with 1 example each; M1.8: `image_prompt`, prompt versions `enrich-v4` / `phrases-v2`): an **`image_prompt`** for the word, each example and each phrase; **1–3 suggested phrases**, each with reading, glosses, 1–2 examples (with translations and `image_prompt`).
@@ -315,6 +324,21 @@ Decisions (M2.2):
 - Review preload: the first 30 cards of the session (3 downloads at a time; skipped when `navigator.connection.saveData`), then a window of the next 4 cards while reviewing. Preloading never asks for drawing.
 - Settings has an "Install app" card (browser install prompt, iPhone steps for Share → Add to Home Screen, or a hint). A small banner offers "New version — Reload"; updates are checked hourly.
 - `npm run preview` builds with `--mode preview` (production bundle and service worker, no Workers AI binding) so the production build can be tried locally.
+
+### F12. TOPIK II practice — P1
+**Stage 1 (M6.1, this milestone): question bank + import + practice.**
+- [x] Question bank: `section` (`reading` only so far), `exam` (free-form source/exercise label), `number` (the real TOPIK question number), `block` (explicit, e.g. "1~2" — from the source file name/heading, never guessed from `instruction`), `instruction`, `stem` (text and/or image), 4 `options` (each text and/or image), `correct_option`. No separate "question type" field and no shared-reading-passage entity: a pair of questions sharing one reading passage simply repeats it in each question's own `instruction`/`stem`.
+- [x] Import from `.docx` (`npm run topik-import`, `scripts/topikImport/`; source files are copyrighted, kept in `data/topik/`, gitignored): parses "유형: 문항 N~M" headings, "연습K" exam groups, "K-i" question labels, a 2-column table (stem row + 4 option cells) **or** an image stem + 4 list-paragraph options, the answer label ("N(M)") cross-checked against the bold+underlined option. A mismatch (between the two answer sources, or the file name vs. the heading's own declared block) is reported, never guessed; a malformed/mismatched item is skipped (not imported) and listed as an error. Idempotent: re-running skips a question that already exists (same `section`+`exam`+`number`) unless `--force`. Default is a dry run (prints a report only); `--apply` backs up production D1 first, then imports with `verified = false`.
+- [x] Review screen (Settings → TOPIK → "Quản lý câu hỏi"): imported questions start unverified; an adult reviews (sees the detected answer), edits if needed, and approves — one at a time or a whole exam/block at once ("Duyệt cả nhóm"). A question with an import warning (e.g. a number cross-check mismatch) sorts first. Only verified questions are used for practice.
+- [x] Manual form (fallback next to import): same fields, saved already verified. Adults can edit/delete any question (`requireAdult`).
+- [x] Practice: pick a question-number block (derived from the `block` field, e.g. "1~2", "9") → up to 10 questions per session, ordered per profile by ts-fsrs `due` (own `topik_cards` table, independent of word/phrase cards): overdue-and-previously-wrong first, then never-attempted, then other due questions. One question at a time; the answer is shown immediately after picking an option (no quiz-at-the-end). Every attempt is logged (`topik_attempts`: selected option, correct/not, time taken) per profile.
+- [x] No AI in this phase; no daily quota (images are not AI-drawn, just optionally uploaded with the import or the manual form, so quota doesn't apply). Images use the same R2 upload/validation as elsewhere (`storeUploadedImage()`), but with their own, looser size limit (scans need to stay legible): ≤ 1600 px, ≤ ~1 MB (`TOPIK_IMAGE_MAX_SIDE` / `TOPIK_IMAGE_MAX_BYTES`, `shared/topik.ts`).
+- [x] Entry point: a card on Home ("Luyện TOPIK II"), not a 5th bottom-nav item (kept to 4 for mobile width).
+
+**Later stages (not yet built):**
+- [ ] **M6.2** — tap a word in the stem/options to see its meaning (reuses the word-lookup/gloss machinery from F2).
+- [ ] **M6.3** — an explanation when the answer is wrong, plus suggested vocabulary/phrases to add to the library from a missed question.
+- [ ] **M6.4** — a timed mock test mode (a full question set, a countdown, one score at the end instead of per-question feedback).
 
 ---
 
@@ -372,6 +396,18 @@ word_chars    word_id, position, hanja                  -- Korean words only (F7
 
 ai_cache      key (hash of task + input + model), response_json, created_at
 usage_daily   date, profile_id, service ('tts'|'pron'|'llm'|'image' ← M1.8), count
+
+topik_questions id, section ('reading'), exam, number, block, instruction?,            ← M6.1
+                stem_text?, stem_image_key?, options (json, 4×{text?, image_key?}),
+                correct_option, warning? (set by the import script), verified, created_by_profile?,
+                created_at, updated_at
+                UNIQUE(section, exam, number)
+topik_cards     id, profile_id, question_id → topik_questions (ON DELETE CASCADE),      ← M6.1
+                <ts-fsrs Card fields, same as `cards`>, updated_at
+                UNIQUE(profile_id, question_id)
+topik_attempts  id, profile_id, question_id? → topik_questions (ON DELETE SET NULL),    ← M6.1
+                section, exam, number (copied, so history reads even after a question is deleted),
+                selected_option, is_correct, duration_ms?, answered_at
 ```
 
 Notes:
@@ -384,7 +420,7 @@ Notes:
 Media storage (R2) keys:
 - `audio/{lang}/{voice}/{sha1(text)}.mp3`
 - `images/ai/{sha1(model + prompt + style_version + nonce + size)}.{webp|jpg}`
-- `images/upload/{sha1(file bytes)}.webp`
+- `images/upload/{sha1(file bytes)}.webp` — also used by TOPIK stem/option photos (M6.1, same content-addressed scheme, just a looser size limit)
 
 ---
 
@@ -417,7 +453,7 @@ Design: mobile-first, clean, images first, large Korean typography (Noto Sans KR
 | Cloudflare Workers (+ static assets) | Hosts the SPA and `/api` | — |
 | Cloudflare D1 | Database | — |
 | Cloudflare R2 | Audio & images | Media is small (images 512 px WebP/JPEG; target total < 2 GB) |
-| Cloudflare Workers AI (FLUX) | Image generation via the `env.AI` binding (word + selected phrases at save time, example sentences lazily) | Cache-first (content-addressed R2 key); never redraw an existing key; **100 images/profile/day + 250/day family cap** (raised from 60/150 in M2.8, still well under the free allocation). Free allocation: **10,000 Neurons/day** (checked 2026-10). Benchmark (2026-10-09): `flux-2-klein-4b` (primary) ≈ **26 Neurons/image**, `flux-1-schnell` (fallback) ≈ 58 ⇒ 250 images/day ≈ 6,500 Neurons at worst, well inside the free tier. Compare with the real Neurons in the dashboard after some use. |
+| Cloudflare Workers AI (FLUX) | Image generation via the `env.AI` binding (word + selected phrases at save time, example sentences lazily) | Cache-first (content-addressed R2 key); never redraw an existing key; **60 images/profile/day + 100/day family cap** (lowered from 100/250 in M2.9, after production hit the account's own daily Neuron allocation). Only a successful drawing is billed (M2.9: a failed attempt is refunded). Free allocation: **10,000 Neurons/day** (checked 2026-10); when it runs out Workers AI answers error **4006**, detected and surfaced as a distinct `provider_exhausted` state (M2.9) rather than retried or billed. Benchmark (2026-10-09): `flux-2-klein-4b` (primary) ≈ **26 Neurons/image**, `flux-1-schnell` (fallback) ≈ 58. Compare with the real Neurons in the dashboard after some use. |
 | Cloudflare Access | Family-only login | Allow-list of family emails |
 | Azure Speech: TTS | Generate audio once per text (words, phrases, examples) | Cache-first (R2 key = lang + voice + sha1(text)); never re-generate an existing key; 200 calls/profile/day. Free tier F0: 0.5M neural characters/month (checked 2026-10) |
 | Azure Speech: Pronunciation Assessment | Speaking score | Per-profile daily quota (`usage_daily`) |
@@ -473,9 +509,16 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M2.6 | Typed sentences + AI | AI help for sentences / phrases typed by hand (translate, picture prompt, check the sentence), add / edit / delete example sentences, pron_attempts keep history | [x] |
 | M2.7 | Library scope filter | Filter the shared library by profile ("I'm learning" / "I added" / "All"), cards synced right away on word creation | [x] |
 | M2.8 | Image quota banner | Amber banner (reset time) wherever a draw is skipped for quota; limits raised to 100/profile, 250/family | [x] |
+| M2.9 | Billing fix + provider exhaustion | Only bill image quota on success (refund on failure); detect Workers AI's own 4006 account exhaustion, distinct banner + pause auto-draw; limits lowered to 60/profile, 100/family | [x] |
+| M2.10 | Profile avatar photo | Upload a real photo as a profile avatar (adults only, no AI, no quota), shared content-addressed storage with word/phrase/example photos, server-side adult check on the new routes | [x] |
+| M2.11 | LLM content sanity check | Script/script-mismatch check (stray Latin in Korean, etc.) on every LLM-generated vi/en/ko string, sharing the existing one-retry budget; bad examples/phrases are dropped rather than saved; read-only scan script for existing data | [x] |
 | M3 | Speaking | F5 pronunciation scoring, speaking cards | [ ] |
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |
+| M6.1 | TOPIK II practice (stage 1) | F12 question bank + `.docx` import (dry-run/apply, idempotent) + review screen + manual form + practice (own ts-fsrs scheduling, ~10 questions/session) + attempt history | [x] |
+| M6.2 | TOPIK: word lookup | Tap a word in a TOPIK question to see its meaning | [ ] |
+| M6.3 | TOPIK: explanations | Explanation on a wrong answer + suggested vocabulary from a missed question | [ ] |
+| M6.4 | TOPIK: mock test | Timed full mock test, one score at the end | [ ] |
 
 ---
 
@@ -494,3 +537,4 @@ Free-tier limits change, so check the providers' current pricing pages before re
 - ~~Phrase selection shared or per profile?~~ **Decided:** shared family library; cards per profile.
 - ~~Do phrases count toward `daily_new_limit`?~~ **Decided:** yes, together with words.
 - ~~Rename `hanzi_traditional` → `hanja`?~~ **Decided:** yes, in the M1.6 migration.
+- **Việc cần vá sau (M2.10):** `PATCH /api/profiles/:id` and `DELETE /api/profiles/:id` have no server-side permission check at all (no `profile_id` of the caller, no `requireAdult`) — only the client hides the editor from kid profiles (`canManageProfiles`). The new `POST`/`DELETE /api/profiles/:id/avatar-photo` routes added `requireAdult` (M2.10); the older profile edit/delete routes should get the same check later.

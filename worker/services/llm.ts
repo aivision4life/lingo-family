@@ -138,12 +138,19 @@ async function geminiAttempt(doFetch: typeof fetch, apiKey: string, model: strin
 /**
  * Asks for JSON matching `schema`. Invalid output (bad JSON or schema mismatch) is retried
  * once with the validation errors appended; a second failure throws `invalid_output`.
- * Returns the data and the model that produced it (the fallback model, if it was used).
+ *
+ * `validateContent` (M2.11) is an extra, non-schema check (e.g. a stray Latin letter inside a
+ * Korean sentence — the JSON schema only enforces shape, not script) applied once the schema
+ * parses; a non-empty result shares the same one-retry budget as a schema mismatch. Unlike a
+ * schema failure, a content problem still present after the retry does **not** throw: the data is
+ * returned as-is and it is the caller's job to drop just the offending item (see
+ * `worker/services/contentCheck.ts` and its callers in `enrich.ts` / `customItem.ts`).
  */
 export async function generateStructured<S extends z.ZodType>(
   llm: LlmClient,
   schema: S,
   req: Omit<LlmRequest, "jsonSchema">,
+  validateContent?: (data: z.output<S>) => string[],
 ): Promise<{ data: z.output<S>; model: string }> {
   const jsonSchema = z.toJSONSchema(schema);
   let user = req.user;
@@ -160,9 +167,15 @@ export async function generateStructured<S extends z.ZodType>(
       continue;
     }
     const result = schema.safeParse(json);
-    if (result.success) return { data: result.data, model };
-    lastProblem = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    user = `${req.user}\n\nYour previous answer did not match the schema (${lastProblem}). Return corrected JSON only.`;
+    if (!result.success) {
+      lastProblem = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+      user = `${req.user}\n\nYour previous answer did not match the schema (${lastProblem}). Return corrected JSON only.`;
+      continue;
+    }
+    const contentProblems = validateContent?.(result.data) ?? [];
+    if (contentProblems.length === 0 || attempt === 1) return { data: result.data, model };
+    lastProblem = contentProblems.join("; ");
+    user = `${req.user}\n\nYour previous answer had content problems (${lastProblem}). Return corrected JSON only, fixing them.`;
   }
   throw new LlmError("invalid_output", `Invalid LLM output after retry: ${lastProblem}`);
 }

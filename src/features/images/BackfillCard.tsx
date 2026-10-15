@@ -6,8 +6,13 @@ import { Button } from "@/components/ui/button";
 import { wordErrorMessage } from "@/features/words/format";
 import { backfillStep, useBackfillStatus } from "./api";
 import { ImageQuotaNotice } from "./ImageQuotaNotice";
+import { ProviderExhaustedNotice } from "./ProviderExhaustedNotice";
 
-type Phase = { kind: "idle" } | { kind: "running"; term: string | null } | { kind: "done" | "stopped" | "quota" } | { kind: "error"; message: string };
+type Phase =
+  | { kind: "idle" }
+  | { kind: "running"; term: string | null }
+  | { kind: "done" | "stopped" | "quota" | "provider_exhausted" }
+  | { kind: "error"; message: string };
 
 /**
  * Settings: "Create images for older words". Calls the backfill endpoint one word at a time
@@ -35,6 +40,7 @@ export function BackfillCard({ profileId }: { profileId: string }) {
         const r = await backfillStep(profileId);
         setDrawn((n) => n + r.drawn);
         void refresh();
+        if (r.provider_exhausted) return setPhase({ kind: "provider_exhausted" });
         if (r.quota) return setPhase({ kind: "quota" });
         if (!r.word) return setPhase({ kind: "done" });
         setPhase({ kind: "running", term: r.word.term });
@@ -72,6 +78,7 @@ export function BackfillCard({ profileId }: { profileId: string }) {
         </Button>
       )}
       {phase.kind === "quota" && <ImageQuotaNotice />}
+      {phase.kind === "provider_exhausted" && <ProviderExhaustedNotice />}
       {(message || drawn > 0) && (
         <p role="status" className="text-sm text-muted-foreground">
           {message} {drawn > 0 && t("images.backfill.drawn", { count: drawn })}

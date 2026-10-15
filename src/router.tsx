@@ -11,6 +11,9 @@ import { ProfilePickerPage } from "@/pages/ProfilePickerPage";
 import { ReviewPage } from "@/pages/ReviewPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { DecksPage, NotFoundPage, StatsPage } from "@/pages/SimplePages";
+import { TopikBlockPickerPage } from "@/pages/TopikBlockPickerPage";
+import { TopikManagePage } from "@/pages/TopikManagePage";
+import { TopikPracticePage } from "@/pages/TopikPracticePage";
 import { WordDetailPage } from "@/pages/WordDetailPage";
 import { WordLibraryPage } from "@/pages/WordLibraryPage";
 
@@ -25,7 +28,13 @@ export const router = createBrowserRouter([
     element: <RequireProfile />,
     children: [
       // Review hides the navigation to keep the learner focused (only an Exit button).
-      { element: <FocusLayout />, children: [{ path: "review", element: <ReviewPage /> }] }, // 3
+      {
+        element: <FocusLayout />,
+        children: [
+          { path: "review", element: <ReviewPage /> }, // 3
+          { path: "topik/practice", element: <TopikPracticePage /> },
+        ],
+      },
       {
         element: <AppLayout />,
         children: [
@@ -37,6 +46,8 @@ export const router = createBrowserRouter([
           { path: "practice/:wordId?", element: <PracticePage /> }, // 7
           { path: "chars/:char", element: <CharacterPage /> }, // 8
           { path: "decks", element: <DecksPage /> }, // 9
+          { path: "topik", element: <TopikBlockPickerPage /> },
+          { path: "topik/manage", element: <TopikManagePage /> },
           { path: "settings", element: <SettingsPage /> }, // 10
           { path: "stats", element: <StatsPage /> }, // 11
           { path: "*", element: <NotFoundPage /> },

@@ -7,6 +7,7 @@ import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeP
 import { ApiError } from "@/lib/api";
 import { useImageActions } from "./api";
 import { ImageQuotaNotice } from "./ImageQuotaNotice";
+import { ProviderExhaustedNotice } from "./ProviderExhaustedNotice";
 import { RedrawDialog } from "./RedrawDialog";
 import { resizeForUpload } from "./resize";
 
@@ -26,13 +27,16 @@ export function ImageTools({ kind, id, image, suggestion, compact = false }: Pro
   const { profile } = useActiveProfile();
   const actions = useImageActions({ kind, id });
   const [open, setOpen] = useState(false);
-  // "quota" gets its own banner (ImageQuotaNotice); any other notice is a plain line of text.
-  const [notice, setNotice] = useState<"quota" | string | null>(null);
+  // "quota" / "provider_exhausted" each get their own banner; any other notice is a plain line of text.
+  const [notice, setNotice] = useState<"quota" | "provider_exhausted" | string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   if (!profile || !canManageProfiles(profile)) return null;
 
   const busy = actions.retry.isPending || actions.redraw.isPending || actions.upload.isPending;
-  const after = (s: ImageState) => setNotice(s.quota ? "quota" : s.image_status === "failed" ? t("images.failed") : null);
+  const after = (s: ImageState) =>
+    setNotice(
+      s.provider_exhausted ? "provider_exhausted" : s.quota ? "quota" : s.image_status === "failed" ? t("images.failed") : null,
+    );
   const onError = (err: unknown) => {
     const code = err instanceof ApiError ? err.code : "";
     setNotice(
@@ -77,7 +81,10 @@ export function ImageTools({ kind, id, image, suggestion, compact = false }: Pro
           onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ""; }} />
       </div>
       {notice === "quota" && <ImageQuotaNotice />}
-      {notice && notice !== "quota" && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+      {notice === "provider_exhausted" && <ProviderExhaustedNotice />}
+      {notice && notice !== "quota" && notice !== "provider_exhausted" && (
+        <p role="status" className="text-sm text-muted-foreground">{notice}</p>
+      )}
       <RedrawDialog
         open={open}
         onOpenChange={setOpen}

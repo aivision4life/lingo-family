@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
+import { ProfileAvatar } from "@/features/profiles/ProfileAvatar";
 import { cn } from "@/lib/utils";
 
 /** Active profile's avatar (+ name); opens the profile picker. */
@@ -18,9 +19,7 @@ export function ProfileButton({ showName = true, className }: { showName?: boole
         className,
       )}
     >
-      <span className="text-2xl" aria-hidden>
-        {profile?.avatar}
-      </span>
+      {profile && <ProfileAvatar profile={profile} variant="nav" />}
       {showName && <span className="max-w-32 truncate font-medium">{profile?.name}</span>}
     </Link>
   );

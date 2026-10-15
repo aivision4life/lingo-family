@@ -6,6 +6,7 @@ import { uiLangSchema } from "@shared/enums";
 import { Button } from "@/components/ui/button";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useCreateProfile, useUpdateProfile } from "@/features/profiles/api";
+import { AvatarPhotoControl } from "@/features/profiles/AvatarPhotoControl";
 import { DeleteProfileButton } from "@/features/profiles/DeleteProfileButton";
 import { profileErrorMessage } from "@/features/profiles/errors";
 import { emptyFormValues, formValuesFromProfile } from "@/features/profiles/formValues";
@@ -96,6 +97,7 @@ function EditProfile({ profileId }: { profileId: string }) {
       onSubmit={(patch) =>
         update.mutate({ id: target.id, patch }, { onSuccess: () => void navigate("/profiles") })
       }
+      avatarPhoto={active && <AvatarPhotoControl profile={target} actorId={active.id} />}
       footer={
         <DeleteProfileButton
           profile={target}

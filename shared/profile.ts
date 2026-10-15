@@ -49,6 +49,8 @@ export const profileSchema = z.object({
   id: z.string(),
   name: z.string(),
   avatar: z.string(),
+  /** R2 key of an uploaded photo (M2.10); takes priority over `avatar` (emoji) when set. Served via `/api/media/{key}`. */
+  avatar_photo: z.string().nullable(),
   ui_lang: uiLangSchema,
   gloss_lang: uiLangSchema,
   is_kid: z.boolean(),

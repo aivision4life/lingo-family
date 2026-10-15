@@ -20,6 +20,8 @@ type CommonProps = {
   lockAdult?: boolean;
   /** Extra actions under the form, e.g. a delete button. */
   footer?: ReactNode;
+  /** Edit mode only: the "My photo" avatar control (needs the profile's id, so it's built by the caller). */
+  avatarPhoto?: ReactNode;
 };
 
 type Props = CommonProps &
@@ -79,6 +81,12 @@ export function ProfileForm(props: Props) {
           onChange={(e) => set("name", e.target.value)}
         />
       </FormField>
+
+      {props.avatarPhoto && (
+        <FormField id="pf-avatar-photo" label={t("profiles.form.avatarPhoto")}>
+          {props.avatarPhoto}
+        </FormField>
+      )}
 
       <FormField id="pf-avatar" label={t("profiles.form.avatar")}>
         <AvatarPicker id="pf-avatar" value={values.avatar} onChange={(a) => set("avatar", a)} />

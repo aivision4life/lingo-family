@@ -92,3 +92,11 @@ export const IMAGE_MODELS: ImageModel[] = [
 /** True when Workers AI says the model id does not exist (or is not available to the account). */
 export const isUnknownModelError = (err: unknown) =>
   /no such model|model not found|unknown model|not a valid model|5007/i.test(err instanceof Error ? err.message : String(err));
+
+/**
+ * True when Workers AI says the account's daily free Neuron allocation (10,000/day) is used up
+ * (error 4006). This is a Cloudflare account-wide limit, separate from our own `usage_daily`
+ * per-profile/family image quotas; every model and every item fails the same way until it resets.
+ */
+export const isProviderExhaustedError = (err: unknown) =>
+  /\b4006\b|daily free allocation|used up.*neurons/i.test(err instanceof Error ? err.message : String(err));

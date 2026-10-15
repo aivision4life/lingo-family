@@ -19,10 +19,12 @@ import {
   IMAGE_SOURCES,
   IMAGE_STATUSES,
   LEARN_LANGS,
+  TOPIK_SECTIONS,
   UI_LANGS,
   USAGE_SERVICES,
   type LearnLang,
 } from "../shared/enums";
+import type { TopikOptions } from "../shared/topik";
 
 const id = () =>
   text("id")
@@ -55,6 +57,8 @@ export const profiles = sqliteTable("profiles", {
   id: id(),
   name: text("name").notNull(),
   avatar: text("avatar").notNull(),
+  /** R2 key of an uploaded photo (M2.10); takes priority over `avatar` (emoji) when set. */
+  avatar_photo: text("avatar_photo"),
   ui_lang: text("ui_lang", { enum: UI_LANGS }).notNull().default("vi"),
   gloss_lang: text("gloss_lang", { enum: UI_LANGS }).notNull().default("vi"),
   is_kid: bool("is_kid").notNull().default(false),
@@ -359,4 +363,103 @@ export const usage_daily = sqliteTable(
     count: integer("count").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.date, t.profile_id, t.service] })],
+);
+
+// --- TOPIK II practice (SPEC F12, M6.1) --------------------------------------------------------
+
+/**
+ * One multiple-choice question. No "question type" field and no separate reading-group entity:
+ * a pair of questions sharing one reading passage simply repeats it in each question's own
+ * `instruction`/`stem`. Images (`image_key` inside `stem`/`options`) are R2 keys, stored content-
+ * addressed like other uploads (`storeUploadedImage()`), with their own, looser size limit.
+ */
+export const topik_questions = sqliteTable(
+  "topik_questions",
+  {
+    id: id(),
+    section: text("section", { enum: TOPIK_SECTIONS }).notNull(),
+    /** Free-form source/exercise label, e.g. "Yonsei/연습1" — unique together with `number`. */
+    exam: text("exam").notNull(),
+    /** The real TOPIK question number (not a position within `exam`). */
+    number: integer("number").notNull(),
+    /** Explicit question-number block, e.g. "1~2" or "9" (from the source heading/file name). */
+    block: text("block").notNull(),
+    instruction: text("instruction"),
+    stem_text: text("stem_text"),
+    stem_image_key: text("stem_image_key"),
+    /** 4 options: [{ text, image_key }, ...] (TopikContent[4], shared/topik.ts). */
+    options: text("options", { mode: "json" }).$type<TopikOptions>().notNull(),
+    correct_option: integer("correct_option").notNull(),
+    /** Set by the import script when it had to guess/cross-check something (e.g. a number
+     * mismatch); shown on the review screen so those rows surface first. Null otherwise. */
+    warning: text("warning"),
+    /** false until an adult reviews a freshly imported question and saves it. */
+    verified: integer("verified", { mode: "boolean" }).notNull().default(false),
+    created_by_profile: text("created_by_profile").references(() => profiles.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+    updated_at: timestamp("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("topik_questions_section_exam_number_uq").on(t.section, t.exam, t.number),
+    index("topik_questions_section_number_idx").on(t.section, t.number),
+  ],
+);
+
+/** One ts-fsrs card per (profile, question); same fields as `cards`, scheduled independently. */
+export const topik_cards = sqliteTable(
+  "topik_cards",
+  {
+    id: id(),
+    profile_id: text("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    question_id: text("question_id")
+      .notNull()
+      .references(() => topik_questions.id, { onDelete: "cascade" }),
+    due: timestamp("due").notNull(),
+    stability: real("stability").notNull(),
+    difficulty: real("difficulty").notNull(),
+    elapsed_days: integer("elapsed_days").notNull(),
+    scheduled_days: integer("scheduled_days").notNull(),
+    learning_steps: integer("learning_steps").notNull(),
+    reps: integer("reps").notNull(),
+    lapses: integer("lapses").notNull(),
+    state: integer("state").notNull(),
+    last_review: timestamp("last_review"),
+    updated_at: timestamp("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("topik_cards_profile_question_uq").on(t.profile_id, t.question_id),
+    index("topik_cards_profile_due_idx").on(t.profile_id, t.due),
+  ],
+);
+
+/**
+ * Practice history. `question_id` is `SET NULL` if the question is later deleted, but `section`/
+ * `exam`/`number` are copied so the attempt stays readable (same idea as `pron_attempts`).
+ */
+export const topik_attempts = sqliteTable(
+  "topik_attempts",
+  {
+    id: id(),
+    profile_id: text("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    question_id: text("question_id").references(() => topik_questions.id, { onDelete: "set null" }),
+    section: text("section", { enum: TOPIK_SECTIONS }).notNull(),
+    exam: text("exam").notNull(),
+    number: integer("number").notNull(),
+    selected_option: integer("selected_option").notNull(),
+    is_correct: integer("is_correct", { mode: "boolean" }).notNull(),
+    duration_ms: integer("duration_ms"),
+    answered_at: createdAt(),
+  },
+  (t) => [
+    index("topik_attempts_profile_time_idx").on(t.profile_id, t.answered_at),
+    index("topik_attempts_question_idx").on(t.question_id),
+  ],
 );

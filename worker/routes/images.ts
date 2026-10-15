@@ -8,9 +8,6 @@ import {
   IMAGE_DAILY_QUOTA,
   IMAGE_ERRORS,
   IMAGE_FAMILY_DAILY_CAP,
-  IMAGE_MAX_SIDE,
-  IMAGE_UPLOAD_MAX_BYTES,
-  IMAGE_UPLOAD_TYPES,
   imageItemKindSchema,
   imageProfileRequestSchema,
   redrawRequestSchema,
@@ -23,23 +20,21 @@ import { profiles } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { requireAdult } from "../lib/access";
 import { runAiTask } from "../lib/aiTask";
-import { imageInfo } from "../lib/imageInfo";
 import { usageDate } from "../lib/quota";
 import { DEFAULT_GEMINI_MODEL } from "../services/llm";
 import { zv } from "../lib/validate";
 import { backfillRemaining, drawWordBackfill, fillImagePrompts, nextBackfillWord } from "../services/imageBackfill";
 import { drawClaimedItem, type DrawResult, type ImageDeps } from "../services/imageJobs";
 import { claimImage, IMAGE_TABLE, imageView, loadImageRow, newNonce, type ClaimMode } from "../services/imageStore";
+import { storeUploadedImage } from "../services/imageUpload";
 import type { ContentDeps } from "./words";
 
 const itemParam = zv("param", z.object({ kind: imageItemKindSchema, id: z.string().min(1) }));
 const profileBody = zv("json", imageProfileRequestSchema);
 
-const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-
-async function state(DB: D1Database, kind: ImageItemKind, id: string, quota = false): Promise<ImageState | null> {
+async function state(DB: D1Database, kind: ImageItemKind, id: string, quota = false, providerExhausted = false): Promise<ImageState | null> {
   const row = await loadImageRow(DB, kind, id);
-  return row ? { ...imageView(row), quota } : null;
+  return row ? { ...imageView(row), quota, provider_exhausted: providerExhausted } : null;
 }
 
 export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
@@ -54,7 +49,7 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
   async function claimAndDraw(c: Context<AppEnv>, kind: ImageItemKind, id: string, profileId: string, mode: ClaimMode, opts = {}) {
     let result: DrawResult | null = null;
     if (await claimImage(c.env.DB, kind, id, mode, opts)) result = await drawClaimedItem(deps(c, profileId), kind, id);
-    const s = await state(c.env.DB, kind, id, result?.quota ?? false);
+    const s = await state(c.env.DB, kind, id, result?.quota ?? false, result?.providerExhausted ?? false);
     return s ? c.json(s) : c.json({ error: "not_found" }, 404);
   }
 
@@ -103,23 +98,15 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
 
         const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
         const bytes = new Uint8Array(await c.req.arrayBuffer());
-        const info = imageInfo(bytes);
-        const expected = { "image/webp": "webp", "image/jpeg": "jpg", "image/png": "png" }[type];
-        const ok =
-          (IMAGE_UPLOAD_TYPES as readonly string[]).includes(type) &&
-          bytes.length > 0 && bytes.length <= IMAGE_UPLOAD_MAX_BYTES &&
-          info.ext === expected && info.width > 0 && info.height > 0 &&
-          info.width <= IMAGE_MAX_SIDE && info.height <= IMAGE_MAX_SIDE;
-        if (!ok) return c.json({ error: IMAGE_ERRORS.invalidUpload }, 400);
+        const stored = await storeUploadedImage(c.env.MEDIA, bytes, type);
+        if (!stored) return c.json({ error: IMAGE_ERRORS.invalidUpload }, 400);
 
-        const key = `images/upload/${hex(await crypto.subtle.digest("SHA-1", bytes))}.${info.ext}`;
-        if (!(await c.env.MEDIA.head(key))) await c.env.MEDIA.put(key, bytes, { httpMetadata: { contentType: type } });
         // A new nonce also stops an AI drawing still in flight from replacing the photo.
         await c.env.DB.prepare(
           `UPDATE ${IMAGE_TABLE[kind]} SET image_key = ?1, image_status = 'ready', image_source = 'upload',
              image_model = NULL, image_nonce = ?2, image_requested_at = NULL WHERE id = ?3`,
         )
-          .bind(key, newNonce(), id)
+          .bind(stored.key, newNonce(), id)
           .run();
         return c.json(await state(c.env.DB, kind, id));
       })
@@ -133,20 +120,32 @@ export const imageRoutes = ({ makeLlm, makeImageAi }: ContentDeps) => {
         if (!makeImageAi(c.env, c.req.url)) return c.json({ error: IMAGE_ERRORS.notConfigured }, 503);
 
         const word = await nextBackfillWord(db);
-        if (!word) return c.json(backfillResponseSchema.parse({ word: null, drawn: 0, remaining: 0, quota: false }));
+        if (!word) return c.json(backfillResponseSchema.parse({ word: null, drawn: 0, remaining: 0, quota: false, provider_exhausted: false }));
 
         const llm = makeLlm(c.env);
         if (!llm) return c.json({ error: WORD_ERRORS.aiNotConfigured }, 503);
         const prompts = await runAiTask(c, profile_id, (beforeLlmCall) => fillImagePrompts(db, llm, word, beforeLlmCall));
         if (!prompts.ok) {
           if (prompts.response.status === 429) {
-            return c.json({ word: { id: word.id, term: word.term }, drawn: 0, remaining: await backfillRemaining(c.env.DB), quota: true });
+            return c.json({
+              word: { id: word.id, term: word.term },
+              drawn: 0,
+              remaining: await backfillRemaining(c.env.DB),
+              quota: true,
+              provider_exhausted: false,
+            });
           }
           return prompts.response;
         }
 
-        const { drawn, quota } = await drawWordBackfill(db, deps(c, profile_id), word.id);
-        return c.json({ word: { id: word.id, term: word.term }, drawn, remaining: await backfillRemaining(c.env.DB), quota });
+        const { drawn, quota, providerExhausted } = await drawWordBackfill(db, deps(c, profile_id), word.id);
+        return c.json({
+          word: { id: word.id, term: word.term },
+          drawn,
+          remaining: await backfillRemaining(c.env.DB),
+          quota,
+          provider_exhausted: providerExhausted,
+        });
       })
 
       .get("/images/backfill/status", async (c) => c.json({ remaining: await backfillRemaining(c.env.DB) }))

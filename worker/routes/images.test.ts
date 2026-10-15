@@ -6,7 +6,9 @@ import type { PhraseInput } from "../../shared/phrase";
 import type { ProfileCreate } from "../../shared/profile";
 import { wordDetailSchema, type WordCreate } from "../../shared/word";
 import { usageDate } from "../lib/quota";
+import { resetProviderExhausted } from "../services/imageJobs";
 import { FAKE_JPEG, fakeImageAi } from "../test/fakeImageAi";
+import { FAKE_WEBP, oversizedWebp } from "../test/fakeUpload";
 import { createTestEnv, testApp } from "../test/testEnv";
 
 const KLEIN = "@cf/black-forest-labs/flux-2-klein-4b";
@@ -53,6 +55,7 @@ beforeEach(async () => {
   fake.calls.length = 0;
   fake.state.behaviour = {};
   fake.state.gate = null;
+  resetProviderExhausted();
   adult = ((await t.api("POST", "/profiles", profile())).body as { id: string }).id;
   kid = ((await t.api("POST", "/profiles", profile({ name: "Bé", is_kid: true }))).body as { id: string }).id;
 });
@@ -85,16 +88,17 @@ describe("images drawn after saving", () => {
     expect(new Uint8Array(await media.arrayBuffer())).toEqual(FAKE_JPEG);
   });
 
-  it("falls back to flux-1-schnell when klein fails (2 quota units) and records the model", async () => {
+  it("falls back to flux-1-schnell when klein fails; only the successful drawing is billed (M2.9)", async () => {
     fake.state.behaviour = { [KLEIN]: "error" };
     const id = await create("배");
     await t.settle();
     expect(await row("words", id)).toMatchObject({ image_status: "ready", image_model: "flux-1-schnell" });
     expect(fake.calls).toEqual([KLEIN, SCHNELL]);
-    expect(await imageUsage(adult)).toBe(2);
+    // klein's failed attempt is refunded; only schnell's successful one counts.
+    expect(await imageUsage(adult)).toBe(1);
   });
 
-  it("both models fail → failed; words typed by hand (no prompt) are not drawn", async () => {
+  it("both models fail → failed, but nothing is billed (each attempt is refunded) (M2.9)", async () => {
     fake.state.behaviour = { [KLEIN]: "error", [SCHNELL]: "error" };
     const failed = await create("감");
     const manual = await create("귤", { image_prompt: null, ai_generated: false });
@@ -102,6 +106,7 @@ describe("images drawn after saving", () => {
     expect(await row("words", failed)).toMatchObject({ image_status: "failed", image_key: null });
     expect(await row("words", manual)).toMatchObject({ image_status: "none" });
     expect(fake.calls).toEqual([KLEIN, SCHNELL]);
+    expect(await imageUsage(adult)).toBe(0);
   });
 
   it("an image already in R2 (same model + prompt + style + nonce) is reused without calling Workers AI", async () => {
@@ -169,20 +174,66 @@ describe("redraw, retry, upload", () => {
 
   it("upload: WebP ≤ 512 px and ≤ 300 KB is stored as is; bad files and kids are refused", async () => {
     const id = await create("사과", { image_prompt: null });
-    const webp = Uint8Array.from([..."RIFF\0\0\0\0WEBPVP8X"].map((ch) => ch.charCodeAt(0)).concat([10, 0, 0, 0, 0, 0, 0, 0, 0xff, 1, 0, 0xff, 1, 0]));
     const upload = (pid: string, body: Uint8Array, type = "image/webp") =>
       t.send(`/api/images/word/${id}/upload?profile_id=${pid}`, { method: "POST", headers: { "content-type": type }, body });
 
-    expect((await upload(kid, webp)).status).toBe(403);
-    expect((await upload(adult, webp, "image/png")).status).toBe(400); // type does not match the bytes
-    const big = Uint8Array.from(webp);
-    big.set([0xff, 3, 0], 24); // width 1024
-    expect((await upload(adult, big)).status).toBe(400);
+    expect((await upload(kid, FAKE_WEBP)).status).toBe(403);
+    expect((await upload(adult, FAKE_WEBP, "image/png")).status).toBe(400); // type does not match the bytes
+    expect((await upload(adult, oversizedWebp())).status).toBe(400);
 
-    const ok = await upload(adult, webp);
+    const ok = await upload(adult, FAKE_WEBP);
     expect(ok.status).toBe(200);
     expect(await row("words", id)).toMatchObject({ image_status: "ready", image_source: "upload", image_model: null });
     expect((await detail(id)).image_key).toMatch(/^images\/upload\/[0-9a-f]{40}\.webp$/);
     expect(fake.calls).toEqual([]);
+  });
+});
+
+describe("Workers AI account-wide Neuron allocation exhausted (4006, M2.9)", () => {
+  it("stops after the first model (no fallback attempt), refunds the quota unit, and keeps the item retryable", async () => {
+    fake.state.behaviour = { [KLEIN]: "exhausted" };
+    const id = await create("포도"); // a term/prompt never drawn elsewhere in this file (R2 hits are free, and would skip the AI call)
+    await t.settle();
+    expect(fake.calls).toEqual([KLEIN]); // flux-1-schnell was never tried
+    expect(await row("words", id)).toMatchObject({ image_status: "none", image_key: null }); // not "failed": still retryable
+    expect(await imageUsage(adult)).toBe(0);
+  });
+
+  it("the API reports provider_exhausted (not quota) and still bills nothing", async () => {
+    const id = await create("수박"); // drawn successfully at save, with the default "ok" behaviour
+    await t.settle();
+    expect(await row("words", id)).toMatchObject({ image_status: "ready" });
+
+    fake.state.behaviour = { [KLEIN]: "exhausted" };
+    const redraw = await post(`/images/word/${id}/redraw`, { profile_id: adult, image_prompt: "a different scene" });
+    expect(redraw).toMatchObject({ status: 200, body: { image_status: "none", quota: false, provider_exhausted: true } });
+    expect(await imageUsage(adult)).toBe(1); // the one successful drawing at save still counts; the exhausted redraw refunds its own attempt
+  });
+
+  it("while exhausted, saving a new word does not even start the background drawing job", async () => {
+    fake.state.behaviour = { [KLEIN]: "exhausted" };
+    await create("딸기"); // trips the flag
+    await t.settle();
+    fake.calls.length = 0;
+
+    const second = await create("참외"); // saved while still within the exhaustion window
+    await t.settle();
+    expect(fake.calls).toEqual([]); // drawAfterSave skipped it: no model was called at all
+    expect(await row("words", second)).toMatchObject({ image_status: "pending" }); // claimed at save time, job just never ran
+    expect(await imageUsage(adult)).toBe(0);
+
+    resetProviderExhausted(); // e.g. the 10-minute window elapsed
+    fake.state.behaviour = {};
+    const third = await create("당근");
+    await t.settle();
+    expect(await row("words", third)).toMatchObject({ image_status: "ready" }); // normal drawing resumes
+    expect(fake.calls).toEqual([KLEIN]);
+  });
+
+  it("a different, ordinary error does not trip the flag: the fallback still runs", async () => {
+    fake.state.behaviour = { [KLEIN]: "error" }; // plain "capacity exceeded", not 4006
+    await create("메론");
+    await t.settle();
+    expect(fake.calls).toEqual([KLEIN, SCHNELL]);
   });
 });

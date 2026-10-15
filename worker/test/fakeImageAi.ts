@@ -4,7 +4,8 @@ import type { AiRunner } from "../services/imageModels";
 export const FAKE_JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 2, 0, 2, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0]);
 const b64 = btoa(String.fromCharCode(...FAKE_JPEG));
 
-type Behaviour = "ok" | "error";
+/** "exhausted" throws the real Workers AI message for a used-up daily Neuron allocation (M2.9). */
+type Behaviour = "ok" | "error" | "exhausted";
 
 /**
  * Fake `env.AI`: records each call's model; `behaviour[modelId]` decides success or an error.
@@ -17,7 +18,11 @@ export function fakeImageAi(behaviour: Record<string, Behaviour> = {}) {
     async run(model) {
       calls.push(model);
       if (state.gate) await state.gate;
-      if ((state.behaviour[model] ?? "ok") === "error") throw new Error(`3040: ${model} capacity exceeded`);
+      const b = state.behaviour[model] ?? "ok";
+      if (b === "exhausted") {
+        throw new Error("4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if you would like to continue usage.");
+      }
+      if (b === "error") throw new Error(`3040: ${model} capacity exceeded`);
       return { image: b64 };
     },
   };

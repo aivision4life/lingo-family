@@ -3,8 +3,8 @@ import { z } from "zod";
 import { imageSourceSchema, imageStatusSchema } from "./enums";
 
 /** Daily image quota per profile, and for the whole family (sum over profiles). Resets at UTC midnight (see `usageDate()`). */
-export const IMAGE_DAILY_QUOTA = 100;
-export const IMAGE_FAMILY_DAILY_CAP = 250;
+export const IMAGE_DAILY_QUOTA = 60;
+export const IMAGE_FAMILY_DAILY_CAP = 100;
 
 /** Uploads ("My photo"): resized in the browser; the Worker re-checks and never re-encodes. */
 export const IMAGE_MAX_SIDE = 512;
@@ -37,8 +37,12 @@ export const imageProfileRequestSchema = z.object({ profile_id: z.string().min(1
 /** POST /api/images/:kind/:id/redraw — the (edited) scene description; a new nonce is used. */
 export const redrawRequestSchema = z.object({ profile_id: z.string().min(1), image_prompt: imagePromptTextSchema });
 
-/** State of one item after an image request. `quota` = not drawn because a daily limit was reached. */
-export const imageStateSchema = imageViewSchema.extend({ quota: z.boolean() });
+/**
+ * State of one item after an image request. `quota` = not drawn because one of our own daily
+ * limits (profile or family) was reached. `provider_exhausted` = not drawn because Workers AI's
+ * own account-wide daily Neuron allocation is used up (M2.9) — a different, Cloudflare-side limit.
+ */
+export const imageStateSchema = imageViewSchema.extend({ quota: z.boolean(), provider_exhausted: z.boolean() });
 export type ImageState = z.infer<typeof imageStateSchema>;
 
 /** POST /api/images/backfill — one old word per call (its image prompts + word/phrase images). */
@@ -51,6 +55,8 @@ export const backfillResponseSchema = z.object({
   remaining: z.number().int().nonnegative(),
   /** Stopped because a daily image or LLM limit was reached. */
   quota: z.boolean(),
+  /** Stopped because Workers AI's account-wide daily Neuron allocation is used up (M2.9). */
+  provider_exhausted: z.boolean(),
 });
 export type BackfillResponse = z.infer<typeof backfillResponseSchema>;
 

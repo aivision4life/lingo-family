@@ -79,5 +79,6 @@ export async function drawWordBackfill(db: Db, deps: ImageDeps, wordId: string) 
   return {
     drawn: results.reduce((n, r) => n + r.drawn, 0),
     quota: results.some((r) => r.quota),
+    providerExhausted: results.some((r) => r.providerExhausted),
   };
 }
