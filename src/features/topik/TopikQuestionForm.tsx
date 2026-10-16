@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { TOPIK_IMAGE_MAX_BYTES, TOPIK_IMAGE_MAX_SIDE, TOPIK_OPTION_COUNT, type TopikContent, type TopikQuestionInput } from "@shared/topik";
 import { FormField } from "@/components/FormField";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { imageUrl } from "@/features/images/api";
 import { resizeForUpload } from "@/features/images/resize";
@@ -31,6 +32,7 @@ function ContentField({
   const { t } = useTranslation();
   const upload = useUploadTopikImage();
   const file = useRef<HTMLInputElement>(null);
+  const [zoomed, setZoomed] = useState(false);
 
   const pickFile = async (f: File | undefined) => {
     if (!f) return;
@@ -44,7 +46,11 @@ function ContentField({
       <div className="flex flex-col gap-2">
         <Input id={id} autoFocus={autoFocus} value={value.text ?? ""} onChange={(e) => onChange({ ...value, text: e.target.value })} />
         <div className="flex items-center gap-2">
-          {value.image_key && <img src={imageUrl(value.image_key)} alt="" className="h-12 w-12 rounded object-cover" />}
+          {value.image_key && (
+            <button type="button" onClick={() => setZoomed(true)} className="shrink-0">
+              <img src={imageUrl(value.image_key)} alt={t("topik.manage.form.viewImage")} className="h-24 w-24 rounded border object-cover" />
+            </button>
+          )}
           <Button type="button" variant="outline" size="sm" disabled={upload.isPending} onClick={() => file.current?.click()}>
             <Camera aria-hidden />
             {t("topik.manage.form.photo")}
@@ -57,6 +63,14 @@ function ContentField({
         </div>
         <input ref={file} type="file" accept="image/*" className="hidden" onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ""; }} />
       </div>
+      {value.image_key && (
+        <Dialog open={zoomed} onOpenChange={setZoomed}>
+          <DialogContent className="max-w-[calc(100%-1rem)] p-2 sm:max-w-2xl">
+            <DialogTitle className="sr-only">{t("topik.manage.form.viewImage")}</DialogTitle>
+            <img src={imageUrl(value.image_key)} alt={t("topik.manage.form.viewImage")} className="max-h-[85vh] w-full object-contain" />
+          </DialogContent>
+        </Dialog>
+      )}
     </FormField>
   );
 }

@@ -581,6 +581,7 @@
         "correctOption": "Correct option",
         "photo": "Photo",
         "removePhoto": "Remove photo",
+        "viewImage": "View larger image",
         "invalid": "Needs a valid exam/block/number, all 4 options (text or image), and a correct answer picked.",
         "saving": "Saving…",
         "save": "Save",
