@@ -19,11 +19,17 @@ export class LlmError extends Error {
   }
 }
 
+/** One image attached to a request (M6.3: the TOPIK answer explanation reads stem/option images
+ * instead of guessing their content). `label` is a short text placed right before the image so the
+ * model knows what it is ("Hình ảnh đề bài:"); `data` is base64, no "data:" prefix. */
+export type LlmImagePart = { label: string; mimeType: string; data: string };
+
 export type LlmRequest = {
   system: string;
   user: string;
   /** JSON Schema the provider should constrain its output to. */
   jsonSchema: object;
+  images?: LlmImagePart[];
 };
 
 /** The answer text (expected to be JSON) and the model that actually produced it. */
@@ -98,9 +104,12 @@ export function describeGeminiError(status: number, bodyText: string, headers: H
 /** One generateContent call. HTTP / network problems become AttemptError (retryable or not). */
 async function geminiAttempt(doFetch: typeof fetch, apiKey: string, model: string, req: LlmRequest, timeoutMs: number) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  // Each image gets its own short label part right before it ("Hình ảnh đề bài:" etc.), so the
+  // model can tell which attached image is which when there is more than one.
+  const imageParts = (req.images ?? []).flatMap((img) => [{ text: img.label }, { inlineData: { mimeType: img.mimeType, data: img.data } }]);
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: req.system }] },
-    contents: [{ role: "user", parts: [{ text: req.user }] }],
+    contents: [{ role: "user", parts: [{ text: req.user }, ...imageParts] }],
     generationConfig: { responseMimeType: "application/json", responseJsonSchema: req.jsonSchema, temperature: 0.2 },
   });
 
@@ -157,7 +166,7 @@ export async function generateStructured<S extends z.ZodType>(
   let lastProblem = "";
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { text, model } = await llm.generate({ system: req.system, user, jsonSchema });
+    const { text, model } = await llm.generate({ system: req.system, user, jsonSchema, images: req.images });
     let json: unknown;
     try {
       json = JSON.parse(text);

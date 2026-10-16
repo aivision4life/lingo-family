@@ -5,13 +5,50 @@
 import { State } from "ts-fsrs";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { isGrammarPos, type TopikKeyTermView, type TopikVocabEntry } from "../../shared/topik";
+import { isGrammarPos, type TopikKeyTermView, type TopikOptions, type TopikVocabEntry } from "../../shared/topik";
 import { cards, words } from "../../db/schema";
 import { sha256Hex } from "../lib/hash";
 import { checkTopikExplanation } from "./contentCheck";
 import { cachedTask, type Db } from "./enrich";
-import { generateStructured, LlmError, type LlmClient } from "./llm";
+import { generateStructured, LlmError, type LlmClient, type LlmImagePart } from "./llm";
 import { buildTopikExplainPrompt, TOPIK_EXPLAIN_PROMPT_VERSION, type ExplainInput } from "./topikExplainPrompt";
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  return btoa(binary);
+}
+
+/**
+ * Fetches and base64-encodes every image a question's stem/options reference, labeling each one
+ * (M6.3: an image-bearing question used to get only a "no text" placeholder, so the model could
+ * only guess its content from the correct answer — attaching the real image instead). Returns
+ * `{ error }` instead of a partial result when ANY referenced image can't be fetched: better to
+ * generate no explanation at all than one reasoning from a guess about an image it never saw.
+ */
+export async function resolveExplainImages(
+  bucket: R2Bucket,
+  input: { stem: { image_key: string | null }; options: TopikOptions },
+): Promise<{ images: LlmImagePart[] } | { error: string }> {
+  const refs: { key: string; label: string }[] = [];
+  if (input.stem.image_key) refs.push({ key: input.stem.image_key, label: "Hình ảnh đề bài:" });
+  input.options.forEach((o, i) => {
+    if (o.image_key) refs.push({ key: o.image_key, label: `Hình ảnh đáp án ${i + 1}:` });
+  });
+  if (refs.length === 0) return { images: [] };
+
+  const images: LlmImagePart[] = [];
+  for (const ref of refs) {
+    const obj = await bucket.get(ref.key);
+    if (!obj) return { error: `image ${ref.key} not found in R2` };
+    const data = arrayBufferToBase64(await obj.arrayBuffer());
+    const mimeType = obj.httpMetadata?.contentType ?? "image/webp";
+    images.push({ label: ref.label, mimeType, data });
+  }
+  return { images };
+}
 
 const llmTopikExplainSchema = z.object({ explanation_vi: z.string().min(1), key_terms: z.array(z.string()) });
 const cachedExplainSchema = z.object({ explanation_vi: z.string(), key_terms: z.array(z.string()) });
@@ -26,15 +63,27 @@ export function topikExplainHasContent(input: Pick<ExplainInput, "instruction" |
   return [input.instruction, input.stem.text, ...input.options.map((o) => o.text)].some((t) => t !== null && t.trim() !== "");
 }
 
-type Options = { db: Db; llm: LlmClient; logContext: string; input: ExplainInput; beforeLlmCall: () => Promise<void> };
+type Options = {
+  db: Db;
+  llm: LlmClient;
+  logContext: string;
+  input: ExplainInput;
+  /** Already resolved by the caller (`resolveExplainImages`); [] when the question has no images. */
+  images: LlmImagePart[];
+  beforeLlmCall: () => Promise<void>;
+};
 
 /**
  * Generates (or reuses from `ai_cache`) one question's explanation. Returns `{ explanation_vi:
  * null, key_terms: [] }` without ever calling the LLM when there is nothing to explain.
  */
-export async function generateTopikExplanationWithCache({ db, llm, logContext, input, beforeLlmCall }: Options) {
+export async function generateTopikExplanationWithCache({ db, llm, logContext, input, images, beforeLlmCall }: Options) {
   if (!topikExplainHasContent(input)) return { explanation_vi: null as string | null, key_terms: [] as string[], cached: true };
   const lemmas = input.vocab.map((v) => v.lemma);
+  // A grammar pattern or a content word may legitimately be named in Hangul (M6.3 requires naming
+  // the exact pattern, e.g. "-느라고") — but only as a fragment of one of this question's own
+  // surface/lemma forms, never a free-form Korean sentence the model wrote instead of translating.
+  const allowedHangul = [...new Set(input.vocab.flatMap((v) => [v.surface, v.lemma]))];
 
   const { value, cached } = await cachedTask<{ explanation_vi: string; key_terms: string[] }>({
     db,
@@ -45,13 +94,14 @@ export async function generateTopikExplanationWithCache({ db, llm, logContext, i
       const { data, model } = await generateStructured(
         llm,
         llmTopikExplainSchema,
-        buildTopikExplainPrompt(input),
-        (d) => checkTopikExplanation(d, lemmas),
+        { ...buildTopikExplainPrompt(input), images },
+        (d) => checkTopikExplanation(d, lemmas, allowedHangul),
       );
       // A key_terms lemma the model invented anyway (despite the retry) is filtered, never saved —
-      // but a persisting script problem (Hangul/Han) in explanation_vi itself cannot be "filtered",
-      // so that case throws (M2.11-style: a cache-miss row is simply left unset, retried later).
-      const stillBadScript = checkTopikExplanation({ explanation_vi: data.explanation_vi, key_terms: [] }, []).some((p) =>
+      // but a persisting script problem (stray Hangul/Han) in explanation_vi itself cannot be
+      // "filtered", so that case throws (M2.11-style: a cache-miss row is simply left unset, retried
+      // later) instead of ever saving a bad explanation.
+      const stillBadScript = checkTopikExplanation({ explanation_vi: data.explanation_vi, key_terms: [] }, [], allowedHangul).some((p) =>
         p.startsWith("explanation_vi:"),
       );
       if (stillBadScript) {

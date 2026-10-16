@@ -147,18 +147,34 @@ export function checkTopikVocabEntry(e: Pick<TopikVocabEntry, "surface" | "lemma
   ];
 }
 
+/** A Hangul run (optionally grammar-notation-prefixed with a hyphen, e.g. "-느라고"). */
+const HANGUL_RUN = /-?[가-힣ᄀ-ᇿ㄰-㆏]+/g;
+
 /**
- * A TOPIK answer explanation (M6.3): `explanation_vi` must be clean Vietnamese (no stray Hangul,
- * and — unlike the general-purpose `checkVietnameseText` — no Chinese/Japanese characters either,
- * since an explanation has no legitimate reason to contain either script). `key_terms` must be a
- * subset of `allowedLemmas` (the question's own `vocab`): the model is told to pick only from that
- * list, never invent a new one, and this is the check that catches it if it does anyway.
+ * A TOPIK answer explanation (M6.3): `explanation_vi` is Vietnamese, but — unlike the general-
+ * purpose `checkVietnameseText` — is explicitly allowed to name a grammar pattern or quote a word
+ * in Hangul (e.g. "-느라고", or "건물"), since M6.3 requires naming the exact pattern being tested
+ * rather than writing vaguely about "this structure". A Hangul run is only accepted when it is a
+ * substring of (or contains as a substring) one of this question's own `vocab` surface/lemma
+ * forms, given in `allowedHangul` — never a free-form Korean sentence the model wrote instead of
+ * translating. Chinese/Japanese characters are never allowed (no legitimate reason to appear here).
+ * `key_terms` must be a subset of `allowedLemmas` (the question's own `vocab`): the model is told
+ * to pick only from that list, never invent a new one, and this is the check that catches it if it
+ * does anyway.
  */
-export function checkTopikExplanation(data: { explanation_vi: string; key_terms: string[] }, allowedLemmas: readonly string[]): string[] {
-  const problems = [
-    ...prefixed("explanation_vi", checkVietnameseText(data.explanation_vi)),
-    ...(HAN_OR_KANA.test(data.explanation_vi) ? ["explanation_vi: Chinese/Japanese characters in Vietnamese text"] : []),
-  ];
+export function checkTopikExplanation(
+  data: { explanation_vi: string; key_terms: string[] },
+  allowedLemmas: readonly string[],
+  allowedHangul: readonly string[] = [],
+): string[] {
+  const problems: string[] = [];
+  for (const run of data.explanation_vi.match(HANGUL_RUN) ?? []) {
+    const stripped = run.replace(/^-/, "");
+    const known = allowedHangul.some((t) => t.includes(stripped) || stripped.includes(t));
+    if (!known) problems.push(`explanation_vi: unexpected Hangul "${run}" (not one of this question's own words/patterns)`);
+  }
+  if (HAN_OR_KANA.test(data.explanation_vi)) problems.push("explanation_vi: Chinese/Japanese characters in Vietnamese text");
+
   const allowed = new Set(allowedLemmas);
   const unknown = data.key_terms.filter((l) => !allowed.has(l));
   if (unknown.length > 0) problems.push(`key_terms: lemma(s) not in this question's vocabulary: ${unknown.join(", ")}`);

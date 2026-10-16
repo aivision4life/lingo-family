@@ -24,14 +24,19 @@ import { getPlatformProxy } from "wrangler";
 import { z } from "zod";
 import type { TopikOptions, TopikVocabEntry } from "../../shared/topik";
 import { checkTopikExplanation } from "../../worker/services/contentCheck";
-import { createLlmClient, generateStructured } from "../../worker/services/llm";
+import { createLlmClient, generateStructured, type LlmImagePart } from "../../worker/services/llm";
 import { buildTopikExplainPrompt, TOPIK_EXPLAIN_PROMPT_VERSION, type ExplainInput } from "../../worker/services/topikExplainPrompt";
 import { estimateCalls, questionHasContent, selectPending, type PendingRow } from "./plan";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
 type D1Like = { prepare(sql: string): Stmt };
+// Structural (not the ambient `R2Bucket`): scripts/ compiles without Workers types, same reason
+// scripts/topikImport/run.ts has its own R2Like instead of importing worker/services/imageUpload.ts.
+type R2ObjectLike = { arrayBuffer(): Promise<ArrayBuffer>; httpMetadata?: { contentType?: string } };
+type R2Like = { get(key: string): Promise<R2ObjectLike | null> };
 
 const PROD_DB_NAME = "lingo-family";
+const PROD_MEDIA_BUCKET = "lingo-family-media";
 
 const args = process.argv.slice(3);
 const apply = args.includes("--apply");
@@ -50,6 +55,7 @@ function tempConfig() {
       name: "lingo-topik-explain",
       compatibility_date: "2026-10-01",
       d1_databases: [{ binding: "DB", database_name: PROD_DB_NAME, database_id: "10da2bc0-1ba1-4ae2-80be-df43cd5b1931", remote: true }],
+      r2_buckets: [{ binding: "MEDIA", bucket_name: PROD_MEDIA_BUCKET, remote: true }],
     }),
   );
   return file;
@@ -83,6 +89,34 @@ function readDevVars(): Record<string, string> {
 
 const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 const sha256Hex = async (text: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  return btoa(binary);
+}
+
+/** Mirrors worker/services/topikExplain.ts#resolveExplainImages against the structural `R2Like`. */
+async function resolveExplainImages(bucket: R2Like, input: ExplainInput): Promise<{ images: LlmImagePart[] } | { error: string }> {
+  const refs: { key: string; label: string }[] = [];
+  if (input.stem.image_key) refs.push({ key: input.stem.image_key, label: "Hình ảnh đề bài:" });
+  input.options.forEach((o, i) => {
+    if (o.image_key) refs.push({ key: o.image_key, label: `Hình ảnh đáp án ${i + 1}:` });
+  });
+  if (refs.length === 0) return { images: [] };
+
+  const images: LlmImagePart[] = [];
+  for (const ref of refs) {
+    const obj = await bucket.get(ref.key);
+    if (!obj) return { error: `image ${ref.key} not found in R2` };
+    const data = arrayBufferToBase64(await obj.arrayBuffer());
+    const mimeType = obj.httpMetadata?.contentType ?? "image/webp";
+    images.push({ label: ref.label, mimeType, data });
+  }
+  return { images };
+}
 
 /** Same tuple as worker/services/topikExplain.ts#topikExplainCacheKey. */
 const cacheKey = (model: string, input: ExplainInput) =>
@@ -136,16 +170,22 @@ function toExplainInput(row: PendingRow): ExplainInput {
 
 /** Generates (or reuses from ai_cache) one row's explanation; mirrors
  * worker/services/topikExplain.ts#generateTopikExplanationWithCache — not imported directly, see
- * the comment in ./plan.ts. */
+ * the comment in ./plan.ts. Throws (never writes anything) instead of generating from a guess when
+ * a stem/option image can't be fetched — "no explanation" beats a confidently-wrong one. */
 async function processRow(
   db: D1Like,
+  bucket: R2Like,
   llm: NonNullable<ReturnType<typeof createLlmClient>>,
   row: PendingRow,
 ): Promise<{ explanation_vi: string | null; key_terms: string[]; calledLlm: boolean }> {
   const input = toExplainInput(row);
   if (!questionHasContent(row)) return { explanation_vi: null, key_terms: [], calledLlm: false };
 
+  const imageResult = await resolveExplainImages(bucket, input);
+  if ("error" in imageResult) throw new Error(imageResult.error);
+
   const lemmas = row.vocab.map((v) => v.lemma);
+  const allowedHangul = [...new Set(row.vocab.flatMap((v) => [v.surface, v.lemma]))];
   const key = await cacheKey(llm.model, input);
   const cached = await db.prepare("SELECT response_json FROM ai_cache WHERE key = ?1").bind(key).first<{ response_json: string }>();
   if (cached) {
@@ -153,10 +193,15 @@ async function processRow(
     if (parsed.success) return { ...parsed.data, calledLlm: false };
   }
 
-  const { data, model } = await generateStructured(llm, llmTopikExplainSchema, buildTopikExplainPrompt(input), (d) =>
-    checkTopikExplanation(d, lemmas),
+  const { data, model } = await generateStructured(
+    llm,
+    llmTopikExplainSchema,
+    { ...buildTopikExplainPrompt(input), images: imageResult.images },
+    (d) => checkTopikExplanation(d, lemmas, allowedHangul),
   );
-  const stillBadScript = checkTopikExplanation({ explanation_vi: data.explanation_vi, key_terms: [] }, []).some((p) => p.startsWith("explanation_vi:"));
+  const stillBadScript = checkTopikExplanation({ explanation_vi: data.explanation_vi, key_terms: [] }, [], allowedHangul).some((p) =>
+    p.startsWith("explanation_vi:"),
+  );
   if (stillBadScript) throw new Error(`explanation still has a script problem after retry (${row.exam} #${row.number})`);
   const key_terms = [...new Set(data.key_terms.filter((l) => lemmas.includes(l)))].slice(0, 5);
   const value = { explanation_vi: data.explanation_vi.trim(), key_terms };
@@ -190,6 +235,7 @@ async function main() {
   const proxy = await getPlatformProxy({ configPath, remoteBindings: true });
   try {
     const db = proxy.env.DB as unknown as D1Like;
+    const bucket = proxy.env.MEDIA as unknown as R2Like;
     const all = await loadRows(db);
     const pendingAll = selectPending(all, force);
     let pending = onlyIds ? pendingAll.filter((r) => onlyIds.has(r.id)) : pendingAll;
@@ -224,7 +270,7 @@ async function main() {
       // later run of the same command picks it up again.
       let outcome: { explanation_vi: string | null; key_terms: string[]; calledLlm: boolean };
       try {
-        outcome = await processRow(db, llm, row);
+        outcome = await processRow(db, bucket, llm, row);
       } catch (e) {
         failed++;
         console.error(`  [skip] ${row.exam} #${row.number}: ${e instanceof Error ? e.message : String(e)}`);

@@ -288,6 +288,32 @@ describe("answer explanation exposure (M6.3)", () => {
     expect(q).not.toHaveProperty("key_terms");
   });
 
+  it("attaches the real stem/option images when generating the explanation (never guesses their content)", async () => {
+    const upload = await tv.send(`/api/topik/questions/upload-image?profile_id=${adultE}`, {
+      method: "POST",
+      headers: { "content-type": "image/webp" },
+      body: FAKE_WEBP,
+    });
+    const { image_key } = (await upload.json()) as { image_key: string };
+
+    await tv.api("POST", "/topik/questions", { ...input({ stem: { text: null, image_key } }), profile_id: adultE });
+    await tv.settle();
+
+    const explainCall = llm.requests.find((r) => (r.images?.length ?? 0) > 0);
+    expect(explainCall?.images).toEqual([{ label: "Hình ảnh đề bài:", mimeType: "image/webp", data: expect.any(String) }]);
+  });
+
+  it("never generates an explanation when a referenced image can't be fetched from R2 (no guessing)", async () => {
+    const q = await tv.api("POST", "/topik/questions", { ...input({ stem: { text: null, image_key: "no-such-key" } }), profile_id: adultE });
+    await tv.settle();
+
+    const row = (await tv.api("GET", `/topik/questions?profile_id=${adultE}`)).body as { exam: string; explanation_vi: string | null }[];
+    const found = row.find((r) => r.exam === (q.body as { exam: string }).exam);
+    expect(found!.explanation_vi).toBeNull();
+    // Vocab (which does not need the image) still generated normally; only the explain call is skipped.
+    expect(llm.requests.some((r) => (r.images?.length ?? 0) > 0)).toBe(false);
+  });
+
   it("is returned on the attempt response, with a key term the profile has never seen marked as new", async () => {
     const id = await createAndWait();
     const res = await tv.api("POST", "/topik/attempts", { profile_id: adultE, question_id: id, selected_option: 2 });

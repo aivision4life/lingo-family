@@ -29,7 +29,7 @@ import { recordUsage } from "../lib/quota";
 import { zv } from "../lib/validate";
 import type { MakeLlm } from "./words";
 import { buildTopikSession, type TopikCandidate } from "../services/topikScheduling";
-import { generateTopikExplanationWithCache, resolveKeyTermViews } from "../services/topikExplain";
+import { generateTopikExplanationWithCache, resolveExplainImages, resolveKeyTermViews } from "../services/topikExplain";
 import type { ExplainInput } from "../services/topikExplainPrompt";
 import { generateTopikVocabWithCache, topikVocabSourceText } from "../services/topikWord";
 import { storeUploadedImage } from "../services/imageUpload";
@@ -124,14 +124,23 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
             correct_option: row.correct_option,
             vocab,
           };
-          const { explanation_vi, key_terms } = await generateTopikExplanationWithCache({
-            db,
-            llm,
-            logContext,
-            input,
-            beforeLlmCall: () => recordUsage(db, profileId, "topik_explain"),
-          });
-          await db.update(topik_questions).set({ explanation_vi, key_terms, explain_checked_at: new Date() }).where(eq(topik_questions.id, row.id));
+          // A stem/option image is fetched and attached for real (never guessed from the correct
+          // answer); if any referenced image can't be fetched, no explanation is generated at all
+          // rather than one reasoning from a guess — the row is simply left for a later retry.
+          const imageResult = await resolveExplainImages(c.env.MEDIA, input);
+          if ("error" in imageResult) {
+            console.error(`[topik-explain] skipping ${logContext}: ${imageResult.error}`);
+          } else {
+            const { explanation_vi, key_terms } = await generateTopikExplanationWithCache({
+              db,
+              llm,
+              logContext,
+              input,
+              images: imageResult.images,
+              beforeLlmCall: () => recordUsage(db, profileId, "topik_explain"),
+            });
+            await db.update(topik_questions).set({ explanation_vi, key_terms, explain_checked_at: new Date() }).where(eq(topik_questions.id, row.id));
+          }
         }
       })(),
     );

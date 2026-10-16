@@ -226,16 +226,29 @@ describe("checkTopikVocabEntry", () => {
 
 describe("checkTopikExplanation", () => {
   const allowed = ["일어나다", "가니까"];
+  const allowedHangul = ["구하느라고", "일어나다"];
 
-  it("accepts a clean explanation whose key_terms are all in the allowed list", () => {
+  it("accepts a clean explanation with no Hangul at all", () => {
     expect(checkTopikExplanation({ explanation_vi: "Vì động từ chia ở thì quá khứ.", key_terms: ["일어나다"] }, allowed)).toEqual([]);
   });
 
-  it("flags Hangul leaking into the explanation", () => {
-    expect(checkTopikExplanation({ explanation_vi: "Dùng 일어나다 ở đây.", key_terms: [] }, allowed)).toEqual(["explanation_vi: Hangul in Vietnamese text"]);
+  it("accepts a grammar pattern named as a substring of this question's own vocab (M6.3: required, not just tolerated)", () => {
+    expect(
+      checkTopikExplanation({ explanation_vi: "Đáp án đúng dùng mẫu -느라고 để diễn tả lý do.", key_terms: ["일어나다"] }, allowed, allowedHangul),
+    ).toEqual([]);
   });
 
-  it("flags Chinese/Japanese characters in the explanation (stricter than the general Vietnamese check)", () => {
+  it("accepts the full word/lemma itself quoted in Hangul, not just a substring", () => {
+    expect(checkTopikExplanation({ explanation_vi: "Từ 일어나다 nghĩa là thức dậy.", key_terms: [] }, allowed, allowedHangul)).toEqual([]);
+  });
+
+  it("flags Hangul that is not part of this question's own words/patterns", () => {
+    expect(checkTopikExplanation({ explanation_vi: "Dùng 학생 ở đây.", key_terms: [] }, allowed, allowedHangul)).toEqual([
+      'explanation_vi: unexpected Hangul "학생" (not one of this question\'s own words/patterns)',
+    ]);
+  });
+
+  it("flags Chinese/Japanese characters in the explanation (never allowed, unlike Hangul)", () => {
     expect(checkTopikExplanation({ explanation_vi: "Nghĩa là 學生.", key_terms: [] }, allowed)).toEqual([
       "explanation_vi: Chinese/Japanese characters in Vietnamese text",
     ]);
