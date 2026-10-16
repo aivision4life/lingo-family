@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TopikVocabEntry } from "@shared/topik";
-import { segmentText } from "./vocabSegments";
+import { isGrammarEntry, segmentText } from "./vocabSegments";
 
 const entry = (over: Partial<TopikVocabEntry> = {}): TopikVocabEntry => ({
   surface: "일어나서",
@@ -61,5 +61,23 @@ describe("segmentText", () => {
     const second = entry({ surface: "전화", gloss_vi: "điện thoại (2)" });
     const result = segmentText("전화", [first, second]);
     expect(result).toEqual([{ text: "전화", entry: first }]);
+  });
+});
+
+describe("isGrammarEntry", () => {
+  it("is true for a grammar ending/particle (pos 'other' or 'particle') — not real library vocabulary", () => {
+    expect(isGrammarEntry("other")).toBe(true);
+    expect(isGrammarEntry("particle")).toBe(true);
+  });
+
+  it("is false for a content word (noun, verb, adjective, adverb, pronoun, numeral, ...)", () => {
+    expect(isGrammarEntry("noun")).toBe(false);
+    expect(isGrammarEntry("verb")).toBe(false);
+    expect(isGrammarEntry("adjective")).toBe(false);
+    expect(isGrammarEntry("adverb")).toBe(false);
+    expect(isGrammarEntry("pronoun")).toBe(false);
+    expect(isGrammarEntry("numeral")).toBe(false);
+    expect(isGrammarEntry("conjunction")).toBe(false);
+    expect(isGrammarEntry("interjection")).toBe(false);
   });
 });

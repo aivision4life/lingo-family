@@ -173,7 +173,7 @@ describe("per-question vocabulary (M6.2, 'tap a word')", () => {
     expect(usage).toMatchObject({ count: 1 });
   });
 
-  it("regenerates when the text changes, but not when an unrelated field changes", async () => {
+  it("regenerates when the stem/options text changes, but not when instruction or an unrelated field changes", async () => {
     const q = await tv.api("POST", "/topik/questions", { ...input(), profile_id: adultV });
     await tv.settle();
     llm.requests.length = 0;
@@ -183,8 +183,14 @@ describe("per-question vocabulary (M6.2, 'tap a word')", () => {
     await tv.settle();
     expect(llm.requests).toHaveLength(0);
 
-    // Text changes: regenerates.
+    // Instruction changes: it is never part of the vocabulary text, so no regeneration either (it
+    // just repeats the same block-wide boilerplate across every question).
     await tv.api("PATCH", `/topik/questions/${(q.body as { id: string }).id}`, { profile_id: adultV, instruction: "새로운 지시문입니다." });
+    await tv.settle();
+    expect(llm.requests).toHaveLength(0);
+
+    // The stem text changes: regenerates.
+    await tv.api("PATCH", `/topik/questions/${(q.body as { id: string }).id}`, { profile_id: adultV, stem: { text: "완전히 다른 문장이다.", image_key: null } });
     await tv.settle();
     expect(llm.requests).toHaveLength(1);
   });

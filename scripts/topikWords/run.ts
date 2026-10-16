@@ -5,6 +5,7 @@
 //   npm run topik-words -- --apply        backs up production D1, then generates and writes
 //   npm run topik-words -- --apply --force   also redoes rows that already have a vocabulary
 //   npm run topik-words -- --apply --limit 10   processes at most 10 rows this run (resumable)
+//   npm run topik-words -- --apply --ids a,b,c  processes only these question ids (still pending)
 //
 // Idempotent: a row with `vocab_checked_at` already set is skipped (unless --force), so the script
 // can be stopped (Ctrl+C) and run again later, picking up where it left off.
@@ -23,7 +24,7 @@ import { topikVocabEntrySchema, topikVocabListSchema, type TopikOptions, type To
 import { checkTopikVocabEntry } from "../../worker/services/contentCheck";
 import { createLlmClient, generateStructured } from "../../worker/services/llm";
 import { buildTopikVocabPrompt, TOPIK_VOCAB_PROMPT_VERSION } from "../../worker/services/topikWordPrompt";
-import { estimateCalls, questionFullText, selectPending, type PendingRow } from "./plan";
+import { estimateCalls, questionVocabText, selectPending, type PendingRow } from "./plan";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
 type D1Like = { prepare(sql: string): Stmt };
@@ -35,6 +36,8 @@ const apply = args.includes("--apply");
 const force = args.includes("--force");
 const limitArg = args.find((_a, i) => args[i - 1] === "--limit");
 const limit = limitArg ? Number(limitArg) : null;
+const idsArg = args.find((_a, i) => args[i - 1] === "--ids");
+const onlyIds = idsArg ? new Set(idsArg.split(",").map((s) => s.trim())) : null;
 
 function tempConfig() {
   const dir = mkdtempSync(path.join(os.tmpdir(), "lingo-topik-words-"));
@@ -84,25 +87,29 @@ const cacheKey = (model: string, text: string) =>
 
 const llmTopikVocabSchema = z.object({ words: z.array(topikVocabEntrySchema) });
 
+/** Same dedupe-by-lemma + content-check rule as worker/services/topikWord.ts#finalizeTopikVocab. */
 function finalizeVocab(logContext: string, raw: TopikVocabEntry[]): TopikVocabEntry[] {
   const out: TopikVocabEntry[] = [];
+  const seenLemmas = new Set<string>();
   for (const e of raw) {
     const entry: TopikVocabEntry = { surface: e.surface.trim(), lemma: e.lemma.trim(), pos: e.pos, gloss_vi: e.gloss_vi.trim() };
+    if (seenLemmas.has(entry.lemma)) continue;
     const problems = checkTopikVocabEntry(entry);
     if (problems.length > 0) {
       console.error(`  [drop] "${entry.surface}" (${logContext}): ${problems.join("; ")}`);
       continue;
     }
+    seenLemmas.add(entry.lemma);
     out.push(entry);
   }
   return out;
 }
 
-type Row = { id: string; exam: string; number: number; instruction: string | null; stem_text: string | null; options: string; vocab_checked_at: number | null };
+type Row = { id: string; exam: string; number: number; stem_text: string | null; options: string; vocab_checked_at: number | null };
 
 async function loadRows(db: D1Like): Promise<PendingRow[]> {
   const { results } = await db
-    .prepare("SELECT id, exam, number, instruction, stem_text, options, vocab_checked_at FROM topik_questions ORDER BY exam, number")
+    .prepare("SELECT id, exam, number, stem_text, options, vocab_checked_at FROM topik_questions ORDER BY exam, number")
     .all<Row>();
   return results.map((r) => ({ ...r, options: JSON.parse(r.options) as TopikOptions }));
 }
@@ -115,7 +122,7 @@ async function processRow(
   llm: NonNullable<ReturnType<typeof createLlmClient>>,
   row: PendingRow,
 ): Promise<{ vocab: TopikVocabEntry[]; calledLlm: boolean }> {
-  const text = questionFullText(row);
+  const text = questionVocabText(row);
   if (text.trim() === "") return { vocab: [], calledLlm: false };
 
   const key = await cacheKey(llm.model, text);
@@ -164,10 +171,15 @@ async function main() {
     const db = proxy.env.DB as unknown as D1Like;
     const all = await loadRows(db);
     const pendingAll = selectPending(all, force);
-    const pending = limit ? pendingAll.slice(0, limit) : pendingAll;
+    let pending = onlyIds ? pendingAll.filter((r) => onlyIds.has(r.id)) : pendingAll;
+    if (limit) pending = pending.slice(0, limit);
     const calls = estimateCalls(pending);
 
     console.log(`\n${all.length} question(s) total, ${pendingAll.length} still need a vocabulary${force ? " (--force: includes already-done ones)" : ""}.`);
+    if (onlyIds) {
+      const missing = [...onlyIds].filter((id) => !pendingAll.some((r) => r.id === id));
+      if (missing.length > 0) console.log(`Note: ${missing.length} of --ids are not pending (already done, or not found): ${missing.join(", ")}`);
+    }
     console.log(`This run will process ${pending.length} of them, an estimated ${calls} Gemini call(s) (a question with nothing to tokenize is free).`);
 
     if (!apply) {
@@ -184,8 +196,20 @@ async function main() {
     let done = 0;
     let llmCalls = 0;
     let empty = 0;
+    let failed = 0;
     for (const row of pending) {
-      const { vocab, calledLlm } = await processRow(db, llm, row);
+      // A single row's failure (e.g. Gemini briefly overloaded) must not lose progress on the rest
+      // of the batch: it is logged and skipped, left pending (vocab_checked_at stays null), so a
+      // later run of the same command picks it up again — same idempotent-retry spirit as images.
+      let outcome: { vocab: TopikVocabEntry[]; calledLlm: boolean };
+      try {
+        outcome = await processRow(db, llm, row);
+      } catch (e) {
+        failed++;
+        console.error(`  [skip] ${row.exam} #${row.number}: ${e instanceof Error ? e.message : String(e)}`);
+        continue;
+      }
+      const { vocab, calledLlm } = outcome;
       await db
         .prepare("UPDATE topik_questions SET vocab = ?1, vocab_checked_at = ?2 WHERE id = ?3")
         .bind(JSON.stringify(vocab), Date.now(), row.id)
@@ -196,9 +220,9 @@ async function main() {
       console.log(`  [${done}/${pending.length}] ${row.exam} #${row.number}: ${vocab.length} word(s)${calledLlm ? "" : " (cached/free)"}`);
     }
 
-    console.log(`\nProcessed ${done} question(s): ${llmCalls} real Gemini call(s) made (model: ${llm.model}), ${empty} had nothing to tokenize.`);
+    console.log(`\nProcessed ${done} question(s): ${llmCalls} real Gemini call(s) made (model: ${llm.model}), ${empty} had nothing to tokenize${failed ? `, ${failed} failed (skipped, still pending)` : ""}.`);
     const stillPending = selectPending(await loadRows(db), false).length;
-    console.log(`Questions still without a vocabulary: ${stillPending}${limit && stillPending > 0 ? " (run again, same command, to continue)" : ""}.`);
+    console.log(`Questions still without a vocabulary: ${stillPending}${stillPending > 0 ? " (run again, same command, to continue)" : ""}.`);
   } finally {
     await proxy.dispose();
   }

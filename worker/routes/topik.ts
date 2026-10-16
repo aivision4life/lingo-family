@@ -28,7 +28,7 @@ import { recordUsage } from "../lib/quota";
 import { zv } from "../lib/validate";
 import type { MakeLlm } from "./words";
 import { buildTopikSession, type TopikCandidate } from "../services/topikScheduling";
-import { generateTopikVocabWithCache, topikQuestionFullText } from "../services/topikWord";
+import { generateTopikVocabWithCache, topikVocabSourceText } from "../services/topikWord";
 import { storeUploadedImage } from "../services/imageUpload";
 
 type QuestionRow = typeof topik_questions.$inferSelect;
@@ -91,7 +91,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     const llm = makeLlm(c.env);
     if (!llm) return;
     const db = getDb(c.env);
-    const text = topikQuestionFullText(row);
+    const text = topikVocabSourceText(row);
     runInBackground(
       c,
       (async () => {
@@ -165,7 +165,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       // Only once the question is verified (shown in practice), and only when it has never been
       // checked or its text actually changed since then — an edit that keeps the same text reuses
       // the ai_cache entry anyway, but skipping the call here also skips the recordUsage log line.
-      if (row!.verified && (!row!.vocab_checked_at || topikQuestionFullText(row!) !== topikQuestionFullText(existing))) {
+      if (row!.verified && (!row!.vocab_checked_at || topikVocabSourceText(row!) !== topikVocabSourceText(existing))) {
         refreshVocab(c, profile_id, row!);
       }
       return c.json(toQuestion(row!));

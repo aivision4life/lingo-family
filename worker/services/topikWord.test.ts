@@ -3,23 +3,22 @@ import type { TopikOptions } from "../../shared/topik";
 import { getDb } from "../env";
 import { fakeLlm } from "../test/fakeLlm";
 import { createTestEnv } from "../test/testEnv";
-import { generateTopikVocabWithCache, topikQuestionFullText, topikVocabCacheKey } from "./topikWord";
+import { generateTopikVocabWithCache, topikVocabSourceText, topikVocabCacheKey } from "./topikWord";
 
 const options = (texts: (string | null)[]): TopikOptions =>
   texts.map((text) => ({ text, image_key: text === null ? "k" : null })) as unknown as TopikOptions;
 
-describe("topikQuestionFullText", () => {
-  it("joins instruction, stem and option texts, skipping null/empty ones", () => {
-    const text = topikQuestionFullText({
-      instruction: "가장 알맞은 것을 고르십시오.",
+describe("topikVocabSourceText", () => {
+  it("joins stem and option texts, skipping null/empty ones — never the instruction", () => {
+    const text = topikVocabSourceText({
       stem_text: "아침에 (   ) 전화를 드렸다.",
       options: options(["일어나서", null, "", "일어나고"]),
     });
-    expect(text).toBe("가장 알맞은 것을 고르십시오.\n아침에 (   ) 전화를 드렸다.\n일어나서\n일어나고");
+    expect(text).toBe("아침에 (   ) 전화를 드렸다.\n일어나서\n일어나고");
   });
 
   it("is empty for an image-only question (nothing to tokenize)", () => {
-    const text = topikQuestionFullText({ instruction: null, stem_text: null, options: options([null, null, null, null]) });
+    const text = topikVocabSourceText({ stem_text: null, options: options([null, null, null, null]) });
     expect(text).toBe("");
   });
 });
@@ -83,6 +82,22 @@ describe("generateTopikVocabWithCache", () => {
     expect(second).toEqual({ vocab: first.vocab, cached: true });
     expect(calls).toBe(1);
     expect(llm.requests).toHaveLength(2);
+    await t.dispose();
+  });
+
+  it("keeps only the first entry for a repeated lemma (M6.2 v2 fix: 남자/남자가/남자보다 duplicating 남자)", async () => {
+    const t = await createTestEnv();
+    const sample = {
+      words: [
+        { surface: "남자", lemma: "남자", pos: "noun", gloss_vi: "nam giới" },
+        { surface: "남자가", lemma: "남자", pos: "noun", gloss_vi: "nam giới" },
+        { surface: "남자보다", lemma: "남자", pos: "noun", gloss_vi: "nam giới" },
+      ],
+    };
+    const llm = fakeLlm([JSON.stringify(sample)]);
+    const db = getDb(t.env);
+    const result = await generateTopikVocabWithCache({ db, llm: llm.client, logContext: "x", text: "남자 남자가 남자보다", beforeLlmCall: async () => {} });
+    expect(result.vocab).toEqual([{ surface: "남자", lemma: "남자", pos: "noun", gloss_vi: "nam giới" }]);
     await t.dispose();
   });
 });
