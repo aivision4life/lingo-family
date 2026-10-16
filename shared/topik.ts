@@ -40,6 +40,33 @@ export const topikVocabEntrySchema = z.object({
 export type TopikVocabEntry = z.infer<typeof topikVocabEntrySchema>;
 export const topikVocabListSchema = z.array(topikVocabEntrySchema);
 
+/**
+ * A grammar ending/particle entry (pos "other" or "particle") is not real picture-library
+ * vocabulary (drawing an image for "-자마자" is meaningless and wastes an image-quota unit), so it
+ * never looks itself up in the library and never offers to be added — used both by the client
+ * (M6.2's tap-a-word popup, M6.3's key-terms list) and the server (M6.3's per-profile key-term
+ * resolution skips a library/card lookup for these).
+ */
+export function isGrammarPos(pos: TopikVocabEntry["pos"]): boolean {
+  return pos === "other" || pos === "particle";
+}
+
+/** Lemmas of `vocab` entries picked as key to answering a question right (M6.3); 3-5 once generated. */
+export const topikKeyTermsSchema = z.array(z.string());
+
+/**
+ * One key-term shown after an attempt (M6.3): `vocab`'s own gloss, plus whether/where it already
+ * exists in the library, so the client needs no extra lookup. `existing_word_id` is set only for a
+ * word already in the learner's library (never for a grammar entry, which has no library form).
+ */
+export const topikKeyTermViewSchema = z.object({
+  lemma: z.string(),
+  pos: posSchema,
+  gloss_vi: z.string(),
+  existing_word_id: z.string().nullable(),
+});
+export type TopikKeyTermView = z.infer<typeof topikKeyTermViewSchema>;
+
 const commonFields = {
   section: topikSectionSchema,
   /** Free-form label, e.g. "Yonsei/연습1" or "8DeOfficial/연습3 (37회)". */
@@ -75,6 +102,9 @@ export const topikQuestionSchema = topikQuestionInputSchema.extend({
   /** Tappable words found in the question's text (M6.2); [] once generated with nothing to show
    * (e.g. an image-only question), until then also []. */
   vocab: topikVocabListSchema,
+  /** Explanation + key terms (M6.3); null/[] until generated, or if there was nothing to explain. */
+  explanation_vi: z.string().nullable(),
+  key_terms: topikKeyTermsSchema,
   created_by_profile: z.string().nullable(),
   created_at: z.number(),
   updated_at: z.number(),
@@ -124,6 +154,12 @@ export type TopikAttemptRequest = z.infer<typeof topikAttemptRequestSchema>;
 export const topikAttemptResultSchema = z.object({
   is_correct: z.boolean(),
   correct_option: topikCorrectOptionSchema,
+  /** M6.3: never sent in the session/practice question, only here (the answer is already known
+   * by the time this response exists). null if not generated yet. */
+  explanation_vi: z.string().nullable(),
+  /** Already filtered/prioritized for this profile (not-in-library first, then weak, capped at 5;
+   * a term the profile already knows well is left out entirely). */
+  key_terms: z.array(topikKeyTermViewSchema),
 });
 export type TopikAttemptResult = z.infer<typeof topikAttemptResultSchema>;
 

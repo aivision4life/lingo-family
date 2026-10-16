@@ -9,6 +9,7 @@ import {
   checkPhraseFill,
   checkSentence,
   checkSentenceCheck,
+  checkTopikExplanation,
   checkTopikVocabEntry,
   checkVietnameseText,
 } from "./contentCheck";
@@ -220,5 +221,29 @@ describe("checkTopikVocabEntry", () => {
 
   it("flags a stray Latin letter in the surface/lemma form", () => {
     expect(checkTopikVocabEntry({ surface: "일어나a서", lemma: "일어나다", gloss_vi: "thức dậy" })).toEqual(['surface: a lone Latin letter "a"']);
+  });
+});
+
+describe("checkTopikExplanation", () => {
+  const allowed = ["일어나다", "가니까"];
+
+  it("accepts a clean explanation whose key_terms are all in the allowed list", () => {
+    expect(checkTopikExplanation({ explanation_vi: "Vì động từ chia ở thì quá khứ.", key_terms: ["일어나다"] }, allowed)).toEqual([]);
+  });
+
+  it("flags Hangul leaking into the explanation", () => {
+    expect(checkTopikExplanation({ explanation_vi: "Dùng 일어나다 ở đây.", key_terms: [] }, allowed)).toEqual(["explanation_vi: Hangul in Vietnamese text"]);
+  });
+
+  it("flags Chinese/Japanese characters in the explanation (stricter than the general Vietnamese check)", () => {
+    expect(checkTopikExplanation({ explanation_vi: "Nghĩa là 學生.", key_terms: [] }, allowed)).toEqual([
+      "explanation_vi: Chinese/Japanese characters in Vietnamese text",
+    ]);
+  });
+
+  it("flags a key_term lemma the model invented instead of copying from the allowed list", () => {
+    expect(checkTopikExplanation({ explanation_vi: "Giải thích hợp lệ.", key_terms: ["일어나다", "없다"] }, allowed)).toEqual([
+      "key_terms: lemma(s) not in this question's vocabulary: 없다",
+    ]);
   });
 });

@@ -140,37 +140,49 @@ describe("blocks + practice session", () => {
   });
 });
 
-describe("per-question vocabulary (M6.2, 'tap a word')", () => {
+describe("per-question vocabulary + explanation (M6.2 'tap a word', M6.3 answer explanation)", () => {
   const sample = { words: [{ surface: "일어나서", lemma: "일어나다", pos: "verb", gloss_vi: "thức dậy" }] };
+  const explainSample = { explanation_vi: "Vì câu diễn tả một hành động đã xảy ra trước đó.", key_terms: ["일어나다"] };
   let tv: Awaited<ReturnType<typeof createTestEnv>>;
   let llm: ReturnType<typeof fakeLlm>;
   let adultV: string;
 
   beforeAll(async () => {
-    llm = fakeLlm([JSON.stringify(sample)]);
+    // generateStructured calls generate() once for vocab, then once for the explanation (in that
+    // order, within the same background job) — [vocab, explain] covers both, repeating the
+    // explanation shape for any further call in a test that triggers more than one round.
+    llm = fakeLlm([JSON.stringify(sample), JSON.stringify(explainSample)]);
     tv = await createTestEnv(testApp({ makeLlm: () => llm.client }));
   }, 60_000);
   afterAll(() => tv.dispose());
 
   beforeEach(async () => {
-    for (const table of ["usage_daily", "topik_attempts", "topik_cards", "topik_questions", "profiles"]) {
+    for (const table of ["usage_daily", "ai_cache", "topik_attempts", "topik_cards", "topik_questions", "profiles"]) {
       await tv.env.DB.prepare(`DELETE FROM ${table}`).run();
     }
     llm.requests.length = 0;
     adultV = ((await tv.api("POST", "/profiles", profile())).body as { id: string }).id;
   });
 
-  it("generates vocab in the background when a manual question is created, logging usage with no quota check", async () => {
+  it("generates vocab + explanation in the background when a manual question is created, logging usage with no quota check", async () => {
     const res = await tv.api("POST", "/topik/questions", { ...input(), profile_id: adultV });
     expect((res.body as { vocab: unknown[] }).vocab).toEqual([]); // not generated yet: the response does not wait for it
     await tv.settle();
 
-    const row = (await tv.api("GET", `/topik/questions?profile_id=${adultV}`)).body as { vocab: TopikVocabEntry[] }[];
+    const row = (await tv.api("GET", `/topik/questions?profile_id=${adultV}`)).body as {
+      vocab: TopikVocabEntry[];
+      explanation_vi: string | null;
+      key_terms: string[];
+    }[];
     expect(row[0]!.vocab).toEqual(sample.words);
-    expect(llm.requests).toHaveLength(1);
+    expect(row[0]!.explanation_vi).toBe(explainSample.explanation_vi);
+    expect(row[0]!.key_terms).toEqual(["일어나다"]);
+    expect(llm.requests).toHaveLength(2); // 1 vocab call + 1 explanation call
 
-    const usage = await tv.env.DB.prepare("SELECT count FROM usage_daily WHERE profile_id = ? AND service = 'topik_vocab'").bind(adultV).first();
-    expect(usage).toMatchObject({ count: 1 });
+    const vocabUsage = await tv.env.DB.prepare("SELECT count FROM usage_daily WHERE profile_id = ? AND service = 'topik_vocab'").bind(adultV).first();
+    expect(vocabUsage).toMatchObject({ count: 1 });
+    const explainUsage = await tv.env.DB.prepare("SELECT count FROM usage_daily WHERE profile_id = ? AND service = 'topik_explain'").bind(adultV).first();
+    expect(explainUsage).toMatchObject({ count: 1 });
   });
 
   it("regenerates when the stem/options text changes, but not when instruction or an unrelated field changes", async () => {
@@ -189,19 +201,31 @@ describe("per-question vocabulary (M6.2, 'tap a word')", () => {
     await tv.settle();
     expect(llm.requests).toHaveLength(0);
 
-    // The stem text changes: regenerates.
+    // The stem text changes: both vocab and explanation regenerate.
     await tv.api("PATCH", `/topik/questions/${(q.body as { id: string }).id}`, { profile_id: adultV, stem: { text: "완전히 다른 문장이다.", image_key: null } });
     await tv.settle();
-    expect(llm.requests).toHaveLength(1);
+    expect(llm.requests).toHaveLength(2);
   });
 
-  it("verify-bulk generates vocab only for rows never checked before", async () => {
-    // q1: created through the normal (manual) flow, already verified → already has its vocab.
+  it("regenerates only the explanation when correct_option changes without any text change", async () => {
+    const q = await tv.api("POST", "/topik/questions", { ...input(), profile_id: adultV });
+    await tv.settle();
+    // Not reset to 0 here: with only one more call expected (explanation-only), resetting would
+    // shift fakeLlm's position-based output selection back to the vocab-shaped response instead.
+    const before = llm.requests.length;
+
+    await tv.api("PATCH", `/topik/questions/${(q.body as { id: string }).id}`, { profile_id: adultV, correct_option: 2 });
+    await tv.settle();
+    expect(llm.requests.length - before).toBe(1); // explanation only — vocab text did not change
+  });
+
+  it("verify-bulk generates vocab/explanation only for whichever a row never had before", async () => {
+    // q1: created through the normal (manual) flow, already verified → already has both.
     await tv.api("POST", "/topik/questions", { ...input({ number: 1 }), profile_id: adultV });
     await tv.settle();
     llm.requests.length = 0;
 
-    // q2: inserted directly like the import script would — unverified, vocab never checked.
+    // q2: inserted directly like the import script would — unverified, neither ever checked.
     await tv.env.DB.prepare(
       `INSERT INTO topik_questions (id, section, exam, number, block, options, correct_option, verified, created_at, updated_at)
        VALUES (?1, 'reading', 'Test/연습1', 2, '1~2', ?2, 1, 0, 0, 0)`,
@@ -221,9 +245,77 @@ describe("per-question vocabulary (M6.2, 'tap a word')", () => {
     expect((bulk.body as { verified: number }).verified).toBe(2); // both rows match the exam filter
     await tv.settle();
 
-    // Only q2 needed generation (q1 already had vocab_checked_at set) — exactly 1 new LLM call.
-    expect(llm.requests).toHaveLength(1);
-    const q2row = await tv.env.DB.prepare("SELECT vocab_checked_at FROM topik_questions WHERE id = 'q2'").first();
+    // Only q2 needed generation (q1 already had both checked) — vocab + explanation = 2 new calls.
+    expect(llm.requests).toHaveLength(2);
+    const q2row = await tv.env.DB.prepare("SELECT vocab_checked_at, explain_checked_at FROM topik_questions WHERE id = 'q2'").first();
     expect(q2row!.vocab_checked_at).not.toBeNull();
+    expect(q2row!.explain_checked_at).not.toBeNull();
+  });
+});
+
+describe("answer explanation exposure (M6.3)", () => {
+  const sample = { words: [{ surface: "일어나서", lemma: "일어나다", pos: "verb", gloss_vi: "thức dậy" }] };
+  const explainSample = { explanation_vi: "Giải thích mẫu.", key_terms: ["일어나다"] };
+  let tv: Awaited<ReturnType<typeof createTestEnv>>;
+  let llm: ReturnType<typeof fakeLlm>;
+  let adultE: string;
+
+  beforeAll(async () => {
+    llm = fakeLlm([JSON.stringify(sample), JSON.stringify(explainSample)]);
+    tv = await createTestEnv(testApp({ makeLlm: () => llm.client }));
+  }, 60_000);
+  afterAll(() => tv.dispose());
+
+  beforeEach(async () => {
+    for (const table of ["usage_daily", "ai_cache", "topik_attempts", "topik_cards", "topik_questions", "cards", "words", "profiles"]) {
+      await tv.env.DB.prepare(`DELETE FROM ${table}`).run();
+    }
+    llm.requests.length = 0;
+    adultE = ((await tv.api("POST", "/profiles", profile())).body as { id: string }).id;
+  });
+
+  const createAndWait = async () => {
+    const q = await tv.api("POST", "/topik/questions", { ...input(), profile_id: adultE });
+    await tv.settle();
+    return (q.body as { id: string }).id;
+  };
+
+  it("never appears in the practice session (would leak the answer)", async () => {
+    await createAndWait();
+    const session = await tv.api("GET", `/topik/session?profile_id=${adultE}&section=reading&from=1&to=1`);
+    const q = (session.body as { questions: Record<string, unknown>[] }).questions[0]!;
+    expect(q).not.toHaveProperty("explanation_vi");
+    expect(q).not.toHaveProperty("key_terms");
+  });
+
+  it("is returned on the attempt response, with a key term the profile has never seen marked as new", async () => {
+    const id = await createAndWait();
+    const res = await tv.api("POST", "/topik/attempts", { profile_id: adultE, question_id: id, selected_option: 2 });
+    const body = res.body as { explanation_vi: string | null; key_terms: { lemma: string; existing_word_id: string | null }[] };
+    expect(body.explanation_vi).toBe(explainSample.explanation_vi);
+    expect(body.key_terms).toEqual([{ lemma: "일어나다", pos: "verb", gloss_vi: "thức dậy", existing_word_id: null }]);
+  });
+
+  it("drops a key term whose word the profile already knows (recognition card at Review state)", async () => {
+    const id = await createAndWait();
+    await tv.env.DB.prepare("INSERT INTO words (id, lang, term, reading, pos, gloss_vi, gloss_en, gloss_ko, image_status, ai_generated, verified, created_at, updated_at) VALUES ('w1','ko','일어나다','ireonada','verb','thức dậy','wake up','일어나다','none',1,1,0,0)").run();
+    await tv.env.DB.prepare(
+      "INSERT INTO cards (id, profile_id, word_id, card_type, due, stability, difficulty, elapsed_days, scheduled_days, learning_steps, reps, lapses, state, updated_at) VALUES ('c1', ?1, 'w1', 'recognition', 0, 1, 1, 0, 0, 0, 1, 0, 2, 0)",
+    )
+      .bind(adultE)
+      .run();
+
+    const res = await tv.api("POST", "/topik/attempts", { profile_id: adultE, question_id: id, selected_option: 2 });
+    expect((res.body as { key_terms: unknown[] }).key_terms).toEqual([]);
+  });
+
+  it("shows a known-but-weak library word with its existing id instead of offering to add it again", async () => {
+    const id = await createAndWait();
+    await tv.env.DB.prepare("INSERT INTO words (id, lang, term, reading, pos, gloss_vi, gloss_en, gloss_ko, image_status, ai_generated, verified, created_at, updated_at) VALUES ('w1','ko','일어나다','ireonada','verb','thức dậy','wake up','일어나다','none',1,1,0,0)").run();
+    // No card at all yet for this profile: still "weak" (not yet studied), not dropped.
+    const res = await tv.api("POST", "/topik/attempts", { profile_id: adultE, question_id: id, selected_option: 2 });
+    expect((res.body as { key_terms: { existing_word_id: string | null }[] }).key_terms).toEqual([
+      { lemma: "일어나다", pos: "verb", gloss_vi: "thức dậy", existing_word_id: "w1" },
+    ]);
   });
 });

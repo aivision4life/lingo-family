@@ -526,7 +526,30 @@
       "word": {
         "loadError": "뜻을 불러올 수 없습니다.",
         "addToLibrary": "단어장에 추가",
+        "marked": "표시됨",
         "alreadyInLibrary": "단어장에서 보기"
+      },
+      "explain": {
+        "title": "해설",
+        "show": "해설 보기"
+      },
+      "results": {
+        "markedTitle": "표시한 단어",
+        "addAll": "모두 단어장에 추가",
+        "adding": "추가하는 중…",
+        "retryLater": "단어 추가 화면에서 다시 시도",
+        "status": {
+          "pending": "대기 중",
+          "running": "처리 중…",
+          "done": "추가됨",
+          "error": "오류",
+          "skipped": "추가 안 됨"
+        }
+      },
+      "exitConfirm": {
+        "title": "연습을 종료할까요?",
+        "description": "표시했지만 아직 추가하지 않은 단어가 {{count}}개 있습니다. 지금 나가면 목록이 사라집니다.",
+        "leave": "나가고 목록 버리기"
       }
     },
     "manage": {

@@ -338,11 +338,18 @@ Decisions (M2.2):
 **Stage 2 (M6.2, this milestone): tap a word to see its meaning.**
 - [x] When a question is saved/approved (manual create, patch, or bulk-approve), the server generates — once, in the background, never at practice time — a vocabulary list for its whole text (instruction + stem + 4 options): one AI call, cached (`ai_cache`), content words + notable grammar endings only, basic particles excluded. Stored on the question (`vocab` JSON column + `vocab_checked_at`). Each entry: `surface` (exact inflected form as it appears, so the client can match where the learner tapped — Korean attaches grammar endings without a space), `lemma`, `pos`, `gloss_vi`.
 - [x] Exempt from the 50/day LLM quota (content work, not a practice action), but every call is still logged (`usage_daily` service `topik_vocab`, no cap).
-- [x] Client splits each text field into tappable/non-tappable spans by exact `surface` match (longest-first, non-overlapping) — no default underline/highlight; tapping a word shows a small popup (lemma, Vietnamese meaning, "Add to library"); tapping a particle shows nothing. A word already in the library shows the library's own gloss instead of the AI's, with a link to it instead of "Add to library". "Add to library" opens the normal Add-word screen prefilled with the term and auto-starts full AI enrichment (Hanja, all 3 glosses, example sentences, image) — never a shortcut that skips pictures, since this is a picture-first app; it counts toward the normal LLM/image quotas like any other add.
+- [x] Client splits each text field into tappable/non-tappable spans by exact `surface` match (longest-first, non-overlapping) — no default underline/highlight; tapping a word shows a small popup (lemma, Vietnamese meaning, "Add to library"); tapping a particle shows nothing. A word already in the library shows the library's own gloss instead of the AI's, with a link to it instead of "Add to library". "Add to library" (M6.3 revision, see below) marks the term instead of leaving the practice screen; the actual full enrichment runs from the end-of-session results screen.
 - [x] One-off script `npm run topik-words` (`scripts/topikWords/`) generates the vocabulary for existing questions: dry-run by default (counts + estimated AI calls), `--apply` to write, resumable (skips already-processed questions unless `--force`).
 
+**Stage 3 (M6.3, this milestone): answer explanation + key terms, and a non-interrupting way to add them.**
+- [x] When a question's vocabulary is (re)generated, the server also generates — same background job, same cache-first/no-practice-time-call rule — an explanation (`explanation_vi`, Vietnamese, names the grammar point when the question is testing one) and 3-5 `key_terms`: lemmas that MUST already be in that question's own `vocab` (never invented; validated and filtered server-side). Regenerates on a stem/options text change, or when `correct_option` itself changes (even with no text change). Exempt from the 50/day LLM quota, logged under `usage_daily` service `topik_explain`, no cap.
+- [x] Never sent in `GET /topik/session` (would leak the answer) — only in the `POST /topik/attempts` response, which already reveals `correct_option`. The server resolves `key_terms` per profile at that point: a grammar entry always shows; a content word not yet in the library shows first ("new"), one in the library whose `recognition` card hasn't reached ts-fsrs's Review state shows next ("weak", linking to the existing word instead of offering to add it again), one already at Review state is dropped (the learner knows it). Capped at 5.
+- [x] Client: a wrong answer shows the explanation (with an AI badge) and key terms right away; a correct answer only shows a "Xem giải thích" link. Each addable key term has the same "Add to library" action as the M6.2 popup.
+- [x] "Add to library" (both the M6.2 popup and the M6.3 key-terms list) was changed from "open the Add-word screen" to **mark the term for later**, so answering questions is never interrupted: the button becomes "Đã đánh dấu" (tap again to un-mark). The marked list lives only in memory for the session (not D1); leaving the practice screen with marks still pending asks for confirmation first (in-app navigation and an actual tab close/reload).
+- [x] The end-of-session results screen lists every marked term (with a checkbox to drop some first) and one "Thêm tất cả vào thư viện" button: it runs the full normal enrichment (Hanja, all 3 glosses, example sentences, image, FSRS card) for each, one by one, with no per-word review screen — the review already happened implicitly by marking during practice. Respects the daily LLM/image quotas; hitting one stops the run and reports which terms still need adding later (with a link to the normal Add-word screen for a manual retry).
+- [x] One-off script `npm run topik-explain` (`scripts/topikExplain/`): same dry-run/`--apply`/`--force`/`--limit`/`--ids`/resumable convention as `topik-words`; only processes questions that already have a vocabulary.
+
 **Later stages (not yet built):**
-- [ ] **M6.3** — an explanation when the answer is wrong, plus suggested vocabulary/phrases to add to the library from a missed question.
 - [ ] **M6.4** — a timed mock test mode (a full question set, a countdown, one score at the end instead of per-question feedback).
 
 ---
@@ -400,12 +407,13 @@ han_chars     hanja (PK) ← M1.6/M4, han_viet, meaning_vi, ai_generated, verifi
 word_chars    word_id, position, hanja                  -- Korean words only (F7)
 
 ai_cache      key (hash of task + input + model), response_json, created_at
-usage_daily   date, profile_id, service ('tts'|'pron'|'llm'|'image' ← M1.8), count
+usage_daily   date, profile_id, service ('tts'|'pron'|'llm'|'image' ← M1.8 | 'topik_vocab' ← M6.2 | 'topik_explain' ← M6.3), count
 
 topik_questions id, section ('reading'), exam, number, block, instruction?,            ← M6.1
                 stem_text?, stem_image_key?, options (json, 4×{text?, image_key?}),
                 correct_option, warning? (set by the import script), verified, created_by_profile?,
                 vocab? (json, [{surface, lemma, pos, gloss_vi}]), vocab_checked_at?,     ← M6.2
+                explanation_vi?, key_terms? (json, lemma[]), explain_checked_at?,        ← M6.3
                 created_at, updated_at
                 UNIQUE(section, exam, number)
 topik_cards     id, profile_id, question_id → topik_questions (ON DELETE CASCADE),      ← M6.1
@@ -522,8 +530,8 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M4 | Family & Hanja | F8 kid mode, F7 Hanja links, F9 import + starter decks | [ ] |
 | M5 | Insights | F10 stats, FSRS parameter optimization | [ ] |
 | M6.1 | TOPIK II practice (stage 1) | F12 question bank + `.docx` import (dry-run/apply, idempotent) + review screen + manual form + practice (own ts-fsrs scheduling, ~10 questions/session) + attempt history | [x] |
-| M6.2 | TOPIK: word lookup | Tap a word in a TOPIK question to see its meaning (AI-generated once per question, cached, exempt from the LLM quota) + "Add to library" reusing full enrichment | [x] |
-| M6.3 | TOPIK: explanations | Explanation on a wrong answer + suggested vocabulary from a missed question | [ ] |
+| M6.2 | TOPIK: word lookup | Tap a word in a TOPIK question to see its meaning (AI-generated once per question, cached, exempt from the LLM quota) | [x] |
+| M6.3 | TOPIK: explanations | Explanation + key terms on an attempt (never in the session), mark-then-bulk-add so adding words never interrupts practice | [x] |
 | M6.4 | TOPIK: mock test | Timed full mock test, one score at the end | [ ] |
 
 ---

@@ -4,6 +4,7 @@ import type { TopikVocabEntry } from "@shared/topik";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useWordLookup } from "@/features/words/api";
+import { TopikMarkToggle } from "./TopikMarkToggle";
 import { isGrammarEntry } from "./vocabSegments";
 
 /** One tappable word inside a TOPIK question's text (M6.2): bấm từ → popup with its meaning. */
@@ -38,7 +39,6 @@ function WordMeaning({ entry }: { entry: TopikVocabEntry }) {
   const lookup = useWordLookup("ko", entry.lemma, { enabled: !isGrammar });
 
   const gloss = !isGrammar && lookup.data ? lookup.data.gloss_vi : entry.gloss_vi;
-  const addHref = `/words/new?lang=ko&term=${encodeURIComponent(entry.lemma)}&autofill=1`;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -58,11 +58,7 @@ function WordMeaning({ entry }: { entry: TopikVocabEntry }) {
             {t("topik.practice.word.alreadyInLibrary")}
           </Link>
         ) : (
-          canManageProfiles(profile) && (
-            <Link to={addHref} className="text-sm font-medium text-primary underline underline-offset-4">
-              {t("topik.practice.word.addToLibrary")}
-            </Link>
-          )
+          canManageProfiles(profile) && <TopikMarkToggle lemma={entry.lemma} gloss_vi={gloss} />
         ))}
     </div>
   );

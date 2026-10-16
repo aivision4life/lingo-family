@@ -146,3 +146,21 @@ export function checkTopikVocabEntry(e: Pick<TopikVocabEntry, "surface" | "lemma
     ...prefixed("gloss_vi", checkVietnameseText(e.gloss_vi)),
   ];
 }
+
+/**
+ * A TOPIK answer explanation (M6.3): `explanation_vi` must be clean Vietnamese (no stray Hangul,
+ * and — unlike the general-purpose `checkVietnameseText` — no Chinese/Japanese characters either,
+ * since an explanation has no legitimate reason to contain either script). `key_terms` must be a
+ * subset of `allowedLemmas` (the question's own `vocab`): the model is told to pick only from that
+ * list, never invent a new one, and this is the check that catches it if it does anyway.
+ */
+export function checkTopikExplanation(data: { explanation_vi: string; key_terms: string[] }, allowedLemmas: readonly string[]): string[] {
+  const problems = [
+    ...prefixed("explanation_vi", checkVietnameseText(data.explanation_vi)),
+    ...(HAN_OR_KANA.test(data.explanation_vi) ? ["explanation_vi: Chinese/Japanese characters in Vietnamese text"] : []),
+  ];
+  const allowed = new Set(allowedLemmas);
+  const unknown = data.key_terms.filter((l) => !allowed.has(l));
+  if (unknown.length > 0) problems.push(`key_terms: lemma(s) not in this question's vocabulary: ${unknown.join(", ")}`);
+  return problems;
+}

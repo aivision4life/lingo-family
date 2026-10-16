@@ -398,6 +398,14 @@ export const topik_questions = sqliteTable(
     vocab: text("vocab", { mode: "json" }).$type<TopikVocabEntry[]>(),
     /** Set together with `vocab`; a null here (not an empty `vocab`) means "not generated yet". */
     vocab_checked_at: timestamp("vocab_checked_at"),
+    /** Why the correct option is right and the others wrong (M6.3), generated once by AI; null
+     * until generated (or if content-check rejected it twice). Never sent before the question is
+     * answered (worker/routes/topik.ts only puts it on the attempt response). */
+    explanation_vi: text("explanation_vi"),
+    /** 3-5 lemmas from this question's own `vocab` (M6.3) — never a term the AI invented. */
+    key_terms: text("key_terms", { mode: "json" }).$type<string[]>(),
+    /** Set together with `explanation_vi`/`key_terms`; null means "not generated yet". */
+    explain_checked_at: timestamp("explain_checked_at"),
     /** false until an adult reviews a freshly imported question and saves it. */
     verified: integer("verified", { mode: "boolean" }).notNull().default(false),
     created_by_profile: text("created_by_profile").references(() => profiles.id, { onDelete: "set null" }),

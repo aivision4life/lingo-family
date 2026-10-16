@@ -1,9 +1,10 @@
-// TOPIK II practice (SPEC F12, M6.1; per-question vocabulary M6.2): question bank CRUD + review,
-// practice sessions, attempts. Reading, writing and deleting questions are adult-only; practice
-// (GET session / POST attempt) is open to every profile, including kids. The only AI in this
-// feature is the M6.2 "tap a word" vocabulary, generated once in the background when a question is
-// created/edited/approved (never at practice time) — see worker/services/topikWord.ts.
-import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+// TOPIK II practice (SPEC F12, M6.1; per-question vocabulary M6.2; answer explanation M6.3):
+// question bank CRUD + review, practice sessions, attempts. Reading, writing and deleting
+// questions are adult-only; practice (GET session / POST attempt) is open to every profile,
+// including kids. The only AI in this feature is the M6.2 "tap a word" vocabulary and the M6.3
+// answer explanation, both generated once in the background when a question is created/edited/
+// approved (never at practice time) — see worker/services/topikWord.ts and topikExplain.ts.
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { applyReview, emptyCardFields, type CardFields } from "../../shared/scheduling";
@@ -28,6 +29,8 @@ import { recordUsage } from "../lib/quota";
 import { zv } from "../lib/validate";
 import type { MakeLlm } from "./words";
 import { buildTopikSession, type TopikCandidate } from "../services/topikScheduling";
+import { generateTopikExplanationWithCache, resolveKeyTermViews } from "../services/topikExplain";
+import type { ExplainInput } from "../services/topikExplainPrompt";
 import { generateTopikVocabWithCache, topikVocabSourceText } from "../services/topikWord";
 import { storeUploadedImage } from "../services/imageUpload";
 
@@ -47,6 +50,8 @@ const toQuestion = (r: QuestionRow): TopikQuestion => ({
   correct_option: r.correct_option,
   warning: r.warning,
   vocab: r.vocab ?? [],
+  explanation_vi: r.explanation_vi,
+  key_terms: r.key_terms ?? [],
   verified: r.verified,
   created_by_profile: r.created_by_profile,
   created_at: r.created_at.getTime(),
@@ -81,28 +86,53 @@ const toCardFields = (r: typeof topik_cards.$inferSelect): CardFields => ({
 
 export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
   /**
-   * Starts (background, `waitUntil`) generating/refreshing `row`'s vocabulary, logging the call
-   * under `profileId` with no daily cap (`recordUsage`, M6.2). A no-op when no LLM is configured,
-   * or when `row` has nothing to tokenize. Best-effort only: if the ~30s background window is cut
-   * off (can happen approving many questions from one exam at once), the row is simply left with
-   * `vocab_checked_at` still null and picked up later by `npm run topik-words`.
+   * Starts (background, `waitUntil`) generating/refreshing `row`'s vocabulary and/or answer
+   * explanation — whichever `opts` asks for — logging each under `profileId` with no daily cap
+   * (`recordUsage`, "topik_vocab" / "topik_explain"). A no-op when no LLM is configured. The
+   * explanation is generated from whatever vocabulary comes out of this same run (freshly
+   * generated, or the row's existing one when `opts.vocab` is false), since its `key_terms` may
+   * only cite lemmas from that list. Best-effort only: if the ~30s background window is cut off
+   * (can happen approving many questions from one exam at once), the row is simply left with
+   * `vocab_checked_at`/`explain_checked_at` still null and picked up later by `npm run topik-words`
+   * / `npm run topik-explain`.
    */
-  const refreshVocab = (c: Context<AppEnv>, profileId: string, row: QuestionRow) => {
+  const refreshContent = (c: Context<AppEnv>, profileId: string, row: QuestionRow, opts: { vocab: boolean; explain: boolean }) => {
     const llm = makeLlm(c.env);
     if (!llm) return;
     const db = getDb(c.env);
-    const text = topikVocabSourceText(row);
+    const logContext = `${row.exam} #${row.number}`;
     runInBackground(
       c,
       (async () => {
-        const { vocab } = await generateTopikVocabWithCache({
-          db,
-          llm,
-          logContext: `${row.exam} #${row.number}`,
-          text,
-          beforeLlmCall: () => recordUsage(db, profileId, "topik_vocab"),
-        });
-        await db.update(topik_questions).set({ vocab, vocab_checked_at: new Date() }).where(eq(topik_questions.id, row.id));
+        let vocab = row.vocab ?? [];
+        if (opts.vocab) {
+          const result = await generateTopikVocabWithCache({
+            db,
+            llm,
+            logContext,
+            text: topikVocabSourceText(row),
+            beforeLlmCall: () => recordUsage(db, profileId, "topik_vocab"),
+          });
+          vocab = result.vocab;
+          await db.update(topik_questions).set({ vocab, vocab_checked_at: new Date() }).where(eq(topik_questions.id, row.id));
+        }
+        if (opts.explain) {
+          const input: ExplainInput = {
+            instruction: row.instruction,
+            stem: { text: row.stem_text, image_key: row.stem_image_key },
+            options: row.options,
+            correct_option: row.correct_option,
+            vocab,
+          };
+          const { explanation_vi, key_terms } = await generateTopikExplanationWithCache({
+            db,
+            llm,
+            logContext,
+            input,
+            beforeLlmCall: () => recordUsage(db, profileId, "topik_explain"),
+          });
+          await db.update(topik_questions).set({ explanation_vi, key_terms, explain_checked_at: new Date() }).where(eq(topik_questions.id, row.id));
+        }
       })(),
     );
   };
@@ -139,8 +169,8 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         .insert(topik_questions)
         .values({ ...rest, stem_text: stem.text, stem_image_key: stem.image_key, options, verified: true, created_by_profile: profile_id })
         .returning();
-      // A manual entry starts verified, so its vocabulary can be generated right away.
-      refreshVocab(c, profile_id, row!);
+      // A manual entry starts verified, so its vocabulary + explanation can be generated right away.
+      refreshContent(c, profile_id, row!, { vocab: true, explain: true });
       return c.json(toQuestion(row!), 201);
     })
 
@@ -162,12 +192,17 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         })
         .where(eq(topik_questions.id, id))
         .returning();
-      // Only once the question is verified (shown in practice), and only when it has never been
-      // checked or its text actually changed since then — an edit that keeps the same text reuses
-      // the ai_cache entry anyway, but skipping the call here also skips the recordUsage log line.
-      if (row!.verified && (!row!.vocab_checked_at || topikVocabSourceText(row!) !== topikVocabSourceText(existing))) {
-        refreshVocab(c, profile_id, row!);
-      }
+      // Only once the question is verified (shown in practice). Vocabulary regenerates when it has
+      // never been checked or the stem/options text actually changed (an edit that keeps the same
+      // text reuses the ai_cache entry anyway, but skipping the call also skips the recordUsage
+      // line). The explanation regenerates for the same reasons, plus whenever `correct_option`
+      // itself changes — the explanation describes a specific right/wrong answer, so fixing a wrong
+      // answer without touching any text must still redo it.
+      const vocabTextChanged = topikVocabSourceText(row!) !== topikVocabSourceText(existing);
+      const correctChanged = row!.correct_option !== existing.correct_option;
+      const needsVocab = row!.verified && (!row!.vocab_checked_at || vocabTextChanged);
+      const needsExplain = row!.verified && (!row!.explain_checked_at || vocabTextChanged || correctChanged);
+      if (needsVocab || needsExplain) refreshContent(c, profile_id, row!, { vocab: needsVocab, explain: needsExplain });
       return c.json(toQuestion(row!));
     })
 
@@ -190,13 +225,22 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const db = getDb(c.env);
       const where = "exam" in body ? eq(topik_questions.exam, body.exam) : and(eq(topik_questions.section, body.section), gte(topik_questions.number, body.from), lte(topik_questions.number, body.to));
       const rows = await db.update(topik_questions).set({ verified: true, updated_at: new Date() }).where(where).returning({ id: topik_questions.id });
-      // Only rows never checked before (an already-verified row being re-approved keeps its vocab).
+      // Only rows never checked before (an already-verified row being re-approved keeps what it has);
+      // vocabulary and explanation are independent here, since a row can already have one but not
+      // the other (e.g. an older row from before M6.3 existed).
       if (rows.length > 0) {
-        const needVocab = await db
+        const needRows = await db
           .select()
           .from(topik_questions)
-          .where(and(inArray(topik_questions.id, rows.map((r) => r.id)), isNull(topik_questions.vocab_checked_at)));
-        for (const row of needVocab) refreshVocab(c, body.profile_id, row);
+          .where(
+            and(
+              inArray(topik_questions.id, rows.map((r) => r.id)),
+              or(isNull(topik_questions.vocab_checked_at), isNull(topik_questions.explain_checked_at)),
+            ),
+          );
+        for (const row of needRows) {
+          refreshContent(c, body.profile_id, row, { vocab: !row.vocab_checked_at, explain: !row.explain_checked_at });
+        }
       }
       return c.json({ verified: rows.length });
     })
@@ -279,6 +323,8 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         is_correct,
         duration_ms: duration_ms ?? null,
       });
-      return c.json({ is_correct, correct_option: question.correct_option });
+      // Only revealed now (the answer is already known at this point) — never in GET /topik/session.
+      const key_terms = await resolveKeyTermViews(db, profile_id, question.vocab ?? [], question.key_terms ?? []);
+      return c.json({ is_correct, correct_option: question.correct_option, explanation_vi: question.explanation_vi, key_terms });
     });
 };

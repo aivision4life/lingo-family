@@ -78,6 +78,13 @@
       "when": 1792106277164,
       "tag": "0010_topik_vocab",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792150803986,
+      "tag": "0011_topik_explain",
+      "breakpoints": true
     }
   ]
 }

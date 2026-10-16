@@ -526,7 +526,30 @@
       "word": {
         "loadError": "Could not load the meaning.",
         "addToLibrary": "Add to library",
+        "marked": "Marked",
         "alreadyInLibrary": "View in library"
+      },
+      "explain": {
+        "title": "Explanation",
+        "show": "Show explanation"
+      },
+      "results": {
+        "markedTitle": "Marked words",
+        "addAll": "Add all to library",
+        "adding": "Adding…",
+        "retryLater": "Open the Add word screen to retry",
+        "status": {
+          "pending": "Waiting",
+          "running": "Working…",
+          "done": "Added",
+          "error": "Error",
+          "skipped": "Not added"
+        }
+      },
+      "exitConfirm": {
+        "title": "Leave this practice session?",
+        "description": "You have {{count}} marked word(s) not yet added to the library. Leaving now will lose this list.",
+        "leave": "Leave and discard"
       }
     },
     "manage": {

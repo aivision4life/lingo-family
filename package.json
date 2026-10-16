@@ -23,7 +23,8 @@
     "assign-creator": "node benchmarks/run.mjs scripts/assignCreator/run.ts",
     "scan-llm-content": "node benchmarks/run.mjs scripts/scanLlmContent/run.ts",
     "topik-import": "node benchmarks/run.mjs scripts/topikImport/run.ts",
-    "topik-words": "node benchmarks/run.mjs scripts/topikWords/run.ts"
+    "topik-words": "node benchmarks/run.mjs scripts/topikWords/run.ts",
+    "topik-explain": "node benchmarks/run.mjs scripts/topikExplain/run.ts"
   },
   "dependencies": {
     "@fontsource/noto-sans-kr": "^5.3.0",

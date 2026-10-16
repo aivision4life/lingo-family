@@ -30,8 +30,9 @@ export const EXAMPLE_LEVELS = ["kid", "beginner", "intermediate"] as const;
 export const exampleLevelSchema = z.enum(EXAMPLE_LEVELS);
 export type ExampleLevel = z.infer<typeof exampleLevelSchema>;
 
-// "topik_vocab" (M6.2) is logged but never capped — see worker/lib/quota.ts#recordUsage.
-export const USAGE_SERVICES = ["tts", "pron", "llm", "image", "topik_vocab"] as const;
+// "topik_vocab" (M6.2) and "topik_explain" (M6.3) are logged but never capped — see
+// worker/lib/quota.ts#recordUsage.
+export const USAGE_SERVICES = ["tts", "pron", "llm", "image", "topik_vocab", "topik_explain"] as const;
 export const usageServiceSchema = z.enum(USAGE_SERVICES);
 export type UsageService = z.infer<typeof usageServiceSchema>;
 

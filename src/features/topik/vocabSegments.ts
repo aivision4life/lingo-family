@@ -2,18 +2,12 @@
 // endings without a space (e.g. "학교에서" = 학교 + 에서), so a whitespace split cannot tell which
 // part was tapped — instead, each AI-found `surface` form is matched as an exact substring,
 // longest-match-first, and whatever is left over (particles, punctuation, spaces) is not tappable.
-import type { TopikVocabEntry } from "@shared/topik";
+import { isGrammarPos, type TopikVocabEntry } from "@shared/topik";
 
 export type VocabSegment = { text: string; entry: TopikVocabEntry | null };
 
-/**
- * A grammar ending/particle entry (pos "other" or "particle") is not real picture-library
- * vocabulary — drawing an image for "-자마자" is both meaningless and a wasted image quota unit —
- * so the "tap a word" popup offers only its meaning, never an "Add to library" action.
- */
-export function isGrammarEntry(pos: TopikVocabEntry["pos"]): boolean {
-  return pos === "other" || pos === "particle";
-}
+/** Re-exported under this feature's own name for existing call sites; see `isGrammarPos`. */
+export const isGrammarEntry = isGrammarPos;
 
 /** First entry wins for a repeated `surface` (the AI is asked to list each one only once). */
 function dedupeBySurface(vocab: TopikVocabEntry[]): TopikVocabEntry[] {

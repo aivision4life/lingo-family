@@ -526,7 +526,30 @@
       "word": {
         "loadError": "Không tải được nghĩa.",
         "addToLibrary": "Thêm vào thư viện",
+        "marked": "Đã đánh dấu",
         "alreadyInLibrary": "Xem trong thư viện"
+      },
+      "explain": {
+        "title": "Giải thích",
+        "show": "Xem giải thích"
+      },
+      "results": {
+        "markedTitle": "Từ đã đánh dấu",
+        "addAll": "Thêm tất cả vào thư viện",
+        "adding": "Đang thêm…",
+        "retryLater": "Mở màn Thêm từ để thử lại",
+        "status": {
+          "pending": "Đang chờ",
+          "running": "Đang xử lý…",
+          "done": "Đã thêm",
+          "error": "Lỗi",
+          "skipped": "Chưa thêm"
+        }
+      },
+      "exitConfirm": {
+        "title": "Thoát buổi luyện tập?",
+        "description": "Bạn có {{count}} từ đã đánh dấu nhưng chưa thêm vào thư viện. Thoát bây giờ sẽ mất danh sách này.",
+        "leave": "Thoát, bỏ danh sách"
       }
     },
     "manage": {
