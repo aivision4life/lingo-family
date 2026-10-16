@@ -1,9 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   topikAttemptResultSchema,
   topikBlockListSchema,
+  topikFacetsSchema,
   topikImageUploadResponseSchema,
-  topikQuestionListSchema,
+  topikQuestionPageSchema,
   topikQuestionSchema,
   topikSessionResponseSchema,
   topikVerifyBulkResponseSchema,
@@ -12,6 +13,12 @@ import {
   type TopikVerifyBulkRequest,
 } from "@shared/topik";
 import { api, apiUpload } from "@/lib/api";
+
+/** Pages of 30; the review screen (M6.1+, filters/search added as the bank grows past ~600 rows)
+ * loads more as the adult scrolls/taps "Tải thêm" instead of fetching everything at once. */
+const TOPIK_MANAGE_PAGE_SIZE = 30;
+
+export type TopikQuestionFilter = { verified?: boolean; exam?: string; block?: string; q?: string };
 
 export const useTopikBlocks = () =>
   useQuery({ queryKey: ["topik", "blocks"], queryFn: () => api("GET", "/topik/blocks?section=reading", topikBlockListSchema) });
@@ -31,14 +38,36 @@ export const useSubmitTopikAttempt = () =>
 
 // --- Management (adults only) -------------------------------------------------------------------
 
-export const useTopikQuestions = (profileId: string, verified?: boolean) =>
+export function useTopikQuestionsPaged(profileId: string, filter: TopikQuestionFilter) {
+  const params = new URLSearchParams({ profile_id: profileId, limit: String(TOPIK_MANAGE_PAGE_SIZE) });
+  if (filter.verified !== undefined) params.set("verified", filter.verified ? "1" : "0");
+  if (filter.exam) params.set("exam", filter.exam);
+  if (filter.block) params.set("block", filter.block);
+  if (filter.q) params.set("q", filter.q);
+
+  return useInfiniteQuery({
+    queryKey: ["topik", "questions", profileId, filter],
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams(params);
+      qs.set("offset", String(pageParam));
+      return api("GET", `/topik/questions?${qs}`, topikQuestionPageSchema);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce((n, p) => n + p.questions.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
+  });
+}
+
+export const useTopikFacets = (profileId: string, verified?: boolean) =>
   useQuery({
-    queryKey: ["topik", "questions", profileId, verified],
+    queryKey: ["topik", "facets", profileId, verified],
     queryFn: () =>
       api(
         "GET",
-        `/topik/questions?profile_id=${profileId}${verified === undefined ? "" : `&verified=${verified ? "1" : "0"}`}`,
-        topikQuestionListSchema,
+        `/topik/questions/facets?profile_id=${profileId}${verified === undefined ? "" : `&verified=${verified ? "1" : "0"}`}`,
+        topikFacetsSchema,
       ),
   });
 

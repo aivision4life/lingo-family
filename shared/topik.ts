@@ -112,6 +112,28 @@ export const topikQuestionSchema = topikQuestionInputSchema.extend({
 export type TopikQuestion = z.infer<typeof topikQuestionSchema>;
 export const topikQuestionListSchema = z.array(topikQuestionSchema);
 
+/** Review screen (`/topik/manage`): filter by exam/block/verified, search by content or an exact
+ * question number, paged (`limit`/`offset`). */
+export const topikQuestionListQuerySchema = z.object({
+  profile_id: z.string().min(1),
+  verified: z.enum(["0", "1"]).optional(),
+  exam: z.string().trim().min(1).optional(),
+  block: z.string().trim().min(1).optional(),
+  /** Free text (matched against the stem/options) — or, when it is all digits, an exact question number. */
+  q: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(30),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type TopikQuestionListQuery = z.infer<typeof topikQuestionListQuerySchema>;
+
+export const topikQuestionPageSchema = z.object({ questions: topikQuestionListSchema, total: z.number().int().nonnegative() });
+export type TopikQuestionPage = z.infer<typeof topikQuestionPageSchema>;
+
+/** Values for the exam/block filter dropdowns, already scoped to the same `verified` filter the
+ * review screen is currently showing (so a dropdown never offers a label with 0 matching rows). */
+export const topikFacetsSchema = z.object({ exams: z.array(z.string()), blocks: z.array(z.string()) });
+export type TopikFacets = z.infer<typeof topikFacetsSchema>;
+
 /** Question as sent for practice: never carries the answer. `vocab` is safe to include (no spoiler). */
 export const topikPracticeQuestionSchema = z.object({ ...commonFields, id: z.string(), vocab: topikVocabListSchema });
 export type TopikPracticeQuestion = z.infer<typeof topikPracticeQuestionSchema>;

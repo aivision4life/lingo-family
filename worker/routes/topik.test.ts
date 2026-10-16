@@ -85,7 +85,7 @@ describe("question bank CRUD", () => {
   it("deletes a question", async () => {
     const q = await createQuestion();
     expect((await t.api("DELETE", `/topik/questions/${q.id}`, { profile_id: adult })).status).toBe(204);
-    expect((await t.api("GET", `/topik/questions?profile_id=${adult}`)).body).toEqual([]);
+    expect((await t.api("GET", `/topik/questions?profile_id=${adult}`)).body).toEqual({ questions: [], total: 0 });
   });
 
   it("uploads a stem/option photo with TOPIK's own size limit", async () => {
@@ -97,6 +97,74 @@ describe("question bank CRUD", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { image_key: string };
     expect(body.image_key).toMatch(/^images\/upload\/[0-9a-f]{40}\.webp$/);
+  });
+});
+
+describe("question bank filter/search/pagination (review screen, M6.4-ish scaling)", () => {
+  const list = (qs: string) => t.api("GET", `/topik/questions?profile_id=${adult}${qs}`) as Promise<{ body: { questions: { exam: string; number: number }[]; total: number } }>;
+
+  it("filters by exam", async () => {
+    await createQuestion({ exam: "A/연습1", number: 1 });
+    await createQuestion({ exam: "B/연습1", number: 1 });
+    const res = await list("&exam=A/연습1");
+    expect(res.body.questions.map((q) => q.exam)).toEqual(["A/연습1"]);
+    expect(res.body.total).toBe(1);
+  });
+
+  it("filters by block", async () => {
+    await createQuestion({ number: 1, block: "1~2" });
+    await createQuestion({ exam: "Test/연습2", number: 9, block: "9" });
+    const res = await list("&block=9");
+    expect(res.body.questions).toHaveLength(1);
+    expect(res.body.questions[0]).toMatchObject({ number: 9 });
+  });
+
+  it("searches by an exact question number when q is all digits", async () => {
+    await createQuestion({ number: 1 });
+    await createQuestion({ exam: "Test/연습2", number: 42 });
+    const res = await list("&q=42");
+    expect(res.body.questions).toEqual([expect.objectContaining({ number: 42 })]);
+  });
+
+  it("searches by stem/option content otherwise", async () => {
+    await createQuestion({ number: 1, stem: { text: "아주 특별한 단어가 있다.", image_key: null } });
+    await createQuestion({ exam: "Test/연습2", number: 2 });
+    const res = await list(`&q=${encodeURIComponent("특별한")}`);
+    expect(res.body.questions).toHaveLength(1);
+    expect(res.body.questions[0]).toMatchObject({ number: 1 });
+  });
+
+  it("finds a match inside an option's text too", async () => {
+    await createQuestion({ number: 1, options: [{ text: "독특한보기", image_key: null }, { text: "a", image_key: null }, { text: "b", image_key: null }, { text: "c", image_key: null }] });
+    const res = await list(`&q=${encodeURIComponent("독특한")}`);
+    expect(res.body.questions).toHaveLength(1);
+  });
+
+  it("paginates with limit/offset and reports the true total", async () => {
+    for (let n = 1; n <= 5; n++) await createQuestion({ number: n });
+    const page1 = await list("&limit=2&offset=0");
+    expect(page1.body.questions).toHaveLength(2);
+    expect(page1.body.total).toBe(5);
+    const page2 = await list("&limit=2&offset=2");
+    expect(page2.body.questions.map((q) => q.number)).toEqual([3, 4]);
+    const page3 = await list("&limit=2&offset=4");
+    expect(page3.body.questions.map((q) => q.number)).toEqual([5]);
+  });
+
+  it("facets list only the exams/blocks that currently have a matching row, scoped to the same verified filter", async () => {
+    await createQuestion({ exam: "A/연습1", number: 1, block: "1~2" });
+    await createQuestion({ exam: "B/연습1", number: 9, block: "9" });
+    await t.env.DB.prepare("UPDATE topik_questions SET verified = 0 WHERE exam = 'B/연습1'").run();
+
+    const all = await t.api("GET", `/topik/questions/facets?profile_id=${adult}`);
+    expect(all.body).toEqual({ exams: ["A/연습1", "B/연습1"], blocks: ["1~2", "9"] });
+
+    const verifiedOnly = await t.api("GET", `/topik/questions/facets?profile_id=${adult}&verified=1`);
+    expect(verifiedOnly.body).toEqual({ exams: ["A/연습1"], blocks: ["1~2"] });
+  });
+
+  it("facets endpoint is adult-only", async () => {
+    expect((await t.api("GET", `/topik/questions/facets?profile_id=${kid}`)).status).toBe(403);
   });
 });
 
@@ -170,13 +238,11 @@ describe("per-question vocabulary + explanation (M6.2 'tap a word', M6.3 answer 
     await tv.settle();
 
     const row = (await tv.api("GET", `/topik/questions?profile_id=${adultV}`)).body as {
-      vocab: TopikVocabEntry[];
-      explanation_vi: string | null;
-      key_terms: string[];
-    }[];
-    expect(row[0]!.vocab).toEqual(sample.words);
-    expect(row[0]!.explanation_vi).toBe(explainSample.explanation_vi);
-    expect(row[0]!.key_terms).toEqual(["일어나다"]);
+      questions: { vocab: TopikVocabEntry[]; explanation_vi: string | null; key_terms: string[] }[];
+    };
+    expect(row.questions[0]!.vocab).toEqual(sample.words);
+    expect(row.questions[0]!.explanation_vi).toBe(explainSample.explanation_vi);
+    expect(row.questions[0]!.key_terms).toEqual(["일어나다"]);
     expect(llm.requests).toHaveLength(2); // 1 vocab call + 1 explanation call
 
     const vocabUsage = await tv.env.DB.prepare("SELECT count FROM usage_daily WHERE profile_id = ? AND service = 'topik_vocab'").bind(adultV).first();
@@ -307,8 +373,10 @@ describe("answer explanation exposure (M6.3)", () => {
     const q = await tv.api("POST", "/topik/questions", { ...input({ stem: { text: null, image_key: "no-such-key" } }), profile_id: adultE });
     await tv.settle();
 
-    const row = (await tv.api("GET", `/topik/questions?profile_id=${adultE}`)).body as { exam: string; explanation_vi: string | null }[];
-    const found = row.find((r) => r.exam === (q.body as { exam: string }).exam);
+    const row = (await tv.api("GET", `/topik/questions?profile_id=${adultE}`)).body as {
+      questions: { exam: string; explanation_vi: string | null }[];
+    };
+    const found = row.questions.find((r) => r.exam === (q.body as { exam: string }).exam);
     expect(found!.explanation_vi).toBeNull();
     // Vocab (which does not need the image) still generated normally; only the explain call is skipped.
     expect(llm.requests.some((r) => (r.images?.length ?? 0) > 0)).toBe(false);

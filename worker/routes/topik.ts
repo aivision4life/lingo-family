@@ -4,7 +4,7 @@
 // including kids. The only AI in this feature is the M6.2 "tap a word" vocabulary and the M6.3
 // answer explanation, both generated once in the background when a question is created/edited/
 // approved (never at practice time) — see worker/services/topikWord.ts and topikExplain.ts.
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { applyReview, emptyCardFields, type CardFields } from "../../shared/scheduling";
@@ -14,6 +14,7 @@ import {
   TOPIK_IMAGE_MAX_SIDE,
   topikAttemptRequestSchema,
   topikQuestionInputSchema,
+  topikQuestionListQuerySchema,
   topikQuestionUpdateSchema,
   topikSessionRequestSchema,
   topikVerifyBulkRequestSchema,
@@ -37,6 +38,9 @@ import { storeUploadedImage } from "../services/imageUpload";
 type QuestionRow = typeof topik_questions.$inferSelect;
 const idParam = zv("param", z.object({ id: z.string().min(1) }));
 const err = (error: string) => ({ error });
+
+/** Escapes LIKE wildcards so user input is matched literally (same rule as `worker/routes/words.ts`). */
+const likePattern = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 const toQuestion = (r: QuestionRow): TopikQuestion => ({
   id: r.id,
@@ -148,19 +152,54 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
 
   return new Hono<AppEnv>()
     // --- Question bank (adult only to write; reading the full bank, incl. unverified, is also adult-only — it's management, not practice) ---
-    .get("/topik/questions", zv("query", z.object({ profile_id: z.string().min(1), verified: z.enum(["0", "1"]).optional() })), async (c) => {
+    // Filter + search + paginate for the review screen (expected to grow to ~600+ rows): `exam`/
+    // `block` narrow to one label each, `q` is either free text matched against the stem/options
+    // (LIKE on the raw columns — options' JSON text still contains each option's own text verbatim,
+    // so this also finds a match inside an option) or, when it is all digits, an exact `number`.
+    .get("/topik/questions", zv("query", topikQuestionListQuerySchema), async (c) => {
+      const { profile_id, verified, exam, block, q, limit, offset } = c.req.valid("query");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const db = getDb(c.env);
+      const conditions: SQL[] = [];
+      if (verified !== undefined) conditions.push(eq(topik_questions.verified, verified === "1"));
+      if (exam) conditions.push(eq(topik_questions.exam, exam));
+      if (block) conditions.push(eq(topik_questions.block, block));
+      if (q) {
+        if (/^\d+$/.test(q)) conditions.push(eq(topik_questions.number, Number(q)));
+        else {
+          const pattern = likePattern(q);
+          conditions.push(or(sql`${topik_questions.stem_text} LIKE ${pattern} ESCAPE '\\'`, sql`${topik_questions.options} LIKE ${pattern} ESCAPE '\\'`)!);
+        }
+      }
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const [rows, totalRow] = await Promise.all([
+        db
+          .select()
+          .from(topik_questions)
+          .where(where)
+          // Rows with a warning (from import) surface first, per exam group.
+          .orderBy(desc(sql`${topik_questions.warning} is not null`), asc(topik_questions.exam), asc(topik_questions.number))
+          .limit(limit)
+          .offset(offset),
+        db.select({ n: count() }).from(topik_questions).where(where).get(),
+      ]);
+      return c.json({ questions: rows.map(toQuestion), total: totalRow?.n ?? 0 });
+    })
+
+    /** Values for the exam/block filter dropdowns, scoped to the same `verified` tab so a choice
+     * never leads to an empty list. */
+    .get("/topik/questions/facets", zv("query", z.object({ profile_id: z.string().min(1), verified: z.enum(["0", "1"]).optional() })), async (c) => {
       const { profile_id, verified } = c.req.valid("query");
       const denied = await requireAdult(c, profile_id);
       if (denied) return denied;
       const db = getDb(c.env);
       const where = verified === undefined ? undefined : eq(topik_questions.verified, verified === "1");
-      const rows = await db
-        .select()
-        .from(topik_questions)
-        .where(where)
-        // Rows with a warning (from import) surface first, per exam group.
-        .orderBy(desc(sql`${topik_questions.warning} is not null`), asc(topik_questions.exam), asc(topik_questions.number));
-      return c.json(rows.map(toQuestion));
+      const [exams, blocks] = await Promise.all([
+        db.selectDistinct({ exam: topik_questions.exam }).from(topik_questions).where(where).orderBy(asc(topik_questions.exam)),
+        db.selectDistinct({ block: topik_questions.block }).from(topik_questions).where(where).orderBy(asc(topik_questions.block)),
+      ]);
+      return c.json({ exams: exams.map((e) => e.exam), blocks: blocks.map((b) => b.block) });
     })
 
     .post("/topik/questions", zv("json", topikQuestionInputSchema.extend({ profile_id: z.string().min(1) })), async (c) => {

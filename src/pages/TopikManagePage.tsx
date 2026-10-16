@@ -4,26 +4,21 @@ import type { TopikQuestion } from "@shared/topik";
 import { PageShell } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
-import {
-  useCreateTopikQuestion,
-  useDeleteTopikQuestion,
-  useTopikQuestions,
-  useUpdateTopikQuestion,
-  useVerifyTopikBulk,
-} from "@/features/topik/api";
+import { useCreateTopikQuestion, useUpdateTopikQuestion } from "@/features/topik/api";
 import { topikErrorMessage } from "@/features/topik/errors";
 import { emptyTopikFormValues, topikFormValuesFromQuestion, type TopikFormValues } from "@/features/topik/formValues";
 import { TopikQuestionForm } from "@/features/topik/TopikQuestionForm";
+import { TopikQuestionList } from "@/features/topik/TopikQuestionList";
 
-type Filter = "unverified" | "verified" | "all";
+type Mode = { kind: "list" } | { kind: "create" } | { kind: "edit"; question: TopikQuestion };
 
-/** Screen (M6.1) — `/topik/manage`: review imported questions, add/edit/delete by hand. Adults only. */
+/** Screen (M6.1) — `/topik/manage`: review imported questions, add/edit/delete by hand. Adults
+ * only. Filtering/search/pagination (M6.4-ish scaling, as the bank grows toward ~600+ rows) lives
+ * in `TopikQuestionList`; this page only switches between that list and the create/edit form. */
 export function TopikManagePage() {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
-  const [filter, setFilter] = useState<Filter>("unverified");
-  const [mode, setMode] = useState<"list" | "create" | string>("list"); // "list" | "create" | a question id being edited
-  const questions = useTopikQuestions(profile?.id ?? "", filter === "all" ? undefined : filter === "verified");
+  const [mode, setMode] = useState<Mode>({ kind: "list" });
 
   if (!profile) return null;
   if (!canManageProfiles(profile)) {
@@ -36,81 +31,20 @@ export function TopikManagePage() {
 
   return (
     <PageShell title={t("topik.manage.title")}>
-      {mode === "list" ? (
-        <>
-          <div className="flex flex-wrap gap-2">
-            {(["unverified", "verified", "all"] as const).map((f) => (
-              <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)}>
-                {t(`topik.manage.filter.${f}`)}
-              </Button>
-            ))}
-            <Button variant="secondary" size="sm" className="ms-auto" onClick={() => setMode("create")}>
-              {t("topik.manage.addManual")}
-            </Button>
-          </div>
-          {questions.isPending ? (
-            <p className="text-muted-foreground">{t("common.loading")}</p>
-          ) : questions.isError ? (
-            <p className="text-destructive">{t("common.loadError")}</p>
-          ) : questions.data.length === 0 ? (
-            <p className="text-muted-foreground">{t("topik.manage.empty")}</p>
-          ) : (
-            <QuestionList profileId={profile.id} questions={questions.data} onEdit={setMode} />
-          )}
-        </>
+      {mode.kind === "list" ? (
+        <TopikQuestionList
+          profileId={profile.id}
+          onAddNew={() => setMode({ kind: "create" })}
+          onEdit={(question) => setMode({ kind: "edit", question })}
+        />
       ) : (
         <QuestionEditor
           profileId={profile.id}
-          question={mode === "create" ? null : (questions.data?.find((q) => q.id === mode) ?? null)}
-          onDone={() => setMode("list")}
+          question={mode.kind === "edit" ? mode.question : null}
+          onDone={() => setMode({ kind: "list" })}
         />
       )}
     </PageShell>
-  );
-}
-
-function QuestionList({ profileId, questions, onEdit }: { profileId: string; questions: TopikQuestion[]; onEdit: (id: string) => void }) {
-  const { t } = useTranslation();
-  const del = useDeleteTopikQuestion();
-  const verifyBulk = useVerifyTopikBulk();
-
-  const exams = [...new Set(questions.map((q) => q.exam))];
-  return (
-    <div className="flex flex-col gap-3">
-      {exams.map((exam) => {
-        const rows = questions.filter((q) => q.exam === exam);
-        const anyUnverified = rows.some((q) => !q.verified);
-        return (
-          <div key={exam} className="flex flex-col gap-2 rounded-lg border p-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="font-semibold">{exam}</h2>
-              {anyUnverified && (
-                <Button size="sm" variant="outline" disabled={verifyBulk.isPending} onClick={() => verifyBulk.mutate({ profile_id: profileId, exam })}>
-                  {t("topik.manage.verifyGroup")}
-                </Button>
-              )}
-            </div>
-            {rows.map((q) => (
-              <div key={q.id} className="flex items-start justify-between gap-2 rounded-md border p-2">
-                <div className="flex min-w-0 flex-col">
-                  <span className="text-sm text-muted-foreground">
-                    #{q.number} {!q.verified && `· ${t("topik.manage.unverifiedBadge")}`} {q.warning && `· ⚠ ${q.warning}`}
-                  </span>
-                  <span lang="ko" className="truncate">{q.stem.text ?? t("topik.manage.imageOnly")}</span>
-                  <span className="text-sm text-muted-foreground">{t("topik.manage.correctAnswer", { n: q.correct_option })}</span>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button size="sm" variant="outline" onClick={() => onEdit(q.id)}>{t("topik.manage.edit")}</Button>
-                  <Button size="sm" variant="destructive" disabled={del.isPending} onClick={() => del.mutate({ id: q.id, profile_id: profileId })}>
-                    {t("topik.manage.delete")}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
