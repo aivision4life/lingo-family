@@ -21,6 +21,7 @@ import {
   topikQuestionContentSchema,
   topikQuestionInputSchema,
   topikQuestionListQuerySchema,
+  topikQuestionStatsSchema,
   topikQuestionUpdateSchema,
   topikSessionRequestSchema,
   topikVerifyBulkRequestSchema,
@@ -362,6 +363,20 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         key_terms,
         explain_ready: row.explain_checked_at !== null,
       } satisfies z.infer<typeof topikQuestionContentSchema>);
+    })
+
+    /** One profile's own full history on one question (every session ever, not just the current
+     * one) — shown small at the bottom of the practice screen. Never reveals the answer. */
+    .get("/topik/questions/:id/stats", idParam, zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
+      const { id } = c.req.valid("param");
+      const { profile_id } = c.req.valid("query");
+      const db = getDb(c.env);
+      const row = await db
+        .select({ attempts: count(), correct: sql<number>`sum(${topik_attempts.is_correct})` })
+        .from(topik_attempts)
+        .where(and(eq(topik_attempts.profile_id, profile_id), eq(topik_attempts.question_id, id)))
+        .get();
+      return c.json({ attempts: row?.attempts ?? 0, correct: row?.correct ?? 0 } satisfies z.infer<typeof topikQuestionStatsSchema>);
     })
 
     /** Review screen's per-question "Tạo dữ liệu AI" (adult only): for a question nobody has

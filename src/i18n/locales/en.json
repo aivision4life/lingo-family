@@ -520,6 +520,8 @@
       "sessionDone": "Session done!",
       "progress": "Question {{current}}/{{total}}",
       "vocabLoading": "Loading vocabulary…",
+      "personalStats": "You've gotten this right {{correct}}/{{attempts}} times",
+      "personalStatsNone": "You haven't tried this question before",
       "correct": "Correct!",
       "incorrect": "Not quite.",
       "prev": "Previous",

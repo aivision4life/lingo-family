@@ -215,6 +215,13 @@ export const topikAttemptResultSchema = z.object({
 });
 export type TopikAttemptResult = z.infer<typeof topikAttemptResultSchema>;
 
+/** `GET /topik/questions/:id/stats` — one profile's own full history on one question (every
+ * session, not just the current one): shown small at the bottom of the practice screen so the
+ * learner can see "I've gotten this one right 7/10 times" without it being a spoiler (it says
+ * nothing about which option is correct). */
+export const topikQuestionStatsSchema = z.object({ attempts: z.number().int().nonnegative(), correct: z.number().int().nonnegative() });
+export type TopikQuestionStats = z.infer<typeof topikQuestionStatsSchema>;
+
 /** Approves every question matching a filter without changing their content (the review screen's "approve group"). */
 export const topikVerifyBulkRequestSchema = z.union([
   z.object({ exam: z.string().min(1) }),

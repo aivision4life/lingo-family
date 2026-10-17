@@ -206,6 +206,23 @@ describe("blocks + practice session", () => {
   it("404s for an attempt on an unknown question", async () => {
     expect((await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: "nope", selected_option: 1 })).status).toBe(404);
   });
+
+  it("GET .../stats tallies one profile's own full history on one question, never leaking the answer", async () => {
+    const q = await createQuestion();
+    expect((await t.api("GET", `/topik/questions/${q.id}/stats?profile_id=${adult}`)).body).toEqual({ attempts: 0, correct: 0 });
+
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1 }); // wrong
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 3 }); // right
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 3 }); // right
+
+    const stats = await t.api("GET", `/topik/questions/${q.id}/stats?profile_id=${adult}`);
+    expect(stats.body).toEqual({ attempts: 3, correct: 2 });
+    expect(stats.body).not.toHaveProperty("correct_option");
+
+    // A different profile's attempts on the same question never mix in.
+    const other = await t.api("GET", `/topik/questions/${q.id}/stats?profile_id=${kid}`);
+    expect(other.body).toEqual({ attempts: 0, correct: 0 });
+  });
 });
 
 describe("per-question vocabulary + explanation (M6.2 'tap a word', M6.3 answer explanation)", () => {

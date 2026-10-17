@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion, type TopikVocabEntry } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
-import { useSubmitTopikAttempt, useTopikQuestionContent } from "./api";
+import { useSubmitTopikAttempt, useTopikQuestionContent, useTopikQuestionStats } from "./api";
 import { markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplanation, type SessionStates } from "./sessionState";
 import { TopikExplanation } from "./TopikExplanation";
 import { TopikSessionResults } from "./TopikSessionResults";
@@ -16,6 +17,7 @@ const elapsedSince = (start: number) => Date.now() - start;
 
 export function TopikSession({ profileId, questions }: { profileId: string; questions: TopikPracticeQuestion[] }) {
   const { t } = useTranslation();
+  const qc = useQueryClient();
   const [index, setIndex] = useState(0);
   const [states, setStates] = useState<SessionStates>({});
   const startedAt = useRef(0);
@@ -51,13 +53,22 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
   const effectiveResult = effectiveEntry?.kind === "answered" ? effectiveEntry.result : null;
   const selectedOption = effectiveEntry?.kind === "answered" ? effectiveEntry.selected : null;
 
+  // One profile's own full history on this question ("7/10 đúng"), shown small at the bottom —
+  // never a spoiler, just a personal tally. Refetched right after answering (see `choose` below).
+  const stats = useTopikQuestionStats(question?.id ?? "", profileId);
+
   if (done || !question) return <TopikSessionResults summary={summarize(questions.map((q) => q.id), states)} />;
 
   const choose = (option: number) => {
     if (selectedOption !== null) return;
     submit.mutate(
       { profile_id: profileId, question_id: question.id, selected_option: option, duration_ms: elapsedSince(startedAt.current) },
-      { onSuccess: (result) => setStates((s) => recordAnswer(s, question.id, option, result)) },
+      {
+        onSuccess: (result) => {
+          setStates((s) => recordAnswer(s, question.id, option, result));
+          void qc.invalidateQueries({ queryKey: ["topik", "stats", question.id, profileId] });
+        },
+      },
     );
   };
 
@@ -71,33 +82,41 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-0.5">
         <p className="text-sm text-muted-foreground">{t("topik.practice.progress", { current: index + 1, total: questions.length })}</p>
+        <p className="text-xs text-muted-foreground">{question.exam}</p>
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1">
         {questions.map((q, i) => {
           const st = statusOf(states, q.id);
           const qEntry = states[q.id];
           const isCorrectQ = qEntry?.kind === "answered" && qEntry.result.is_correct;
           return (
+            // The dot itself is small (~24px) to save space, but the button's own padding keeps the
+            // actual tappable area around ~32px — smaller than this app's usual 44px rule, but an
+            // explicit, deliberate exception for this dense per-question navigation strip.
             <button
               key={q.id}
               type="button"
               onClick={() => i !== index && goTo(i)}
               aria-current={i === index ? "step" : undefined}
               aria-label={t("topik.practice.jumpTo", { n: i + 1, status: t(`topik.practice.status.${st}`) })}
-              className={cn(
-                "flex size-11 items-center justify-center rounded-full border text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                i === index && "ring-2 ring-ring ring-offset-2",
-                st === "answered" &&
-                  (isCorrectQ
-                    ? "border-green-600 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400"
-                    : "border-destructive bg-destructive/10 text-destructive"),
-                st === "skipped" && "border-dashed text-muted-foreground",
-                st === "unanswered" && "text-muted-foreground",
-              )}
+              className="flex items-center justify-center rounded-full p-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
-              {i + 1}
+              <span
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-full border text-xs font-medium",
+                  i === index && "ring-2 ring-ring ring-offset-1",
+                  st === "answered" &&
+                    (isCorrectQ
+                      ? "border-green-600 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400"
+                      : "border-destructive bg-destructive/10 text-destructive"),
+                  st === "skipped" && "border-dashed text-muted-foreground",
+                  st === "unanswered" && "text-muted-foreground",
+                )}
+              >
+                {i + 1}
+              </span>
             </button>
           );
         })}
@@ -177,6 +196,13 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
           autoShow={!effectiveResult.is_correct}
         />
       )}
+      <p className="text-center text-xs text-muted-foreground">
+        {stats.data
+          ? stats.data.attempts > 0
+            ? t("topik.practice.personalStats", { correct: stats.data.correct, attempts: stats.data.attempts })
+            : t("topik.practice.personalStatsNone")
+          : " "}
+      </p>
     </div>
   );
 }

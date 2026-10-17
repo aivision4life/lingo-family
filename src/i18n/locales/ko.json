@@ -520,6 +520,8 @@
       "sessionDone": "연습을 마쳤습니다!",
       "progress": "{{current}}/{{total}}번째",
       "vocabLoading": "단어를 불러오는 중…",
+      "personalStats": "{{attempts}}번 중 {{correct}}번 정답",
+      "personalStatsNone": "아직 풀어본 적 없는 문제입니다",
       "correct": "정답입니다!",
       "incorrect": "틀렸습니다.",
       "prev": "이전 문제",

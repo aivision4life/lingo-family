@@ -520,6 +520,8 @@
       "sessionDone": "Đã xong buổi luyện tập!",
       "progress": "Câu {{current}}/{{total}}",
       "vocabLoading": "Đang tải từ vựng…",
+      "personalStats": "Bạn đã làm đúng {{correct}}/{{attempts}} lần",
+      "personalStatsNone": "Bạn chưa làm câu này lần nào",
       "correct": "Đúng!",
       "incorrect": "Sai rồi.",
       "prev": "Câu trước",

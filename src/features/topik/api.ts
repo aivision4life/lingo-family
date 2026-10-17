@@ -8,6 +8,7 @@ import {
   topikQuestionContentSchema,
   topikQuestionPageSchema,
   topikQuestionSchema,
+  topikQuestionStatsSchema,
   topikSessionResponseSchema,
   topikVerifyBulkResponseSchema,
   type TopikQuestionInput,
@@ -60,6 +61,15 @@ export const useGenerateTopikContent = () =>
   useMutation({
     mutationFn: ({ id, profileId }: { id: string; profileId: string }) =>
       api("POST", `/topik/questions/${id}/generate-content`, topikGenerateContentResponseSchema, { profile_id: profileId }),
+  });
+
+/** One profile's own full history ("7/10 đúng") on one question — shown small on the practice
+ * screen, never a spoiler. Invalidated after submitting an attempt so it updates right away. */
+export const useTopikQuestionStats = (questionId: string, profileId: string) =>
+  useQuery({
+    queryKey: ["topik", "stats", questionId, profileId],
+    queryFn: () => api("GET", `/topik/questions/${questionId}/stats?profile_id=${encodeURIComponent(profileId)}`, topikQuestionStatsSchema),
+    enabled: !!questionId,
   });
 
 // --- Management (adults only) -------------------------------------------------------------------
