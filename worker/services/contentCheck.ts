@@ -14,6 +14,27 @@ const HANGUL = /[가-힣ᄀ-ᇿ㄰-㆏]/;
 const HAN_OR_KANA = /[㐀-䶿一-鿿぀-ゟ゠-ヿ]/;
 const LATIN_WORD = /[A-Za-z]+/g;
 
+/** Any quốc ngữ tone/vowel mark, including đ/Đ. */
+const VIETNAMESE_DIACRITIC = /[àáạảãăằắặẳẵâầấậẩẫèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+/** Below this length, having no diacritic at all is not suspicious — a short phrase, a proper
+ * noun, a number, an acronym. Only flag text long enough that it really should read as accented
+ * Vietnamese prose. */
+const VIETNAMESE_DIACRITIC_MIN_LENGTH = 50;
+
+/**
+ * Flags Vietnamese prose written with the diacritics stripped out entirely ("Cau hoi yeu cau tim
+ * bieu thuc..." instead of "Câu hỏi yêu cầu tìm biểu thức..."): still genuinely Latin-only text (so
+ * `checkVietnameseText`'s Hangul check alone would not catch it), barely readable, and — seen in
+ * practice under heavy Gemini 429/503 retry pressure — not something the schema check notices
+ * either, since it is syntactically a perfectly valid string. A short string legitimately has
+ * nothing to put a mark on (a lone proper noun, a number), so this only looks at text long enough
+ * to be real prose.
+ */
+export function checkVietnameseDiacritics(text: string): string[] {
+  if (text.length < VIETNAMESE_DIACRITIC_MIN_LENGTH) return [];
+  return VIETNAMESE_DIACRITIC.test(text) ? [] : ["Vietnamese text has no diacritics at all (likely generated with accents stripped)"];
+}
+
 /** Common loanword acronyms that legitimately appear as-is inside Korean text. */
 const KOREAN_LATIN_ALLOWLIST = new Set(["TV", "AI", "PC", "CD", "DVD", "SNS", "PDF", "URL", "ID", "OK", "DIY", "VIP", "USB"]);
 
@@ -43,9 +64,13 @@ export function checkEnglishText(text: string): string[] {
   return problems;
 }
 
-/** Vietnamese text should not contain Hangul. */
+/** Vietnamese text should not contain Hangul, and (if long enough to be real prose) should have at
+ * least one diacritic mark. */
 export function checkVietnameseText(text: string): string[] {
-  return HANGUL.test(text) ? ["Hangul in Vietnamese text"] : [];
+  const problems: string[] = [];
+  if (HANGUL.test(text)) problems.push("Hangul in Vietnamese text");
+  problems.push(...checkVietnameseDiacritics(text));
+  return problems;
 }
 
 /** Picks the Korean or English check for a learning-language field (word term, phrase text, sentence). */
@@ -174,6 +199,7 @@ export function checkTopikExplanation(
     if (!known) problems.push(`explanation_vi: unexpected Hangul "${run}" (not one of this question's own words/patterns)`);
   }
   if (HAN_OR_KANA.test(data.explanation_vi)) problems.push("explanation_vi: Chinese/Japanese characters in Vietnamese text");
+  problems.push(...checkVietnameseDiacritics(data.explanation_vi).map((p) => `explanation_vi: ${p}`));
 
   const allowed = new Set(allowedLemmas);
   const unknown = data.key_terms.filter((l) => !allowed.has(l));

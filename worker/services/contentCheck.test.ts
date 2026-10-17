@@ -11,6 +11,7 @@ import {
   checkSentenceCheck,
   checkTopikExplanation,
   checkTopikVocabEntry,
+  checkVietnameseDiacritics,
   checkVietnameseText,
 } from "./contentCheck";
 
@@ -66,6 +67,35 @@ describe("checkVietnameseText", () => {
 
   it("flags Hangul", () => {
     expect(checkVietnameseText("Tôi là 학생.")).toEqual(["Hangul in Vietnamese text"]);
+  });
+
+  it("flags long Vietnamese prose with every diacritic stripped out", () => {
+    const noDiacritics =
+      "Cau hoi yeu cau tim bieu thuc co y nghia gan nhat voi phan gach chan. Dap an 1 la chinh xac vi dung dung ngu canh cua cau.";
+    expect(checkVietnameseText(noDiacritics)).toEqual(["Vietnamese text has no diacritics at all (likely generated with accents stripped)"]);
+  });
+});
+
+describe("checkVietnameseDiacritics", () => {
+  it("accepts short text with no diacritic at all (a proper noun, a number, ...)", () => {
+    expect(checkVietnameseDiacritics("Tom")).toEqual([]);
+    expect(checkVietnameseDiacritics("123")).toEqual([]);
+  });
+
+  it("accepts text with at least one diacritic, however short", () => {
+    expect(checkVietnameseDiacritics("Có.")).toEqual([]);
+  });
+
+  it("flags the exact real string this check was written for (M6.5-ish: a TOPIK explanation generated with every accent stripped under Gemini rate-limit retry pressure)", () => {
+    const real =
+      "Cau hoi yeu cau tim bieu thuc co y nghia gan nhat voi phan gach chan. Cuphap -정도 dung o day chi muc do giong voi bieu thuc -만큼, nen dap an 1 la chinh xac. Cac lua chon khac nhu -까 봐 chi lo so, -는 대로 chi su tuan theo va -나는 대신에 chi su thay the khong phu hop voi y nghia chi muc do cua cau.";
+    expect(checkVietnameseDiacritics(real)).toEqual(["Vietnamese text has no diacritics at all (likely generated with accents stripped)"]);
+  });
+
+  it("accepts long prose that has at least one diacritic somewhere", () => {
+    const longWithOneMark =
+      "Cau hoi nay kiem tra ngu phap co ban, va dap an dung la so 1 vi no phu hop nhat voi y nghia cua ca cau noi chung đo.";
+    expect(checkVietnameseDiacritics(longWithOneMark)).toEqual([]);
   });
 });
 
@@ -222,6 +252,13 @@ describe("checkTopikVocabEntry", () => {
   it("flags a stray Latin letter in the surface/lemma form", () => {
     expect(checkTopikVocabEntry({ surface: "일어나a서", lemma: "일어나다", gloss_vi: "thức dậy" })).toEqual(['surface: a lone Latin letter "a"']);
   });
+
+  it("flags a long gloss_vi with every diacritic stripped out", () => {
+    const noDiacritics = "Dong tu nay dung de noi ve viec thuc day vao buoi sang som truoc khi mat troi moc len cao.";
+    expect(checkTopikVocabEntry({ surface: "일어나서", lemma: "일어나다", gloss_vi: noDiacritics })).toEqual([
+      "gloss_vi: Vietnamese text has no diacritics at all (likely generated with accents stripped)",
+    ]);
+  });
 });
 
 describe("checkTopikExplanation", () => {
@@ -258,5 +295,12 @@ describe("checkTopikExplanation", () => {
     expect(checkTopikExplanation({ explanation_vi: "Giải thích hợp lệ.", key_terms: ["일어나다", "없다"] }, allowed)).toEqual([
       "key_terms: lemma(s) not in this question's vocabulary: 없다",
     ]);
+  });
+
+  it("flags explanation_vi written with every diacritic stripped out (the real 8DeOfficial-35회 #3 incident)", () => {
+    const real =
+      "Cau hoi yeu cau tim bieu thuc co y nghia gan nhat voi phan gach chan. Cuphap -정도 dung o day chi muc do giong voi bieu thuc -만큼, nen dap an 1 la chinh xac. Cac lua chon khac nhu -까 봐 chi lo so, -는 대로 chi su tuan theo va -나는 대신에 chi su thay the khong phu hop voi y nghia chi muc do cua cau.";
+    const result = checkTopikExplanation({ explanation_vi: real, key_terms: [] }, allowed, ["정도", "만큼"]);
+    expect(result).toContain("explanation_vi: Vietnamese text has no diacritics at all (likely generated with accents stripped)");
   });
 });
