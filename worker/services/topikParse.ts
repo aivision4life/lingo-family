@@ -114,18 +114,32 @@ const ANSWER_LABEL = /^(\d+)\s*\((\d+)\)$/;
 /** "유형1: 문항 1~2" / "문항 9" — the block is always the trailing number(s). */
 const HEADING1_BLOCK = /(\d+)\s*(?:~\s*(\d+))?\s*$/;
 
+/**
+ * All text in a table cell, one line per direct `<w:p>` paragraph (joined with "\n"): a cell can
+ * hold several paragraphs — e.g. a sentence-ordering stem's "(가)…"/"(나)…"/"(다)…"/"(라)…" lines,
+ * each its own paragraph in the source Word file. `textOf()` alone would run them together with no
+ * separator at all. A single-paragraph cell (the common case) behaves exactly as before.
+ */
+function cellText(cell: OrderedNode): string {
+  return childrenOf(cell)
+    .filter((c) => tagOf(c) === "w:p")
+    .map((p) => textOf(p).trim())
+    .filter((t) => t !== "")
+    .join("\n");
+}
+
 function parseTable(tbl: OrderedNode): { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] } {
   const rows = childrenOf(tbl).filter((c) => tagOf(c) === "w:tr");
   const cellsOf = (row: OrderedNode) => childrenOf(row).filter((c) => tagOf(c) === "w:tc");
   const stemRow = rows[0];
   const stemCell = stemRow ? cellsOf(stemRow)[0] : undefined;
-  const stem_text = stemCell ? textOf(stemCell).trim() : "";
+  const stem_text = stemCell ? cellText(stemCell) : "";
   const stem_image_rid = stemCell ? embedIdOf(stemCell) : null;
 
   const optionCells = rows.slice(1).flatMap(cellsOf);
   const options: ParsedOption[] = optionCells.slice(0, TOPIK_OPTION_COUNT).map((cell) => ({
     // Cell text is "1) 일어나는데" etc.; drop the leading "N) " marker, it is not part of the option.
-    text: textOf(cell).trim().replace(/^\d+\)\s*/, ""),
+    text: cellText(cell).replace(/^\d+\)\s*/, ""),
     marked: hasUnderline(cell),
     image_rid: embedIdOf(cell),
   }));
@@ -168,9 +182,26 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   const declared_correct = answerMatch ? Number(answerMatch[2]) : null;
 
   const table = body.find((n) => tagOf(n) === "w:tbl");
-  const parsed = table
-    ? parseTable(table)
-    : parseListShape(body.filter((n) => tagOf(n) === "w:p" && n !== answerPara));
+  let parsed: { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] };
+  if (table) {
+    const tableParsed = parseTable(table);
+    if (tableParsed.options.length === 0) {
+      // A table with only the stem row (no option rows): some files (문항11-12/16-18's "일치하는
+      // 내용/중심 생각 고르기" types) put the stem in a 1-row table but the 4 options as plain
+      // ListParagraph paragraphs after it instead of more table rows — the same list shape the
+      // image-only questions (문항5-8) already use. Reuses `parseListShape` on everything after the
+      // table; a stray non-ListParagraph paragraph in between (the file's author's own Vietnamese
+      // vocab gloss, e.g. "노소: già trẻ") is simply not ListParagraph-styled, so it is never picked
+      // up as an option there — only its (here unused) stem_text/stem_image_rid would absorb it.
+      const afterTable = body.slice(body.indexOf(table) + 1).filter((n) => tagOf(n) === "w:p" && n !== answerPara);
+      const listParsed = parseListShape(afterTable);
+      parsed = { stem_text: tableParsed.stem_text, stem_image_rid: tableParsed.stem_image_rid, options: listParsed.options };
+    } else {
+      parsed = tableParsed;
+    }
+  } else {
+    parsed = parseListShape(body.filter((n) => tagOf(n) === "w:p" && n !== answerPara));
+  }
 
   if (parsed.options.length !== TOPIK_OPTION_COUNT) {
     errors.push(`expected ${TOPIK_OPTION_COUNT} options, found ${parsed.options.length}`);

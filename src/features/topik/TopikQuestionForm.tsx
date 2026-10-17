@@ -6,6 +6,7 @@ import { FormField } from "@/components/FormField";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { imageUrl } from "@/features/images/api";
 import { resizeForUpload } from "@/features/images/resize";
 import { useUploadTopikImage } from "./api";
@@ -44,7 +45,13 @@ function ContentField({
   return (
     <FormField id={id} label={label}>
       <div className="flex flex-col gap-2">
-        <Input id={id} autoFocus={autoFocus} value={value.text ?? ""} onChange={(e) => onChange({ ...value, text: e.target.value })} />
+        <Textarea
+          id={id}
+          autoFocus={autoFocus}
+          rows={3}
+          value={value.text ?? ""}
+          onChange={(e) => onChange({ ...value, text: e.target.value })}
+        />
         <div className="flex items-center gap-2">
           {value.image_key && (
             <button type="button" onClick={() => setZoomed(true)} className="shrink-0">

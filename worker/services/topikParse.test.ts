@@ -14,6 +14,11 @@ const cell = (text: string, underline = false, rid: string | null = null) =>
   }</w:p></w:tc>`;
 const table = (stem: string, opts: [string, string, string, string], correct: number, stemRid: string | null = null) =>
   `<w:tbl><w:tr>${cell(stem, false, stemRid)}</w:tr><w:tr>${cell(opts[0], correct === 1)}${cell(opts[1], correct === 2)}</w:tr><w:tr>${cell(opts[2], correct === 3)}${cell(opts[3], correct === 4)}</w:tr></w:tbl>`;
+/** A stem-only table (1 row, no option rows) — the 11-12/16-18-style shape where the 4 options
+ * are separate ListParagraph paragraphs after the table instead of more table rows. */
+const stemOnlyTable = (stem: string, stemRid: string | null = null) => `<w:tbl><w:tr>${cell(stem, false, stemRid)}</w:tr></w:tbl>`;
+/** A table cell holding several paragraphs (the sentence-ordering shape: one "(가)…" line each). */
+const multiParaCell = (lines: string[]) => `<w:tc>${lines.map((l) => `<w:p><w:r><w:t>${l}</w:t></w:r></w:p>`).join("")}</w:tc>`;
 const listOption = (text: string, underline = false) =>
   `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/></w:pPr><w:r>${underline ? '<w:rPr><w:u w:val="single"/></w:rPr>' : ""}<w:t>${text}</w:t></w:r></w:p>`;
 const drawing = (rid: string) => `<w:p><w:r><w:drawing><a:blip r:embed="${rid}"/></w:drawing></w:r></w:p>`;
@@ -119,6 +124,77 @@ describe("parseTopikDocument", () => {
         `<w:tbl><w:tr>${cell("s")}</w:tr><w:tr>${cell("a", true)}${cell("b", true)}</w:tr><w:tr>${cell("c")}${cell("d")}</w:tr></w:tbl>`,
     );
     expect(parseTopikDocument(both).exams[0]!.items[0]!.errors).toEqual(["expected exactly one underlined option, found 2 (1,2)"]);
+  });
+
+  it("parses a stem-only table (1 row) + ListParagraph options after it (문항11-12/16-18 shape)", () => {
+    const xml = doc(
+      heading("Heading1", "유형3: 문항11~12") +
+        heading("Heading2", "연습1(35회)") +
+        heading("Heading3", "1-11(35회)") +
+        answer(2) +
+        stemOnlyTable("이곳에서 옛날 영화 포스터를 살 수 있다.") +
+        plain("노소: già trẻ") + // a stray vocab-gloss paragraph between the table and the options
+        listOption("이곳에서 옛날 영화 포스터를 살 수 있다.") +
+        listOption("얼마 전 추억의 문화 공간이 새로 만들어졌다.", true) +
+        listOption("추억극장은 입장료가 없기 때문에 인기가 많다.") +
+        listOption("추억극장에서는 최근에 나온 영화도 볼 수 있다.") +
+        plain("현실: hiện thực"), // and another one trailing after the options
+    );
+    const item = parseTopikDocument(xml).exams[0]!.items[0]!;
+    expect(item).toMatchObject({
+      labelNumber: 11,
+      round: "35회",
+      stem_text: "이곳에서 옛날 영화 포스터를 살 수 있다.",
+      declared_correct: 2,
+      errors: [],
+    });
+    expect(item.options).toHaveLength(4);
+    expect(item.options.map((o) => o.marked)).toEqual([false, true, false, false]);
+  });
+
+  it("a stem-only table with an image keeps the image as the stem (not an option)", () => {
+    const xml = doc(
+      heading("Heading1", "문항 16") +
+        heading("Heading2", "연습1") +
+        heading("Heading3", "1-16") +
+        answer(1) +
+        stemOnlyTable("passage text", "rId5") +
+        listOption("a", true) +
+        listOption("b") +
+        listOption("c") +
+        listOption("d"),
+    );
+    const item = parseTopikDocument(xml).exams[0]!.items[0]!;
+    expect(item).toMatchObject({ stem_text: "passage text", stem_image_rid: "rId5", errors: [] });
+    expect(item.options).toHaveLength(4);
+  });
+
+  it("a stem-only table with fewer than 4 ListParagraph options after it still reports the real count", () => {
+    const xml = doc(
+      heading("Heading1", "문항 1") +
+        heading("Heading2", "연습1") +
+        heading("Heading3", "1-1") +
+        answer(1) +
+        stemOnlyTable("stem") +
+        listOption("a", true) +
+        listOption("b"),
+    );
+    const item = parseTopikDocument(xml).exams[0]!.items[0]!;
+    expect(item.errors).toEqual(["expected 4 options, found 2"]);
+  });
+
+  it("joins a multi-paragraph stem cell's lines with newlines (sentence-ordering shape)", () => {
+    const stemCell = multiParaCell(["(가)첫 번째 문장.", "(나)두 번째 문장.", "(다)세 번째 문장.", "(라)네 번째 문장."]);
+    const xml = doc(
+      heading("Heading1", "문항 13") +
+        heading("Heading2", "연습1") +
+        heading("Heading3", "1-13") +
+        answer(1) +
+        `<w:tbl><w:tr>${stemCell}</w:tr><w:tr>${cell("a", true)}${cell("b")}</w:tr><w:tr>${cell("c")}${cell("d")}</w:tr></w:tbl>`,
+    );
+    const item = parseTopikDocument(xml).exams[0]!.items[0]!;
+    expect(item.stem_text).toBe("(가)첫 번째 문장.\n(나)두 번째 문장.\n(다)세 번째 문장.\n(라)네 번째 문장.");
+    expect(item.errors).toEqual([]);
   });
 
   it("the instruction repeats for every exam group it appears before, and resets per group", () => {
