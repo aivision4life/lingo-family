@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TOPIK_IMAGE_MAX_BYTES } from "../../shared/topik";
 import type { DraftQuestion } from "../../worker/services/topikImport";
 import { FAKE_WEBP } from "../../worker/test/fakeUpload";
-import { checkImageBytes, checkQuestionImages, imageRefsOf, type MediaByRid } from "./plan";
+import { checkImageBytes, checkQuestionImages, imageRefsOf, verifiedAfterOverwrite, type MediaByRid } from "./plan";
 
 /** `FAKE_WEBP` with its width set to 2000px — over TOPIK's own 1600px limit. */
 function oversizedForTopik(): Uint8Array {
@@ -102,5 +102,17 @@ describe("checkQuestionImages", () => {
     const mediaByRid: MediaByRid = new Map([["rId1", { bytes: FAKE_WEBP, contentType: "image/webp" }]]);
     const q = question({ options: [{ text: "", image_rid: "rId1" }, { text: "", image_rid: "rId-missing" }, { text: "c", image_rid: null }, { text: "d", image_rid: null }] });
     expect(checkQuestionImages(q, mediaByRid)).toEqual(["image rId-missing is referenced but was not found in word/media"]);
+  });
+});
+
+describe("verifiedAfterOverwrite", () => {
+  it("resets to false by default (content changed, an adult should look again)", () => {
+    expect(verifiedAfterOverwrite(true, false)).toBe(false);
+    expect(verifiedAfterOverwrite(false, false)).toBe(false);
+  });
+
+  it("--keep-verified keeps whatever the row already had", () => {
+    expect(verifiedAfterOverwrite(true, true)).toBe(true);
+    expect(verifiedAfterOverwrite(false, true)).toBe(false);
   });
 });

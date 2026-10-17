@@ -50,3 +50,14 @@ export function checkQuestionImages(q: DraftQuestion, mediaByRid: MediaByRid): s
   }
   return errors;
 }
+
+/**
+ * `--force`'s default behavior resets `verified` to false on an overwrite — content changed, so an
+ * adult should look at it again before it goes back into practice. `--keep-verified` opts out of
+ * that for a touch-up re-import that does not actually change the question's meaning (e.g. a parser
+ * fix that only adds line breaks): the row keeps whatever `verified` it already had, so an already
+ * reviewed-and-studied question (with FSRS progress on it) does not need re-approving.
+ */
+export function verifiedAfterOverwrite(existingVerified: boolean, keepVerified: boolean): boolean {
+  return keepVerified ? existingVerified : false;
+}

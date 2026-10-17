@@ -1,14 +1,21 @@
 // One-off (M6.1): imports TOPIK reading questions from .docx files in data/topik/ (gitignored,
 // copyrighted exam material) into production.
 //
-//   npm run topik-import                       dry run (default): parses every file, prints a report
-//   npm run topik-import -- --apply             backs up production D1, then inserts
-//   npm run topik-import -- --apply --force     also overwrites a question that was already edited/verified
+//   npm run topik-import                                         dry run (default): parses every file, prints a report
+//   npm run topik-import -- --apply                               backs up production D1, then inserts
+//   npm run topik-import -- --apply --force                       also overwrites a question that was already edited/verified
+//   npm run topik-import -- --apply --force --keep-verified       same, but keeps the row's existing `verified` (see below)
 //
 // A question with a parse error (mismatched or malformed answer, wrong option count) is never
-// imported. A question that already exists (same section+exam+number) is skipped unless --force.
-// Imported questions start unverified; review and approve them in Settings → TOPIK before they
-// are used for practice (GET /api/topik/session only returns verified questions).
+// imported. A question that already exists (same section+exam+number) is skipped unless --force,
+// which UPDATEs it in place (same id — any `topik_cards`/`topik_attempts` row pointing at it, and
+// its `vocab`/`explanation_vi` columns, are untouched: the UPDATE statement never names them) and,
+// by default, resets `verified` to false since the content changed and should be looked at again.
+// `--keep-verified` skips that reset — for a touch-up re-import that does not actually change the
+// question's meaning (e.g. a parser fix that only adds line breaks), so an already-studied question
+// does not need re-approving. Imported (newly inserted) questions always start unverified; review
+// and approve them in Settings → TOPIK before they are used for practice (GET /api/topik/session
+// only returns verified questions).
 //
 // Needs `npx wrangler login`. Reaches production through wrangler "remote bindings" (a temporary
 // config; nothing in wrangler.jsonc changes), same as scripts/assignCreator.
@@ -22,7 +29,7 @@ import { getPlatformProxy } from "wrangler";
 import type { TopikOptions } from "../../shared/topik";
 import { imageInfo } from "../../worker/lib/imageInfo";
 import { buildImportDraft, type DraftQuestion } from "../../worker/services/topikImport";
-import { checkImageBytes, checkQuestionImages, imageRefsOf, type MediaByRid } from "./plan";
+import { checkImageBytes, checkQuestionImages, imageRefsOf, verifiedAfterOverwrite, type MediaByRid } from "./plan";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
 type D1Like = { prepare(sql: string): Stmt };
@@ -52,6 +59,7 @@ const DATA_DIR = "data/topik";
 const args = process.argv.slice(3);
 const apply = args.includes("--apply");
 const force = args.includes("--force");
+const keepVerified = args.includes("--keep-verified");
 
 function tempConfig() {
   const dir = mkdtempSync(path.join(os.tmpdir(), "lingo-topik-import-"));
@@ -140,7 +148,11 @@ async function main() {
     console.log(`No .docx files in ${DATA_DIR}.`);
     return;
   }
-  console.log(apply ? `APPLY${force ? " --force" : ""}: will write to production` : "DRY RUN: nothing is written");
+  console.log(
+    apply
+      ? `APPLY${force ? " --force" : ""}${keepVerified ? " --keep-verified" : ""}: will write to production`
+      : "DRY RUN: nothing is written",
+  );
 
   const parsed: ParsedFile[] = [];
   for (const fileName of fileNames) {
@@ -219,11 +231,12 @@ async function main() {
         const optionsJson = JSON.stringify(options);
 
         if (existing) {
+          const verified = verifiedAfterOverwrite(existing.verified === 1, keepVerified);
           await db
             .prepare(
-              `UPDATE topik_questions SET block=?1, instruction=?2, stem_text=?3, stem_image_key=?4, options=?5, correct_option=?6, warning=?7, verified=0, updated_at=?8 WHERE id=?9`,
+              `UPDATE topik_questions SET block=?1, instruction=?2, stem_text=?3, stem_image_key=?4, options=?5, correct_option=?6, warning=?7, verified=?8, updated_at=?9 WHERE id=?10`,
             )
-            .bind(q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, Date.now(), existing.id)
+            .bind(q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, verified ? 1 : 0, Date.now(), existing.id)
             .run();
           overwritten++;
         } else {
