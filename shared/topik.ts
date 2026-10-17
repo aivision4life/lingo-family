@@ -22,6 +22,41 @@ export type TopikContent = z.infer<typeof topikContentSchema>;
 export const topikOptionsSchema = z.tuple([topikContentSchema, topikContentSchema, topikContentSchema, topikContentSchema]);
 export type TopikOptions = z.infer<typeof topikOptionsSchema>;
 
+/**
+ * A stem's `text` can carry a lightweight underline marker, `<u>…</u>` (M6.5-ish): some question
+ * types (문항 3-4, "choose the closest meaning to the underlined part") underline a phrase in the
+ * stem itself — a completely different use of underline than an option's own (which option is
+ * correct, a separate boolean, never embedded as markup). Only these two exact literal tags are
+ * ever treated as markup; any other `<...>` the real exam text happens to contain (e.g. "<보기>")
+ * is left untouched, shown as plain text. Pure and shared so both the parser (writes it) and the
+ * client (reads it, e.g. `vocabSegments.ts#segmentTextWithUnderline`) agree on the one format.
+ */
+export type UnderlineRun = { text: string; underlined: boolean };
+const UNDERLINE_TAG = /<u>([\s\S]*?)<\/u>/g;
+
+export function splitUnderline(text: string): UnderlineRun[] {
+  const out: UnderlineRun[] = [];
+  let last = 0;
+  UNDERLINE_TAG.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = UNDERLINE_TAG.exec(text))) {
+    if (m.index > last) out.push({ text: text.slice(last, m.index), underlined: false });
+    if (m[1]) out.push({ text: m[1], underlined: true });
+    last = UNDERLINE_TAG.lastIndex;
+  }
+  if (last < text.length) out.push({ text: text.slice(last), underlined: false });
+  return out;
+}
+
+/** The stem's plain reading, with any `<u>`/`</u>` markers removed — used anywhere the underline
+ * markup must not leak: the LLM prompts (vocab extraction, explanation) and the review list's
+ * truncated one-line preview. */
+export function stripUnderline(text: string): string {
+  return splitUnderline(text)
+    .map((r) => r.text)
+    .join("");
+}
+
 export const topikCorrectOptionSchema = z.number().int().min(1).max(TOPIK_OPTION_COUNT);
 
 /**

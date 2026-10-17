@@ -119,6 +119,10 @@ const HEADING1_BLOCK = /(\d+)\s*(?:~\s*(\d+))?\s*$/;
  * hold several paragraphs — e.g. a sentence-ordering stem's "(가)…"/"(나)…"/"(다)…"/"(라)…" lines,
  * each its own paragraph in the source Word file. `textOf()` alone would run them together with no
  * separator at all. A single-paragraph cell (the common case) behaves exactly as before.
+ *
+ * Plain text only — never used for an option (its own underline means "this is the correct
+ * answer", a separate boolean (`ParsedOption.marked`), and must never be mixed into the option's
+ * displayed text as markup). See `stemCellText` below for the stem's own, different use of underline.
  */
 function cellText(cell: OrderedNode): string {
   return childrenOf(cell)
@@ -128,12 +132,57 @@ function cellText(cell: OrderedNode): string {
     .join("\n");
 }
 
+/** Recursively collects every `w:r` run under `node`, in document order — same "walk the whole
+ * tree" approach as `textOf`/`hasUnderline`, so a run nested inside a hyperlink or revision mark is
+ * still found. */
+function collectRuns(node: OrderedNode, out: OrderedNode[]): void {
+  if (tagOf(node) === "w:r") {
+    out.push(node);
+    return;
+  }
+  for (const child of childrenOf(node)) collectRuns(child, out);
+}
+
+/** Like `textOf`, but wraps each maximal run of consecutive underlined `w:r`s in `<u>…</u>`. Used
+ * only for a question's STEM: some question types (문항 3-4's "choose the closest meaning to the
+ * underlined part") underline a phrase in the stem itself — a completely different use of
+ * underline than an option's "this is the correct answer" marker, which stays the separate
+ * `ParsedOption.marked` boolean and is never touched by this function. `<u>`/`</u>` are plain
+ * literal text here; shared/topik.ts#splitUnderline is the only place that interprets them as
+ * markup, and only exactly these two tags — any other `<...>` the source text happens to contain
+ * is left alone. */
+function paragraphTextWithUnderline(p: OrderedNode): string {
+  const runs: OrderedNode[] = [];
+  collectRuns(p, runs);
+  let out = "";
+  let i = 0;
+  while (i < runs.length) {
+    const underlined = hasUnderline(runs[i]!);
+    let text = textOf(runs[i]!);
+    i++;
+    while (i < runs.length && hasUnderline(runs[i]!) === underlined) {
+      text += textOf(runs[i]!);
+      i++;
+    }
+    out += underlined ? `<u>${text}</u>` : text;
+  }
+  return out;
+}
+
+function stemCellText(cell: OrderedNode): string {
+  return childrenOf(cell)
+    .filter((c) => tagOf(c) === "w:p")
+    .map((p) => paragraphTextWithUnderline(p).trim())
+    .filter((t) => t !== "")
+    .join("\n");
+}
+
 function parseTable(tbl: OrderedNode): { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] } {
   const rows = childrenOf(tbl).filter((c) => tagOf(c) === "w:tr");
   const cellsOf = (row: OrderedNode) => childrenOf(row).filter((c) => tagOf(c) === "w:tc");
   const stemRow = rows[0];
   const stemCell = stemRow ? cellsOf(stemRow)[0] : undefined;
-  const stem_text = stemCell ? cellText(stemCell) : "";
+  const stem_text = stemCell ? stemCellText(stemCell) : "";
   const stem_image_rid = stemCell ? embedIdOf(stemCell) : null;
 
   const optionCells = rows.slice(1).flatMap(cellsOf);

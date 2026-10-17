@@ -1,7 +1,7 @@
 // Per-question vocabulary for "tap a word" (M6.2): one cached LLM call per question's whole text,
 // never called at practice time — the client only ever reads the already-stored `vocab`.
 import { z } from "zod";
-import { topikVocabEntrySchema, topikVocabListSchema, type TopikOptions, type TopikVocabEntry } from "../../shared/topik";
+import { stripUnderline, topikVocabEntrySchema, topikVocabListSchema, type TopikOptions, type TopikVocabEntry } from "../../shared/topik";
 import { sha256Hex } from "../lib/hash";
 import { checkTopikVocabEntry } from "./contentCheck";
 import { cachedTask, type Db } from "./enrich";
@@ -17,10 +17,13 @@ export const topikVocabCacheKey = (model: string, text: string) =>
  * The text vocabulary is generated from: the stem and each option (skipping any that is an image
  * with no text) — never `instruction`, which just repeats the same question-format boilerplate
  * across every question in a block and would otherwise add the same handful of words to each one.
- * "" when the question has nothing to tokenize (e.g. an image-only question).
+ * "" when the question has nothing to tokenize (e.g. an image-only question). The stem's own
+ * `<u>…</u>` underline markup (M6.5-ish) is stripped first — a display-only annotation the model
+ * never needs to see, and `surface` must match the plain reading `segmentTextWithUnderline` matches
+ * vocab against on the client anyway.
  */
 export function topikVocabSourceText(q: { stem_text: string | null; options: TopikOptions }): string {
-  return [q.stem_text, ...q.options.map((o) => o.text)]
+  return [q.stem_text ? stripUnderline(q.stem_text) : null, ...q.options.map((o) => o.text)]
     .filter((t): t is string => t !== null && t.trim() !== "")
     .join("\n");
 }

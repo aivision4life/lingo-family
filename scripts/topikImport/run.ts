@@ -12,10 +12,16 @@
 // its `vocab`/`explanation_vi` columns, are untouched: the UPDATE statement never names them) and,
 // by default, resets `verified` to false since the content changed and should be looked at again.
 // `--keep-verified` skips that reset — for a touch-up re-import that does not actually change the
-// question's meaning (e.g. a parser fix that only adds line breaks), so an already-studied question
-// does not need re-approving. Imported (newly inserted) questions always start unverified; review
-// and approve them in Settings → TOPIK before they are used for practice (GET /api/topik/session
-// only returns verified questions).
+// question's meaning (e.g. a parser fix that only adds line breaks or `<u>…</u>` underline
+// markers). Imported (newly inserted) questions always start unverified; review and approve them in
+// Settings → TOPIK before they are used for practice (GET /api/topik/session only returns verified
+// questions).
+//
+// Safety net (M6.5-ish): before writing anything, if `--force` would overwrite an existing stem
+// that had no `<u>…</u>` yet with a new one that does, the new stem with its tags stripped back out
+// MUST be byte-identical to the existing one — a touch-up that's "only adding formatting" must
+// never also silently drop or alter a character. A mismatch aborts the whole run before any write
+// (not just skips the offending row), prints every mismatch found, and does not even take a backup.
 //
 // Needs `npx wrangler login`. Reaches production through wrangler "remote bindings" (a temporary
 // config; nothing in wrangler.jsonc changes), same as scripts/assignCreator.
@@ -26,7 +32,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { getPlatformProxy } from "wrangler";
-import type { TopikOptions } from "../../shared/topik";
+import { stripUnderline, type TopikOptions } from "../../shared/topik";
 import { imageInfo } from "../../worker/lib/imageInfo";
 import { buildImportDraft, type DraftQuestion } from "../../worker/services/topikImport";
 import { checkImageBytes, checkQuestionImages, imageRefsOf, verifiedAfterOverwrite, type MediaByRid } from "./plan";
@@ -199,13 +205,40 @@ async function main() {
     return;
   }
 
-  backupProduction();
-
   const configPath = tempConfig();
   const proxy = await getPlatformProxy({ configPath, remoteBindings: true });
   try {
     const db = proxy.env.DB as unknown as D1Like;
     const bucket = proxy.env.MEDIA as unknown as R2Like;
+
+    if (force) {
+      const problems: string[] = [];
+      for (const f of parsed) {
+        for (const q of f.questions) {
+          const existing = await db
+            .prepare("SELECT stem_text FROM topik_questions WHERE section = ?1 AND exam = ?2 AND number = ?3")
+            .bind(q.section, q.exam, q.number)
+            .first<{ stem_text: string | null }>();
+          if (!existing) continue;
+          const newHasUnderline = q.stem.text?.includes("<u>") ?? false;
+          const oldHasUnderline = existing.stem_text?.includes("<u>") ?? false;
+          if (!newHasUnderline || oldHasUnderline) continue; // not "adding formatting" for the first time
+          const stripped = q.stem.text ? stripUnderline(q.stem.text) : null;
+          if (stripped !== existing.stem_text) {
+            problems.push(
+              `${q.exam} #${q.number}:\n    production stem_text: ${JSON.stringify(existing.stem_text)}\n    new, <u> stripped    : ${JSON.stringify(stripped)}`,
+            );
+          }
+        }
+      }
+      if (problems.length > 0) {
+        console.error(`\n--force aborted before writing anything: ${problems.length} question(s) would change their plain reading, not just add <u> formatting:\n`);
+        for (const p of problems) console.error(`  ${p}`);
+        return;
+      }
+    }
+
+    backupProduction();
 
     let inserted = 0;
     let skipped = 0;

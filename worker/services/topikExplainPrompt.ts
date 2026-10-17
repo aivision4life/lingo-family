@@ -14,7 +14,12 @@ import type { TopikContent, TopikOptions, TopikVocabEntry } from "../../shared/t
 // v3: v2 named the pattern with the verb stem still attached ("-구하느라고" instead of "-느라고"),
 // which isn't how a grammar reference/dictionary lists it — the learner can't look that up. Now
 // explicitly told to strip the stem and keep only the ending itself.
-export const TOPIK_EXPLAIN_PROMPT_VERSION = "topik-explain-v3";
+// v4: 문항 3-4 ("choose the closest meaning to the underlined part") used to send the stem with no
+// indication of which phrase was actually underlined in the real exam — same "guessing backwards
+// from the correct answer" problem as the image case above. The stem can now carry `<u>…</u>`
+// around that phrase (M6.5-ish); the model is told what it means and to ground the explanation on
+// it instead of guessing, and to never echo the raw tag back in its Vietnamese output.
+export const TOPIK_EXPLAIN_PROMPT_VERSION = "topik-explain-v4";
 
 const ROLE = "You are a patient Korean-as-a-foreign-language teacher explaining a TOPIK II reading-test answer to a Vietnamese learner, in Vietnamese.";
 
@@ -30,6 +35,7 @@ export type ExplainInput = {
 
 export function buildTopikExplainPrompt(input: ExplainInput) {
   const hasImages = input.stem.image_key !== null || input.options.some((o) => o.image_key !== null);
+  const hasUnderline = input.stem.text?.includes("<u>") ?? false;
   const optionLines = input.options.map((o, i) => `${i + 1}) ${contentLabel(o)}${i + 1 === input.correct_option ? "  [đáp án đúng]" : ""}`);
   const vocabLines = input.vocab.map((v) => `- ${v.lemma} (${v.pos}): ${v.gloss_vi}`);
 
@@ -55,6 +61,11 @@ export function buildTopikExplainPrompt(input: ExplainInput) {
     ...(hasImages
       ? [
           "Đề bài hoặc một/nhiều lựa chọn là hình ảnh (biểu đồ, bảng số liệu, thông báo, ...) — hình ảnh thật đã được đính kèm ngay sau phần văn bản này, mỗi hình có một dòng nhãn ngay phía trước (ví dụ \"Hình ảnh đề bài:\"). PHẢI đọc kỹ nội dung thật trong hình (số liệu, chữ trong ảnh, ...) rồi mới giải thích — TUYỆT ĐỐI không suy đoán ngược nội dung từ đáp án đúng rồi viết như thể đó là sự thật trong ảnh.",
+        ]
+      : []),
+    ...(hasUnderline
+      ? [
+          "Trong phần đề bài, cụm từ nằm giữa <u> và </u> CHÍNH LÀ phần được gạch chân trong đề thi gốc (ví dụ câu hỏi dạng \"chọn từ/cụm từ gần nghĩa nhất với phần gạch chân\") — hãy dùng đúng cụm từ đó làm căn cứ để giải thích vì sao đáp án đúng gần nghĩa với nó, TUYỆT ĐỐI không suy đoán ngược từ đáp án đúng. KHÔNG được chép lại ký hiệu <u> hay </u> trong câu trả lời — chỉ nhắc tới cụm từ đó bằng chữ thường, không kèm ký hiệu.",
         ]
       : []),
   ].join("\n");

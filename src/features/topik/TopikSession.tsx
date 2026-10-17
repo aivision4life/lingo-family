@@ -10,7 +10,7 @@ import { markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplana
 import { TopikExplanation } from "./TopikExplanation";
 import { TopikSessionResults } from "./TopikSessionResults";
 import { TopikWordTap } from "./TopikWordPopover";
-import { segmentText } from "./vocabSegments";
+import { segmentTextWithUnderline } from "./vocabSegments";
 
 /** Outside the component so `react-hooks/purity` does not flag the `Date.now()` call itself. */
 const elapsedSince = (start: number) => Date.now() - start;
@@ -207,13 +207,23 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
   );
 }
 
-/** Renders `text` with its AI-found words tappable (M6.2): read-only, nothing is marked by default. */
+/** Renders `text` with its AI-found words tappable (M6.2) and any `<u>…</u>`-marked phrase (M6.5-ish
+ * — 문항 3-4's "choose the closest meaning to the underlined part") bold+underlined: read-only,
+ * nothing is marked by default. Built as React elements (never `dangerouslySetInnerHTML`) — the
+ * markup is parsed into plain data (`segmentTextWithUnderline`) before any rendering happens. */
 function TappableText({ text, vocab }: { text: string; vocab: TopikVocabEntry[] }) {
   return (
     <span lang="ko" className="whitespace-pre-wrap">
-      {segmentText(text, vocab).map((seg, i) =>
-        seg.entry ? <TopikWordTap key={i} entry={seg.entry} /> : <Fragment key={i}>{seg.text}</Fragment>,
-      )}
+      {segmentTextWithUnderline(text, vocab).map((seg, i) => {
+        const content = seg.entry ? <TopikWordTap entry={seg.entry} /> : seg.text;
+        return seg.underlined ? (
+          <strong key={i} className="underline">
+            {content}
+          </strong>
+        ) : (
+          <Fragment key={i}>{content}</Fragment>
+        );
+      })}
     </span>
   );
 }

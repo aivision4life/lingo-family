@@ -1,7 +1,7 @@
 import { Camera } from "lucide-react";
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TOPIK_IMAGE_MAX_BYTES, TOPIK_IMAGE_MAX_SIDE, TOPIK_OPTION_COUNT, type TopikContent, type TopikQuestionInput } from "@shared/topik";
+import { splitUnderline, TOPIK_IMAGE_MAX_BYTES, TOPIK_IMAGE_MAX_SIDE, TOPIK_OPTION_COUNT, type TopikContent, type TopikQuestionInput } from "@shared/topik";
 import { FormField } from "@/components/FormField";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +14,29 @@ import { toTopikInput, type TopikFormValues } from "./formValues";
 
 const TOPIK_IMAGE_LIMITS = { maxSide: TOPIK_IMAGE_MAX_SIDE, maxBytes: TOPIK_IMAGE_MAX_BYTES };
 
+/** Read-only, bold+underline rendering of a stem's `<u>…</u>` marker (M6.5-ish, 문항 3-4's
+ * "choose the closest meaning to the underlined part") — built as React elements from parsed data
+ * (`splitUnderline`), never `dangerouslySetInnerHTML`. Shown only when the text actually has the
+ * marker, as a small preview below the editable textarea (which keeps the raw `<u>` text, so an
+ * adult can still see and adjust the markup itself). */
+function UnderlinePreview({ text }: { text: string }) {
+  const runs = splitUnderline(text);
+  if (!runs.some((r) => r.underlined)) return null;
+  return (
+    <p lang="ko" className="rounded-md border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap">
+      {runs.map((r, i) =>
+        r.underlined ? (
+          <strong key={i} className="underline">
+            {r.text}
+          </strong>
+        ) : (
+          <Fragment key={i}>{r.text}</Fragment>
+        ),
+      )}
+    </p>
+  );
+}
+
 /** A text-and/or-image field: a text input plus an optional photo (TOPIK's own size limit, M6.1). */
 function ContentField({
   id,
@@ -22,6 +45,7 @@ function ContentField({
   onChange,
   profileId,
   autoFocus,
+  showUnderlinePreview,
 }: {
   id: string;
   label: string;
@@ -29,6 +53,8 @@ function ContentField({
   onChange: (v: TopikContent) => void;
   profileId: string;
   autoFocus?: boolean;
+  /** Only the stem can carry `<u>…</u>` (see `UnderlinePreview`) — never an option. */
+  showUnderlinePreview?: boolean;
 }) {
   const { t } = useTranslation();
   const upload = useUploadTopikImage();
@@ -52,6 +78,7 @@ function ContentField({
           value={value.text ?? ""}
           onChange={(e) => onChange({ ...value, text: e.target.value })}
         />
+        {showUnderlinePreview && value.text && <UnderlinePreview text={value.text} />}
         <div className="flex items-center gap-2">
           {value.image_key && (
             <button type="button" onClick={() => setZoomed(true)} className="shrink-0">
@@ -135,7 +162,15 @@ export function TopikQuestionForm({ profileId, initial, submitting, serverError,
       <FormField id="tq-instruction" label={t("topik.manage.form.instruction")}>
         <Input id="tq-instruction" value={values.instruction} onChange={(e) => set("instruction", e.target.value)} />
       </FormField>
-      <ContentField id="tq-stem" label={t("topik.manage.form.stem")} value={values.stem} onChange={(v) => set("stem", v)} profileId={profileId} autoFocus />
+      <ContentField
+        id="tq-stem"
+        label={t("topik.manage.form.stem")}
+        value={values.stem}
+        onChange={(v) => set("stem", v)}
+        profileId={profileId}
+        autoFocus
+        showUnderlinePreview
+      />
       <div role="radiogroup" aria-label={t("topik.manage.form.correctOption")} className="flex flex-col gap-3">
         {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => (
           <div key={n} className="flex items-center gap-2">

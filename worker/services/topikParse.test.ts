@@ -22,6 +22,10 @@ const multiParaCell = (lines: string[]) => `<w:tc>${lines.map((l) => `<w:p><w:r>
 const listOption = (text: string, underline = false) =>
   `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/></w:pPr><w:r>${underline ? '<w:rPr><w:u w:val="single"/></w:rPr>' : ""}<w:t>${text}</w:t></w:r></w:p>`;
 const drawing = (rid: string) => `<w:p><w:r><w:drawing><a:blip r:embed="${rid}"/></w:drawing></w:r></w:p>`;
+/** A stem table cell whose one paragraph has several runs, some underlined — the 문항3-4 shape
+ * where only part of the stem (not the whole sentence) is underlined. */
+const runsCell = (runs: { text: string; underline?: boolean }[]) =>
+  `<w:tc><w:p>${runs.map((r) => `<w:r>${r.underline ? '<w:rPr><w:u w:val="single"/></w:rPr>' : ""}<w:t xml:space="preserve">${r.text}</w:t></w:r>`).join("")}</w:p></w:tc>`;
 const answer = (declared: number, serial = declared) => plain(`${serial}(${declared})`);
 
 describe("parseTopikDocument", () => {
@@ -195,6 +199,35 @@ describe("parseTopikDocument", () => {
     const item = parseTopikDocument(xml).exams[0]!.items[0]!;
     expect(item.stem_text).toBe("(가)첫 번째 문장.\n(나)두 번째 문장.\n(다)세 번째 문장.\n(라)네 번째 문장.");
     expect(item.errors).toEqual([]);
+  });
+
+  it("preserves an underlined phrase in the STEM as <u>…</u> markup (문항3-4's 'closest meaning to the underlined part'), without touching the options' own underline (which still only means 'correct answer')", () => {
+    const xml = doc(
+      heading("Heading1", "문항 3") +
+        heading("Heading2", "연습1") +
+        heading("Heading3", "1-3") +
+        answer(1) +
+        `<w:tbl><w:tr>${runsCell([{ text: "어제 본 공연은 눈물이 " }, { text: "날 정도로", underline: true }, { text: " 감동적이었다." }])}</w:tr><w:tr>${cell("날 만큼", true)}${cell("날까 봐")}</w:tr><w:tr>${cell("나는 대로")}${cell("나는 대신에")}</w:tr></w:tbl>`,
+    );
+    const item = parseTopikDocument(xml).exams[0]!.items[0]!;
+    expect(item.stem_text).toBe("어제 본 공연은 눈물이 <u>날 정도로</u> 감동적이었다.");
+    // The option's own underline (marking the correct answer) is a separate boolean — never
+    // rewritten into <u> markup inside the option's own displayed text.
+    expect(item.options.map((o) => o.text)).toEqual(["날 만큼", "날까 봐", "나는 대로", "나는 대신에"]);
+    expect(item.options.map((o) => o.marked)).toEqual([true, false, false, false]);
+    expect(item.errors).toEqual([]);
+  });
+
+  it("a stem with no underlined run at all has no <u> markup (unaffected — most question types)", () => {
+    const xml = doc(
+      heading("Heading1", "문항 1") +
+        heading("Heading2", "연습1") +
+        heading("Heading3", "1-1") +
+        answer(1) +
+        table("아침에 (   ) 전화를 드렸다.", ["a", "b", "c", "d"], 1),
+    );
+    const item = parseTopikDocument(xml).exams[0]!.items[0]!;
+    expect(item.stem_text).toBe("아침에 (   ) 전화를 드렸다.");
   });
 
   it("the instruction repeats for every exam group it appears before, and resets per group", () => {

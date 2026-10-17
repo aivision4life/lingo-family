@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { useDeferredValue, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import type { TopikQuestion } from "@shared/topik";
+import { stripUnderline, type TopikQuestion } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDeleteTopikQuestion, useGenerateTopikContent, useTopikFacets, useTopikQuestionContent, useTopikQuestionsPaged, useVerifyTopikBulk } from "./api";
@@ -163,7 +163,7 @@ function QuestionRow({
   deleting: boolean;
 }) {
   const { t } = useTranslation();
-  const preview = question.stem.text ? truncate(question.stem.text, 40) : t("topik.manage.imageOnly");
+  const preview = question.stem.text ? truncate(stripUnderline(question.stem.text), 40) : t("topik.manage.imageOnly");
   return (
     <div className="flex items-start justify-between gap-2 rounded-md border p-2">
       <div className="flex min-w-0 flex-col">

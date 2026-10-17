@@ -5,7 +5,7 @@
 import { State } from "ts-fsrs";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { isGrammarPos, type TopikKeyTermView, type TopikOptions, type TopikVocabEntry } from "../../shared/topik";
+import { isGrammarPos, splitUnderline, type TopikKeyTermView, type TopikOptions, type TopikVocabEntry } from "../../shared/topik";
 import { cards, words } from "../../db/schema";
 import { sha256Hex } from "../lib/hash";
 import { checkTopikExplanation } from "./contentCheck";
@@ -83,7 +83,12 @@ export async function generateTopikExplanationWithCache({ db, llm, logContext, i
   // A grammar pattern or a content word may legitimately be named in Hangul (M6.3 requires naming
   // the exact pattern, e.g. "-느라고") — but only as a fragment of one of this question's own
   // surface/lemma forms, never a free-form Korean sentence the model wrote instead of translating.
-  const allowedHangul = [...new Set(input.vocab.flatMap((v) => [v.surface, v.lemma]))];
+  // The stem's own underlined phrase (문항 3-4, M6.5-ish) is allowed too — the prompt now asks the
+  // model to ground its explanation on exactly that phrase, which is not guaranteed to already be a
+  // substring of some vocab entry (vocab tokenizes into single words/patterns; the underlined span
+  // is often a multi-word phrase).
+  const underlinedPhrases = input.stem.text ? splitUnderline(input.stem.text).filter((r) => r.underlined).map((r) => r.text) : [];
+  const allowedHangul = [...new Set([...input.vocab.flatMap((v) => [v.surface, v.lemma]), ...underlinedPhrases])];
 
   const { value, cached } = await cachedTask<{ explanation_vi: string; key_terms: string[] }>({
     db,

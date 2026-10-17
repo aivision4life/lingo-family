@@ -123,6 +123,35 @@ describe("generateTopikExplanationWithCache", () => {
     await t.dispose();
   });
 
+  it("accepts the model quoting the stem's own underlined phrase (M6.5-ish), even though it is not in vocab", async () => {
+    const t = await createTestEnv();
+    const withUnderline = input({ stem: { text: "어제 본 공연은 눈물이 <u>날 정도로</u> 감동적이었다.", image_key: null } });
+    // "날 정도로" is the underlined phrase, not a vocab entry's surface/lemma (only "일어나서"/"일어나다") —
+    // without the fix, quoting it would be flagged as unexpected Hangul.
+    const sample = { explanation_vi: "Đáp án đúng gần nghĩa với 날 정도로.", key_terms: ["일어나다"] };
+    const llm = fakeLlm([JSON.stringify(sample)]);
+    const db = getDb(t.env);
+    const result = await generateTopikExplanationWithCache({ db, llm: llm.client, logContext: "x", input: withUnderline, images: [], beforeLlmCall: async () => {} });
+    expect(result.explanation_vi).toBe(sample.explanation_vi);
+    expect(llm.requests).toHaveLength(1); // accepted first try, no retry needed
+    await t.dispose();
+  });
+
+  it("tells the model what <u>…</u> in the stem means, only when the stem actually has it", async () => {
+    const t = await createTestEnv();
+    const sample = { explanation_vi: "Giải thích.", key_terms: [] };
+    const llm = fakeLlm([JSON.stringify(sample), JSON.stringify(sample)]);
+    const db = getDb(t.env);
+
+    const withUnderline = input({ stem: { text: "어제 <u>날 정도로</u> 감동적이었다.", image_key: null } });
+    await generateTopikExplanationWithCache({ db, llm: llm.client, logContext: "a", input: withUnderline, images: [], beforeLlmCall: async () => {} });
+    expect(llm.requests[0]!.system).toContain("<u>");
+
+    await generateTopikExplanationWithCache({ db, llm: llm.client, logContext: "b", input: input(), images: [], beforeLlmCall: async () => {} });
+    expect(llm.requests[1]!.system).not.toContain("<u>");
+    await t.dispose();
+  });
+
   it("dedupes a repeated key_term lemma and caps at 5", async () => {
     const t = await createTestEnv();
     const vocab = Array.from({ length: 7 }, (_, i) => vocabEntry({ surface: `w${i}`, lemma: `w${i}` }));

@@ -141,6 +141,38 @@ describe("buildImportDraft", () => {
     expect(draft.questions[0]!.correct_option).toBe(3);
   });
 
+  it("splits a legacy merged block ('1~4', one file covering both pairs) into '1~2'/'3~4' by question number, and gives 3/4 the fixed 문항3-4 instruction regardless of whatever the file itself says (M6.5-ish: real files either never repeat it per round, or — Yonsei — never have the right text at all)", () => {
+    const xml = doc(
+      heading("Heading1", "유형1: 문항 1~4") +
+        heading("Heading2", "연습1") +
+        plain("[1~2] (   )에 들어갈 가장 알맞은 것을 고르십시오.") +
+        question("1-1", 1) +
+        question("1-2", 2) +
+        question("1-3", 3) +
+        question("1-4", 4),
+    );
+    const draft = buildImportDraft("TOPIK_Reading_Cau01_04_8DeOfficial_VERSION1.docx", xml);
+    expect(draft.errors).toEqual([]);
+    expect(draft.questions.map((q) => [q.number, q.block, q.instruction])).toEqual([
+      [1, "1~2", "[1~2] (   )에 들어갈 가장 알맞은 것을 고르십시오."],
+      [2, "1~2", "[1~2] (   )에 들어갈 가장 알맞은 것을 고르십시오."],
+      [3, "3~4", "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오."],
+      [4, "3~4", "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오."],
+    ]);
+  });
+
+  it("the fixed 3-4 instruction applies the same way to an already-single-pair file (future imports), not just the legacy merged one", () => {
+    const xml = doc(heading("Heading1", "유형1: 문항 3~4") + heading("Heading2", "연습1") + question("1-3", 1) + question("1-4", 2));
+    const draft = buildImportDraft("TOPIK_Reading_Cau03_04_Yonsei_VERSION1.docx", xml);
+    expect(draft.questions.every((q) => q.instruction === "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오." && q.block === "3~4")).toBe(true);
+  });
+
+  it("does not touch the block/instruction of a question outside 1-4 (e.g. 문항 9)", () => {
+    const xml = doc(heading("Heading1", "문항 9") + heading("Heading2", "연습1") + question("1-9", 2));
+    const draft = buildImportDraft("TOPIK_Reading_Cau09_8DeOfficial_VERSION1.docx", xml);
+    expect(draft.questions[0]).toMatchObject({ block: "9", instruction: null });
+  });
+
   it("rejects a file name that does not follow the naming convention", () => {
     const draft = buildImportDraft("random.docx", doc(""));
     expect(draft.errors).toEqual(['file name does not match "TOPIK_Reading_Cau<N>[_<M>]_<source>_VERSION<v>.docx"']);

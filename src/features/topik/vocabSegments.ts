@@ -2,7 +2,7 @@
 // endings without a space (e.g. "학교에서" = 학교 + 에서), so a whitespace split cannot tell which
 // part was tapped — instead, each AI-found `surface` form is matched as an exact substring,
 // longest-match-first, and whatever is left over (particles, punctuation, spaces) is not tappable.
-import { isGrammarPos, type TopikVocabEntry } from "@shared/topik";
+import { isGrammarPos, splitUnderline, type TopikVocabEntry } from "@shared/topik";
 
 export type VocabSegment = { text: string; entry: TopikVocabEntry | null };
 
@@ -57,4 +57,65 @@ export function segmentText(text: string, vocab: TopikVocabEntry[]): VocabSegmen
   }
   flushPlain();
   return segments;
+}
+
+export type UnderlineTappableSegment = VocabSegment & { underlined: boolean };
+
+/**
+ * Combines the two independent annotation layers this stem can carry — which words are tappable
+ * (`vocab`) and which phrase is underlined (`<u>…</u>`, M6.5-ish, only in a question's stem) —
+ * since they can overlap in either direction: a tappable word can sit fully inside, fully outside,
+ * or straddle the edge of the underlined phrase.
+ *
+ * A tappable segment is never split mid-word to follow the underline boundary exactly: `TopikWordTap`
+ * always renders its entry's full `surface`, so cutting one in two would show that surface text
+ * twice. Instead a tappable segment is underlined as a whole as soon as ANY of its characters fall
+ * inside the underlined phrase — tapping it keeps working either way, inside or outside, or
+ * straddling the boundary. A non-tappable (plain) segment has no such constraint and is split
+ * exactly at the boundary, so the visible underline itself still lines up precisely.
+ */
+export function segmentTextWithUnderline(text: string, vocab: TopikVocabEntry[]): UnderlineTappableSegment[] {
+  const underlineRuns = splitUnderline(text);
+  const plainText = underlineRuns.map((r) => r.text).join("");
+  const vocabSegs = segmentText(plainText, vocab);
+
+  const out: UnderlineTappableSegment[] = [];
+  let runIndex = 0;
+  let runOffset = 0;
+  for (const seg of vocabSegs) {
+    if (seg.entry) {
+      let remaining = seg.text.length;
+      let underlined = false;
+      let idx = runIndex;
+      let offset = runOffset;
+      while (remaining > 0) {
+        const run = underlineRuns[idx]!;
+        const take = Math.min(run.text.length - offset, remaining);
+        if (run.underlined) underlined = true;
+        remaining -= take;
+        offset += take;
+        if (offset >= run.text.length) {
+          idx++;
+          offset = 0;
+        }
+      }
+      out.push({ text: seg.text, entry: seg.entry, underlined });
+      runIndex = idx;
+      runOffset = offset;
+    } else {
+      let consumed = 0;
+      while (consumed < seg.text.length) {
+        const run = underlineRuns[runIndex]!;
+        const take = Math.min(run.text.length - runOffset, seg.text.length - consumed);
+        out.push({ text: seg.text.slice(consumed, consumed + take), entry: null, underlined: run.underlined });
+        consumed += take;
+        runOffset += take;
+        if (runOffset >= run.text.length) {
+          runIndex++;
+          runOffset = 0;
+        }
+      }
+    }
+  }
+  return out;
 }

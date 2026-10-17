@@ -22,7 +22,7 @@ import os from "node:os";
 import path from "node:path";
 import { getPlatformProxy } from "wrangler";
 import { z } from "zod";
-import type { TopikOptions, TopikVocabEntry } from "../../shared/topik";
+import { splitUnderline, type TopikOptions, type TopikVocabEntry } from "../../shared/topik";
 import { checkTopikExplanation } from "../../worker/services/contentCheck";
 import { createLlmClient, generateStructured, type LlmImagePart } from "../../worker/services/llm";
 import { buildTopikExplainPrompt, TOPIK_EXPLAIN_PROMPT_VERSION, type ExplainInput } from "../../worker/services/topikExplainPrompt";
@@ -185,7 +185,10 @@ async function processRow(
   if ("error" in imageResult) throw new Error(imageResult.error);
 
   const lemmas = row.vocab.map((v) => v.lemma);
-  const allowedHangul = [...new Set(row.vocab.flatMap((v) => [v.surface, v.lemma]))];
+  // Mirrors worker/services/topikExplain.ts#generateTopikExplanationWithCache's own allowedHangul —
+  // the stem's underlined phrase (문항 3-4, M6.5-ish) is allowed too, not just vocab surface/lemma.
+  const underlinedPhrases = row.stem_text ? splitUnderline(row.stem_text).filter((r) => r.underlined).map((r) => r.text) : [];
+  const allowedHangul = [...new Set([...row.vocab.flatMap((v) => [v.surface, v.lemma]), ...underlinedPhrases])];
   const key = await cacheKey(llm.model, input);
   const cached = await db.prepare("SELECT response_json FROM ai_cache WHERE key = ?1").bind(key).first<{ response_json: string }>();
   if (cached) {

@@ -21,6 +21,14 @@ describe("topikVocabSourceText", () => {
     const text = topikVocabSourceText({ stem_text: null, options: options([null, null, null, null]) });
     expect(text).toBe("");
   });
+
+  it("strips the stem's <u>…</u> underline markup (M6.5-ish) before it reaches the model", () => {
+    const text = topikVocabSourceText({
+      stem_text: "어제 본 공연은 눈물이 <u>날 정도로</u> 감동적이었다.",
+      options: options(["날 만큼", "날까 봐", "나는 대로", "나는 대신에"]),
+    });
+    expect(text).toBe("어제 본 공연은 눈물이 날 정도로 감동적이었다.\n날 만큼\n날까 봐\n나는 대로\n나는 대신에");
+  });
 });
 
 describe("topikVocabCacheKey", () => {
