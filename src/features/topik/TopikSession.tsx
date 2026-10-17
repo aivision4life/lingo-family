@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TOPIK_OPTION_COUNT, type TopikAttemptResult, type TopikPracticeQuestion, type TopikVocabEntry } from "@shared/topik";
+import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion, type TopikVocabEntry } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
 import { useSubmitTopikAttempt, useTopikQuestionContent } from "./api";
+import { markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplanation, type SessionStates } from "./sessionState";
 import { TopikExplanation } from "./TopikExplanation";
 import { TopikSessionResults } from "./TopikSessionResults";
 import { TopikWordTap } from "./TopikWordPopover";
@@ -16,8 +17,7 @@ const elapsedSince = (start: number) => Date.now() - start;
 export function TopikSession({ profileId, questions }: { profileId: string; questions: TopikPracticeQuestion[] }) {
   const { t } = useTranslation();
   const [index, setIndex] = useState(0);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [result, setResult] = useState<TopikAttemptResult | null>(null);
+  const [states, setStates] = useState<SessionStates>({});
   const startedAt = useRef(0);
   const submit = useSubmitTopikAttempt();
 
@@ -39,34 +39,69 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
       ? { ...rawQuestion, vocab: vocabPoll.data.vocab, vocab_ready: true }
       : rawQuestion;
 
-  // Same idea for the answer explanation: the attempt response may arrive before the background
-  // job that generates it has finished, so keep polling and derive the up-to-date result to render.
-  const explainPoll = useTopikQuestionContent(rawQuestion?.id ?? "", profileId, result !== null && !result.explain_ready);
-  const effectiveResult =
-    result && !result.explain_ready && explainPoll.data?.explain_ready
-      ? { ...result, explanation_vi: explainPoll.data.explanation_vi, key_terms: explainPoll.data.key_terms, explain_ready: true }
-      : result;
+  const entry = question ? states[question.id] : undefined;
 
-  if (done || !question) return <TopikSessionResults />;
+  // Same idea for the answer explanation: the attempt response may arrive before the background
+  // job that generates it has finished, so keep polling and derive the up-to-date entry to render.
+  const explainPoll = useTopikQuestionContent(rawQuestion?.id ?? "", profileId, entry?.kind === "answered" && !entry.result.explain_ready);
+  const effectiveEntry =
+    entry?.kind === "answered" && !entry.result.explain_ready && explainPoll.data?.explain_ready
+      ? withExplanation(entry, explainPoll.data.explanation_vi, explainPoll.data.key_terms)
+      : entry;
+  const effectiveResult = effectiveEntry?.kind === "answered" ? effectiveEntry.result : null;
+  const selectedOption = effectiveEntry?.kind === "answered" ? effectiveEntry.selected : null;
+
+  if (done || !question) return <TopikSessionResults summary={summarize(questions.map((q) => q.id), states)} />;
 
   const choose = (option: number) => {
-    if (selected !== null) return;
-    setSelected(option);
+    if (selectedOption !== null) return;
     submit.mutate(
       { profile_id: profileId, question_id: question.id, selected_option: option, duration_ms: elapsedSince(startedAt.current) },
-      { onSuccess: setResult },
+      { onSuccess: (result) => setStates((s) => recordAnswer(s, question.id, option, result)) },
     );
   };
 
-  const next = () => {
-    setSelected(null);
-    setResult(null);
-    setIndex((i) => i + 1);
+  // Leaving a question that was never answered marks it "skipped" (M6.5-ish Prev/Next): it stays
+  // in the session and can still be answered later by coming back to it — this never touches
+  // `topik_cards`/`topik_attempts` (no `submit.mutate` call), so it is never scored wrong.
+  const goTo = (i: number) => {
+    setStates((s) => markSkippedIfUnanswered(s, question.id));
+    setIndex(i);
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">{t("topik.practice.progress", { current: index + 1, total: questions.length })}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">{t("topik.practice.progress", { current: index + 1, total: questions.length })}</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {questions.map((q, i) => {
+          const st = statusOf(states, q.id);
+          const qEntry = states[q.id];
+          const isCorrectQ = qEntry?.kind === "answered" && qEntry.result.is_correct;
+          return (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() => i !== index && goTo(i)}
+              aria-current={i === index ? "step" : undefined}
+              aria-label={t("topik.practice.jumpTo", { n: i + 1, status: t(`topik.practice.status.${st}`) })}
+              className={cn(
+                "flex size-11 items-center justify-center rounded-full border text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                i === index && "ring-2 ring-ring ring-offset-2",
+                st === "answered" &&
+                  (isCorrectQ
+                    ? "border-green-600 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400"
+                    : "border-destructive bg-destructive/10 text-destructive"),
+                st === "skipped" && "border-dashed text-muted-foreground",
+                st === "unanswered" && "text-muted-foreground",
+              )}
+            >
+              {i + 1}
+            </button>
+          );
+        })}
+      </div>
       {!question.vocab_ready && <p className="text-xs text-muted-foreground">{t("topik.practice.vocabLoading")}</p>}
       {question.instruction && (
         <p className="font-medium">
@@ -86,9 +121,9 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
       <div className="flex flex-col gap-2">
         {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => {
           const opt = question.options[n - 1]!;
-          const isSelected = selected === n;
+          const isSelected = selectedOption === n;
           const isCorrectOpt = effectiveResult?.correct_option === n;
-          const disabled = selected !== null;
+          const disabled = selectedOption !== null;
           return (
             // A tappable word inside the option's text (TopikWordTap) is itself a <button>; this
             // can't be a <button> too (nested interactive elements), so it's a role="button" div —
@@ -106,7 +141,7 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
                 }
               }}
               className={cn(
-                "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                "flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                 effectiveResult
                   ? isCorrectOpt
                     ? "border-green-600 bg-green-50 dark:bg-green-950/40"
@@ -124,20 +159,23 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
         })}
       </div>
       {effectiveResult && (
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <p className={effectiveResult.is_correct ? "text-green-700 dark:text-green-400" : "text-destructive"}>
-              {effectiveResult.is_correct ? t("topik.practice.correct") : t("topik.practice.incorrect")}
-            </p>
-            <Button onClick={next}>{index + 1 < questions.length ? t("topik.practice.next") : t("topik.practice.finish")}</Button>
-          </div>
-          <TopikExplanation
-            explanation_vi={effectiveResult.explanation_vi}
-            key_terms={effectiveResult.key_terms}
-            ready={effectiveResult.explain_ready}
-            autoShow={!effectiveResult.is_correct}
-          />
-        </>
+        <p className={effectiveResult.is_correct ? "text-green-700 dark:text-green-400" : "text-destructive"}>
+          {effectiveResult.is_correct ? t("topik.practice.correct") : t("topik.practice.incorrect")}
+        </p>
+      )}
+      <div className="flex items-center justify-between gap-2">
+        <Button variant="outline" onClick={() => goTo(index - 1)} disabled={index === 0}>
+          {t("topik.practice.prev")}
+        </Button>
+        <Button onClick={() => goTo(index + 1)}>{index + 1 < questions.length ? t("topik.practice.next") : t("topik.practice.finish")}</Button>
+      </div>
+      {effectiveResult && (
+        <TopikExplanation
+          explanation_vi={effectiveResult.explanation_vi}
+          key_terms={effectiveResult.key_terms}
+          ready={effectiveResult.explain_ready}
+          autoShow={!effectiveResult.is_correct}
+        />
       )}
     </div>
   );
@@ -146,7 +184,7 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
 /** Renders `text` with its AI-found words tappable (M6.2): read-only, nothing is marked by default. */
 function TappableText({ text, vocab }: { text: string; vocab: TopikVocabEntry[] }) {
   return (
-    <span lang="ko">
+    <span lang="ko" className="whitespace-pre-wrap">
       {segmentText(text, vocab).map((seg, i) =>
         seg.entry ? <TopikWordTap key={i} entry={seg.entry} /> : <Fragment key={i}>{seg.text}</Fragment>,
       )}

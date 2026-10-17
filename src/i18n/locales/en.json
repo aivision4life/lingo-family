@@ -522,8 +522,15 @@
       "vocabLoading": "Loading vocabulary…",
       "correct": "Correct!",
       "incorrect": "Not quite.",
+      "prev": "Previous",
       "next": "Next",
       "finish": "Finish",
+      "jumpTo": "Question {{n}} — {{status}}",
+      "status": {
+        "answered": "Answered",
+        "skipped": "Skipped",
+        "unanswered": "Not done"
+      },
       "word": {
         "loadError": "Could not load the meaning.",
         "addToLibrary": "Add to library",
@@ -536,6 +543,8 @@
         "generating": "Generating explanation…"
       },
       "results": {
+        "score": "{{correct}}/{{answered}} correct",
+        "skippedNote": "You skipped {{count}} question(s).",
         "markedTitle": "Marked words",
         "addAll": "Add all to library",
         "adding": "Adding…",

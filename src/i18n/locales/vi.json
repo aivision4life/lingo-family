@@ -522,8 +522,15 @@
       "vocabLoading": "Đang tải từ vựng…",
       "correct": "Đúng!",
       "incorrect": "Sai rồi.",
+      "prev": "Câu trước",
       "next": "Câu tiếp",
       "finish": "Hoàn thành",
+      "jumpTo": "Câu {{n}} — {{status}}",
+      "status": {
+        "answered": "Đã làm",
+        "skipped": "Đã bỏ qua",
+        "unanswered": "Chưa làm"
+      },
       "word": {
         "loadError": "Không tải được nghĩa.",
         "addToLibrary": "Thêm vào thư viện",
@@ -536,6 +543,8 @@
         "generating": "Đang tạo giải thích…"
       },
       "results": {
+        "score": "{{correct}}/{{answered}} câu đúng",
+        "skippedNote": "Bạn đã bỏ qua {{count}} câu.",
         "markedTitle": "Từ đã đánh dấu",
         "addAll": "Thêm tất cả vào thư viện",
         "adding": "Đang thêm…",

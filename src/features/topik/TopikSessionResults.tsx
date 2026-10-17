@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { cn } from "@/lib/utils";
 import { useMarkedWords } from "./markedWords";
+import type { SessionSummary } from "./sessionState";
 import { useBulkAddWords } from "./useBulkAddWords";
 
-/** Shown once the practice session is done (M6.3): the terms marked "Thêm vào thư viện" while
- * practicing, with a checklist (bớt bớt trước khi thêm) and one button to create them all — full
- * enrichment each, no per-word review screen, run in the background of this very screen. */
-export function TopikSessionResults() {
+/** Shown once the practice session is done (M6.3; score summary + skip M6.5-ish): the score only
+ * ever counts questions actually answered — a skipped one counts toward neither — plus the terms
+ * marked "Thêm vào thư viện" while practicing, with a checklist (bớt bớt trước khi thêm) and one
+ * button to create them all — full enrichment each, no per-word review screen, run in the
+ * background of this very screen. */
+export function TopikSessionResults({ summary }: { summary: SessionSummary }) {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
   const { marked, remove } = useMarkedWords();
@@ -39,7 +42,13 @@ export function TopikSessionResults() {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="py-4 text-center text-lg">{t("topik.practice.sessionDone")}</p>
+      <p className="pt-4 text-center text-lg">{t("topik.practice.sessionDone")}</p>
+      <div className="flex flex-col items-center gap-1 pb-2 text-center">
+        <p className="text-3xl font-bold">{t("topik.practice.results.score", { correct: summary.correct, answered: summary.answered })}</p>
+        {summary.skipped > 0 && (
+          <p className="text-sm text-muted-foreground">{t("topik.practice.results.skippedNote", { count: summary.skipped })}</p>
+        )}
+      </div>
       {marked.length > 0 && (
         <section className="flex flex-col gap-2 rounded-lg border p-3">
           <h2 className="text-sm font-semibold">{t("topik.practice.results.markedTitle")}</h2>
