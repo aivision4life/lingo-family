@@ -1,6 +1,8 @@
-// One-off, read-only (M2.11): lists existing words / phrases / examples whose LLM-generated text
-// the new script checks (`worker/services/contentCheck.ts`) would flag — e.g. a stray Latin
-// letter inside a Korean sentence. Nothing is changed; this only prints a list to look at by hand.
+// One-off, read-only (M2.11; TOPIK vocab/explanation added M6.5-ish): lists existing words /
+// phrases / examples / TOPIK question vocab+explanations whose LLM-generated text the content
+// checks (`worker/services/contentCheck.ts`) would flag — e.g. a stray Latin letter inside a
+// Korean sentence, or Vietnamese prose with every diacritic stripped out. Nothing is changed; this
+// only prints a list to look at by hand.
 //
 //   npm run scan-llm-content
 //
@@ -11,7 +13,8 @@ import os from "node:os";
 import path from "node:path";
 import { getPlatformProxy } from "wrangler";
 import type { LearnLang } from "../../shared/enums";
-import { checkGlosses, checkLangText, checkSentence } from "../../worker/services/contentCheck";
+import { splitUnderline, type TopikVocabEntry } from "../../shared/topik";
+import { checkGlosses, checkLangText, checkSentence, checkTopikExplanation, checkTopikVocabEntry } from "../../worker/services/contentCheck";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }> };
 type D1Like = { prepare(sql: string): Stmt };
@@ -81,12 +84,46 @@ async function scanExamples(db: D1Like): Promise<Finding[]> {
   });
 }
 
+/** M6.5-ish: topik_questions' own `vocab` (each entry's `gloss_vi`) and `explanation_vi`. The
+ * explanation check's `allowedHangul` includes the stem's own underlined phrase (if any), the same
+ * grounding citation `topikExplain.ts#generateTopikExplanationWithCache` allows for real — without
+ * it this scan would wrongly flag a correct, expected citation as "unexpected Hangul". */
+async function scanTopik(db: D1Like): Promise<Finding[]> {
+  const questions = await rows<{
+    id: string;
+    exam: string;
+    number: number;
+    stem_text: string | null;
+    vocab: string | null;
+    explanation_vi: string | null;
+    key_terms: string | null;
+  }>(db, "SELECT id, exam, number, stem_text, vocab, explanation_vi, key_terms FROM topik_questions");
+
+  const findings: Finding[] = [];
+  for (const q of questions) {
+    const vocab = (q.vocab ? JSON.parse(q.vocab) : []) as TopikVocabEntry[];
+    const context = `${q.exam} #${q.number}`;
+    for (const v of vocab) {
+      const problems = checkTopikVocabEntry(v);
+      if (problems.length > 0) findings.push({ table: "topik_questions.vocab", id: q.id, context: `${context} "${v.surface}"`, problems });
+    }
+    if (q.explanation_vi) {
+      const underlinedPhrases = q.stem_text ? splitUnderline(q.stem_text).filter((r) => r.underlined).map((r) => r.text) : [];
+      const allowedHangul = [...new Set([...vocab.flatMap((v) => [v.surface, v.lemma]), ...underlinedPhrases])];
+      const key_terms = (q.key_terms ? JSON.parse(q.key_terms) : []) as string[];
+      const problems = checkTopikExplanation({ explanation_vi: q.explanation_vi, key_terms }, vocab.map((v) => v.lemma), allowedHangul);
+      if (problems.length > 0) findings.push({ table: "topik_questions.explanation_vi", id: q.id, context, problems });
+    }
+  }
+  return findings;
+}
+
 async function main() {
   const configPath = tempConfig();
   const proxy = await getPlatformProxy({ configPath, remoteBindings: true });
   try {
     const db = proxy.env.DB as unknown as D1Like;
-    const findings = [...(await scanWords(db)), ...(await scanPhrases(db)), ...(await scanExamples(db))];
+    const findings = [...(await scanWords(db)), ...(await scanPhrases(db)), ...(await scanExamples(db)), ...(await scanTopik(db))];
 
     console.log(`Scanned words, phrases and examples in production D1 "${PROD_DB_NAME}". Nothing was changed.\n`);
     if (findings.length === 0) {
