@@ -4,7 +4,7 @@ import { TOPIK_OPTION_COUNT, type TopikAttemptResult, type TopikPracticeQuestion
 import { Button } from "@/components/ui/button";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
-import { useSubmitTopikAttempt } from "./api";
+import { useSubmitTopikAttempt, useTopikQuestionContent } from "./api";
 import { TopikExplanation } from "./TopikExplanation";
 import { TopikSessionResults } from "./TopikSessionResults";
 import { TopikWordTap } from "./TopikWordPopover";
@@ -21,14 +21,33 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
   const startedAt = useRef(0);
   const submit = useSubmitTopikAttempt();
 
-  const question = questions[index]!;
+  const rawQuestion = questions[index];
   const done = index >= questions.length;
 
   useEffect(() => {
     startedAt.current = Date.now();
   }, [index]);
 
-  if (done) return <TopikSessionResults />;
+  // M6.4-ish: generation for this session's questions was kicked off by GET /topik/session itself and
+  // may still be running — poll the current question until its vocabulary is ready, so "tap a word"
+  // starts working as soon as it exists without ever blocking the question from being answered.
+  // Derived at render time (not patched into state via an effect) so a poll tick just re-renders
+  // with the freshly-ready data instead of needing its own setState.
+  const vocabPoll = useTopikQuestionContent(rawQuestion?.id ?? "", profileId, !!rawQuestion && !rawQuestion.vocab_ready);
+  const question =
+    rawQuestion && !rawQuestion.vocab_ready && vocabPoll.data?.vocab_ready
+      ? { ...rawQuestion, vocab: vocabPoll.data.vocab, vocab_ready: true }
+      : rawQuestion;
+
+  // Same idea for the answer explanation: the attempt response may arrive before the background
+  // job that generates it has finished, so keep polling and derive the up-to-date result to render.
+  const explainPoll = useTopikQuestionContent(rawQuestion?.id ?? "", profileId, result !== null && !result.explain_ready);
+  const effectiveResult =
+    result && !result.explain_ready && explainPoll.data?.explain_ready
+      ? { ...result, explanation_vi: explainPoll.data.explanation_vi, key_terms: explainPoll.data.key_terms, explain_ready: true }
+      : result;
+
+  if (done || !question) return <TopikSessionResults />;
 
   const choose = (option: number) => {
     if (selected !== null) return;
@@ -48,6 +67,7 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">{t("topik.practice.progress", { current: index + 1, total: questions.length })}</p>
+      {!question.vocab_ready && <p className="text-xs text-muted-foreground">{t("topik.practice.vocabLoading")}</p>}
       {question.instruction && (
         <p className="font-medium">
           <TappableText text={question.instruction} vocab={question.vocab} />
@@ -67,7 +87,7 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
         {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => {
           const opt = question.options[n - 1]!;
           const isSelected = selected === n;
-          const isCorrectOpt = result?.correct_option === n;
+          const isCorrectOpt = effectiveResult?.correct_option === n;
           const disabled = selected !== null;
           return (
             // A tappable word inside the option's text (TopikWordTap) is itself a <button>; this
@@ -87,7 +107,7 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
               }}
               className={cn(
                 "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                result
+                effectiveResult
                   ? isCorrectOpt
                     ? "border-green-600 bg-green-50 dark:bg-green-950/40"
                     : isSelected
@@ -103,15 +123,20 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
           );
         })}
       </div>
-      {result && (
+      {effectiveResult && (
         <>
           <div className="flex items-center justify-between gap-2">
-            <p className={result.is_correct ? "text-green-700 dark:text-green-400" : "text-destructive"}>
-              {result.is_correct ? t("topik.practice.correct") : t("topik.practice.incorrect")}
+            <p className={effectiveResult.is_correct ? "text-green-700 dark:text-green-400" : "text-destructive"}>
+              {effectiveResult.is_correct ? t("topik.practice.correct") : t("topik.practice.incorrect")}
             </p>
             <Button onClick={next}>{index + 1 < questions.length ? t("topik.practice.next") : t("topik.practice.finish")}</Button>
           </div>
-          <TopikExplanation explanation_vi={result.explanation_vi} key_terms={result.key_terms} autoShow={!result.is_correct} />
+          <TopikExplanation
+            explanation_vi={effectiveResult.explanation_vi}
+            key_terms={effectiveResult.key_terms}
+            ready={effectiveResult.explain_ready}
+            autoShow={!effectiveResult.is_correct}
+          />
         </>
       )}
     </div>

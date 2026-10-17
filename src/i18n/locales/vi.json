@@ -519,6 +519,7 @@
       "nothingToday": "Không có câu nào để luyện trong khối này.",
       "sessionDone": "Đã xong buổi luyện tập!",
       "progress": "Câu {{current}}/{{total}}",
+      "vocabLoading": "Đang tải từ vựng…",
       "correct": "Đúng!",
       "incorrect": "Sai rồi.",
       "next": "Câu tiếp",
@@ -531,7 +532,8 @@
       },
       "explain": {
         "title": "Giải thích",
-        "show": "Xem giải thích"
+        "show": "Xem giải thích",
+        "generating": "Đang tạo giải thích…"
       },
       "results": {
         "markedTitle": "Từ đã đánh dấu",
@@ -572,6 +574,14 @@
       "correctAnswer": "Đáp án đúng: {{n}}",
       "edit": "Sửa",
       "delete": "Xoá",
+      "status": {
+        "vocabReady": "Từ vựng: đã có",
+        "vocabPending": "Từ vựng: chưa có",
+        "explainReady": "Giải thích: đã có",
+        "explainPending": "Giải thích: chưa có"
+      },
+      "generateAi": "Tạo dữ liệu AI",
+      "aiGenerating": "Đang tạo…",
       "form": {
         "exam": "Đề / nhóm bài (exam)",
         "number": "Số câu hỏi",

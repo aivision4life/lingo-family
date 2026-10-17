@@ -10,16 +10,24 @@ import { isGrammarEntry } from "./vocabSegments";
 type Props = {
   explanation_vi: string | null;
   key_terms: TopikKeyTermView[];
+  /** false while generation (kicked off at session start, M6.4-ish) is still running — the parent polls
+   * and re-renders once it finishes, so this flips to true without ever needing a new attempt. */
+  ready: boolean;
   /** Shown right away for a wrong answer; a correct answer only gets the "Xem giải thích" link. */
   autoShow: boolean;
 };
 
-/** Answer explanation + key terms (M6.3), already fetched with the attempt result — revealing it
- * is purely a local show/hide, never a new request. Nothing renders at all when there is none yet
- * (an older question not yet processed by `npm run topik-explain`). */
-export function TopikExplanation({ explanation_vi, key_terms, autoShow }: Props) {
+/** Answer explanation + key terms (M6.3; generation moved to practice time M6.4-ish): revealing an
+ * already-ready explanation is purely a local show/hide, never a new request. For a wrong answer
+ * whose explanation isn't ready yet, shows a loading state instead of nothing (never blocks moving
+ * to the next question). A correct answer just waits silently until the "Xem giải thích" link exists. */
+export function TopikExplanation({ explanation_vi, key_terms, ready, autoShow }: Props) {
   const { t } = useTranslation();
   const [show, setShow] = useState(autoShow);
+
+  if (!ready) {
+    return autoShow ? <p className="text-sm text-muted-foreground">{t("topik.practice.explain.generating")}</p> : null;
+  }
   if (explanation_vi === null) return null;
 
   if (!show) {

@@ -105,6 +105,11 @@ export const topikQuestionSchema = topikQuestionInputSchema.extend({
   /** Explanation + key terms (M6.3); null/[] until generated, or if there was nothing to explain. */
   explanation_vi: z.string().nullable(),
   key_terms: topikKeyTermsSchema,
+  /** Whether `vocab`/`explanation_vi` have ever been generated (M6.4-ish: generation moved to practice
+   * time, so most freshly-imported/approved questions sit at `false` until actually studied) — the
+   * review screen's per-question status; distinguishes "not generated yet" from "generated empty". */
+  vocab_ready: z.boolean(),
+  explain_ready: z.boolean(),
   created_by_profile: z.string().nullable(),
   created_at: z.number(),
   updated_at: z.number(),
@@ -134,9 +139,31 @@ export type TopikQuestionPage = z.infer<typeof topikQuestionPageSchema>;
 export const topikFacetsSchema = z.object({ exams: z.array(z.string()), blocks: z.array(z.string()) });
 export type TopikFacets = z.infer<typeof topikFacetsSchema>;
 
-/** Question as sent for practice: never carries the answer. `vocab` is safe to include (no spoiler). */
-export const topikPracticeQuestionSchema = z.object({ ...commonFields, id: z.string(), vocab: topikVocabListSchema });
+/** Question as sent for practice: never carries the answer. `vocab` is safe to include (no spoiler).
+ * `vocab_ready` false means generation was just kicked off (GET /topik/session, M6.4-ish) and the
+ * client should poll `GET /topik/questions/:id/content` for it instead of treating `vocab: []` as
+ * "nothing to tap". */
+export const topikPracticeQuestionSchema = z.object({ ...commonFields, id: z.string(), vocab: topikVocabListSchema, vocab_ready: z.boolean() });
 export type TopikPracticeQuestion = z.infer<typeof topikPracticeQuestionSchema>;
+
+/** `GET /topik/questions/:id/content` — polled by the practice screen while vocab and/or the
+ * explanation are still being generated in the background (M6.4-ish), and by the review screen after
+ * the per-question "Tạo dữ liệu AI" button. Same trust level as the rest of this family app's API:
+ * not gated on "has this profile already attempted the question", since the practice UI is the only
+ * intended caller and the family's Cloudflare Access login is the real access boundary. */
+export const topikQuestionContentSchema = z.object({
+  vocab: topikVocabListSchema,
+  vocab_ready: z.boolean(),
+  explanation_vi: z.string().nullable(),
+  key_terms: z.array(topikKeyTermViewSchema),
+  explain_ready: z.boolean(),
+});
+export type TopikQuestionContent = z.infer<typeof topikQuestionContentSchema>;
+
+/** `POST /topik/questions/:id/generate-content` — the review screen's per-question "Tạo dữ liệu AI"
+ * button; starts background generation (same as a practice session would) for whichever of
+ * vocab/explanation this one question is still missing. */
+export const topikGenerateContentResponseSchema = z.object({ started: z.boolean() });
 
 /** One contiguous run of question numbers sharing the same instruction (for the block picker). */
 export const topikBlockSchema = z.object({
@@ -182,6 +209,9 @@ export const topikAttemptResultSchema = z.object({
   /** Already filtered/prioritized for this profile (not-in-library first, then weak, capped at 5;
    * a term the profile already knows well is left out entirely). */
   key_terms: z.array(topikKeyTermViewSchema),
+  /** false while the explanation is still being generated in the background (M6.4-ish, triggered at
+   * session start) — the client shows "Đang tạo giải thích..." and polls `.../content` for it. */
+  explain_ready: z.boolean(),
 });
 export type TopikAttemptResult = z.infer<typeof topikAttemptResultSchema>;
 

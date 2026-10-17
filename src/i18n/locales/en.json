@@ -519,6 +519,7 @@
       "nothingToday": "No questions to practice in this block.",
       "sessionDone": "Session done!",
       "progress": "Question {{current}}/{{total}}",
+      "vocabLoading": "Loading vocabulary…",
       "correct": "Correct!",
       "incorrect": "Not quite.",
       "next": "Next",
@@ -531,7 +532,8 @@
       },
       "explain": {
         "title": "Explanation",
-        "show": "Show explanation"
+        "show": "Show explanation",
+        "generating": "Generating explanation…"
       },
       "results": {
         "markedTitle": "Marked words",
@@ -572,6 +574,14 @@
       "correctAnswer": "Correct answer: {{n}}",
       "edit": "Edit",
       "delete": "Delete",
+      "status": {
+        "vocabReady": "Vocabulary: ready",
+        "vocabPending": "Vocabulary: not yet",
+        "explainReady": "Explanation: ready",
+        "explainPending": "Explanation: not yet"
+      },
+      "generateAi": "Generate AI data",
+      "aiGenerating": "Generating…",
       "form": {
         "exam": "Exam / exercise label",
         "number": "Question number",

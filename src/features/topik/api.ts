@@ -3,7 +3,9 @@ import {
   topikAttemptResultSchema,
   topikBlockListSchema,
   topikFacetsSchema,
+  topikGenerateContentResponseSchema,
   topikImageUploadResponseSchema,
+  topikQuestionContentSchema,
   topikQuestionPageSchema,
   topikQuestionSchema,
   topikSessionResponseSchema,
@@ -13,6 +15,10 @@ import {
   type TopikVerifyBulkRequest,
 } from "@shared/topik";
 import { api, apiUpload } from "@/lib/api";
+
+/** How often the practice/review screens re-check `GET .../content` while something is still
+ * being generated in the background (M6.4-ish) — same cadence as the images feature's own polling. */
+const CONTENT_POLL_MS = 3000;
 
 /** Pages of 30; the review screen (M6.1+, filters/search added as the bank grows past ~600 rows)
  * loads more as the adult scrolls/taps "Tải thêm" instead of fetching everything at once. */
@@ -34,6 +40,26 @@ export const useSubmitTopikAttempt = () =>
   useMutation({
     mutationFn: (body: { profile_id: string; question_id: string; selected_option: number; duration_ms: number }) =>
       api("POST", "/topik/attempts", topikAttemptResultSchema, body),
+  });
+
+/** Polls one question's current vocab/explanation (M6.4-ish): used while a practice session's
+ * background generation hasn't finished yet, or after the review screen's "Tạo dữ liệu AI". Stops
+ * polling as soon as the caller passes `enabled: false` (typically once both are ready). */
+export const useTopikQuestionContent = (questionId: string, profileId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["topik", "content", questionId, profileId],
+    queryFn: () =>
+      api("GET", `/topik/questions/${questionId}/content?profile_id=${encodeURIComponent(profileId)}`, topikQuestionContentSchema),
+    enabled,
+    refetchInterval: enabled ? CONTENT_POLL_MS : false,
+  });
+
+/** Review screen's per-question "Tạo dữ liệu AI": starts background generation for whichever of
+ * vocab/explanation this one question is still missing. */
+export const useGenerateTopikContent = () =>
+  useMutation({
+    mutationFn: ({ id, profileId }: { id: string; profileId: string }) =>
+      api("POST", `/topik/questions/${id}/generate-content`, topikGenerateContentResponseSchema, { profile_id: profileId }),
   });
 
 // --- Management (adults only) -------------------------------------------------------------------

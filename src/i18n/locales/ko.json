@@ -519,6 +519,7 @@
       "nothingToday": "이 구간에 연습할 문제가 없습니다.",
       "sessionDone": "연습을 마쳤습니다!",
       "progress": "{{current}}/{{total}}번째",
+      "vocabLoading": "단어를 불러오는 중…",
       "correct": "정답입니다!",
       "incorrect": "틀렸습니다.",
       "next": "다음 문제",
@@ -531,7 +532,8 @@
       },
       "explain": {
         "title": "해설",
-        "show": "해설 보기"
+        "show": "해설 보기",
+        "generating": "해설을 만드는 중…"
       },
       "results": {
         "markedTitle": "표시한 단어",
@@ -572,6 +574,14 @@
       "correctAnswer": "정답: {{n}}",
       "edit": "수정",
       "delete": "삭제",
+      "status": {
+        "vocabReady": "단어: 생성됨",
+        "vocabPending": "단어: 미생성",
+        "explainReady": "해설: 생성됨",
+        "explainPending": "해설: 미생성"
+      },
+      "generateAi": "AI 데이터 생성",
+      "aiGenerating": "생성 중…",
       "form": {
         "exam": "시험/연습 이름",
         "number": "문제 번호",

@@ -285,7 +285,7 @@ describe("per-question vocabulary + explanation (M6.2 'tap a word', M6.3 answer 
     expect(llm.requests.length - before).toBe(1); // explanation only — vocab text did not change
   });
 
-  it("verify-bulk generates vocab/explanation only for whichever a row never had before", async () => {
+  it("verify-bulk never generates vocab/explanation, even for rows that never had either (M6.4-ish)", async () => {
     // q1: created through the normal (manual) flow, already verified → already has both.
     await tv.api("POST", "/topik/questions", { ...input({ number: 1 }), profile_id: adultV });
     await tv.settle();
@@ -311,11 +311,108 @@ describe("per-question vocabulary + explanation (M6.2 'tap a word', M6.3 answer 
     expect((bulk.body as { verified: number }).verified).toBe(2); // both rows match the exam filter
     await tv.settle();
 
-    // Only q2 needed generation (q1 already had both checked) — vocab + explanation = 2 new calls.
-    expect(llm.requests).toHaveLength(2);
+    expect(llm.requests).toHaveLength(0);
     const q2row = await tv.env.DB.prepare("SELECT vocab_checked_at, explain_checked_at FROM topik_questions WHERE id = 'q2'").first();
-    expect(q2row!.vocab_checked_at).not.toBeNull();
-    expect(q2row!.explain_checked_at).not.toBeNull();
+    expect(q2row!.vocab_checked_at).toBeNull();
+    expect(q2row!.explain_checked_at).toBeNull();
+  });
+
+  it("a practice session kicks off generation only for the questions it actually picked (M6.4-ish)", async () => {
+    // q1 inside the session's range, never generated; q2 outside the range, must stay untouched.
+    await tv.env.DB.prepare(
+      `INSERT INTO topik_questions (id, section, exam, number, block, options, correct_option, verified, created_at, updated_at)
+       VALUES (?1, 'reading', 'Test/연습1', ?2, '1~2', ?3, 1, 1, 0, 0)`,
+    )
+      .bind(
+        "q1",
+        1,
+        JSON.stringify([
+          { text: "일어나서", image_key: null },
+          { text: "답2", image_key: null },
+          { text: "답3", image_key: null },
+          { text: "답4", image_key: null },
+        ]),
+      )
+      .run();
+    await tv.env.DB.prepare(
+      `INSERT INTO topik_questions (id, section, exam, number, block, options, correct_option, verified, created_at, updated_at)
+       VALUES (?1, 'reading', 'Test/연습1', ?2, '9', ?3, 1, 1, 0, 0)`,
+    )
+      .bind(
+        "q2",
+        9,
+        JSON.stringify([
+          { text: "답1", image_key: null },
+          { text: "답2", image_key: null },
+          { text: "답3", image_key: null },
+          { text: "답4", image_key: null },
+        ]),
+      )
+      .run();
+
+    const res = await tv.api("GET", `/topik/session?profile_id=${adultV}&section=reading&from=1&to=1`);
+    const questions = (res.body as { questions: { id: string; vocab_ready: boolean }[] }).questions;
+    expect(questions).toEqual([expect.objectContaining({ id: "q1", vocab_ready: false })]); // not generated yet, the response does not wait for it
+    await tv.settle();
+
+    expect(llm.requests).toHaveLength(2); // vocab + explanation for q1 only
+    const q1row = await tv.env.DB.prepare("SELECT vocab_checked_at FROM topik_questions WHERE id = 'q1'").first();
+    expect(q1row!.vocab_checked_at).not.toBeNull();
+    const q2row = await tv.env.DB.prepare("SELECT vocab_checked_at FROM topik_questions WHERE id = 'q2'").first();
+    expect(q2row!.vocab_checked_at).toBeNull();
+  });
+
+  it("a session never re-triggers generation for a question that is already fully ready", async () => {
+    await tv.api("POST", "/topik/questions", { ...input({ number: 1 }), profile_id: adultV });
+    await tv.settle();
+    llm.requests.length = 0;
+
+    await tv.api("GET", `/topik/session?profile_id=${adultV}&section=reading&from=1&to=1`);
+    await tv.settle();
+    expect(llm.requests).toHaveLength(0);
+  });
+
+  it("GET .../content reports readiness and the review screen's generate-content button fills in a missing one", async () => {
+    const q = await tv.env.DB.prepare(
+      `INSERT INTO topik_questions (id, section, exam, number, block, options, correct_option, verified, created_at, updated_at)
+       VALUES ('q1', 'reading', 'Test/연습1', 1, '1~2', ?1, 1, 1, 0, 0) RETURNING id`,
+    )
+      .bind(
+        JSON.stringify([
+          { text: "일어나서", image_key: null },
+          { text: "답2", image_key: null },
+          { text: "답3", image_key: null },
+          { text: "답4", image_key: null },
+        ]),
+      )
+      .first<{ id: string }>();
+
+    const before = await tv.api("GET", `/topik/questions/${q!.id}/content?profile_id=${adultV}`);
+    expect(before.body).toMatchObject({ vocab: [], vocab_ready: false, explanation_vi: null, explain_ready: false });
+
+    const kick = await tv.api("POST", `/topik/questions/${q!.id}/generate-content`, { profile_id: adultV });
+    expect(kick.body).toEqual({ started: true });
+    await tv.settle();
+
+    const after = await tv.api("GET", `/topik/questions/${q!.id}/content?profile_id=${adultV}`);
+    expect(after.body).toMatchObject({ vocab: sample.words, vocab_ready: true, explanation_vi: explainSample.explanation_vi, explain_ready: true });
+
+    // Already fully generated now: a second click is a no-op (no further LLM calls).
+    llm.requests.length = 0;
+    const again = await tv.api("POST", `/topik/questions/${q!.id}/generate-content`, { profile_id: adultV });
+    expect(again.body).toEqual({ started: false });
+    await tv.settle();
+    expect(llm.requests).toHaveLength(0);
+  });
+
+  it("generate-content is adult-only and 404s for an unknown question", async () => {
+    const q = await tv.api("POST", "/topik/questions", { ...input(), profile_id: adultV });
+    await tv.settle();
+    const id = (q.body as { id: string }).id;
+    expect((await tv.api("POST", `/topik/questions/${id}/generate-content`, { profile_id: adultV })).status).toBe(200);
+    const kidId = ((await tv.api("POST", "/profiles", profile({ name: "Bé", is_kid: true }))).body as { id: string }).id;
+    expect((await tv.api("POST", `/topik/questions/${id}/generate-content`, { profile_id: kidId })).status).toBe(403);
+    expect((await tv.api("POST", "/topik/questions/nope/generate-content", { profile_id: adultV })).status).toBe(404);
   });
 });
 

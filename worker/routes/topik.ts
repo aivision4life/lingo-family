@@ -1,10 +1,14 @@
-// TOPIK II practice (SPEC F12, M6.1; per-question vocabulary M6.2; answer explanation M6.3):
-// question bank CRUD + review, practice sessions, attempts. Reading, writing and deleting
-// questions are adult-only; practice (GET session / POST attempt) is open to every profile,
-// including kids. The only AI in this feature is the M6.2 "tap a word" vocabulary and the M6.3
-// answer explanation, both generated once in the background when a question is created/edited/
-// approved (never at practice time) — see worker/services/topikWord.ts and topikExplain.ts.
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+// TOPIK II practice (SPEC F12, M6.1; per-question vocabulary M6.2; answer explanation M6.3;
+// generation moved to practice time M6.4-ish): question bank CRUD + review, practice sessions,
+// attempts. Reading, writing and deleting questions are adult-only; practice (GET session / POST
+// attempt) is open to every profile, including kids. The only AI in this feature is the M6.2
+// "tap a word" vocabulary and the M6.3 answer explanation. Importing/approving a question (even in
+// bulk) never generates either, to keep a ~600-question import free — generation is kicked off
+// in the background (`waitUntil`) only for the ~10 questions an actual practice session picks
+// (GET /topik/session), plus a manual question create/edit and the review screen's one-question
+// "generate now" button (POST .../generate-content) — see worker/services/topikWord.ts and
+// topikExplain.ts.
+import { and, asc, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { applyReview, emptyCardFields, type CardFields } from "../../shared/scheduling";
@@ -13,6 +17,8 @@ import {
   TOPIK_IMAGE_MAX_BYTES,
   TOPIK_IMAGE_MAX_SIDE,
   topikAttemptRequestSchema,
+  topikGenerateContentResponseSchema,
+  topikQuestionContentSchema,
   topikQuestionInputSchema,
   topikQuestionListQuerySchema,
   topikQuestionUpdateSchema,
@@ -56,6 +62,8 @@ const toQuestion = (r: QuestionRow): TopikQuestion => ({
   vocab: r.vocab ?? [],
   explanation_vi: r.explanation_vi,
   key_terms: r.key_terms ?? [],
+  vocab_ready: r.vocab_checked_at !== null,
+  explain_ready: r.explain_checked_at !== null,
   verified: r.verified,
   created_by_profile: r.created_by_profile,
   created_at: r.created_at.getTime(),
@@ -73,6 +81,7 @@ const toPracticeQuestion = (r: QuestionRow): TopikPracticeQuestion => ({
   stem: { text: r.stem_text, image_key: r.stem_image_key },
   options: r.options,
   vocab: r.vocab ?? [],
+  vocab_ready: r.vocab_checked_at !== null,
 });
 
 const toCardFields = (r: typeof topik_cards.$inferSelect): CardFields => ({
@@ -96,9 +105,10 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
    * explanation is generated from whatever vocabulary comes out of this same run (freshly
    * generated, or the row's existing one when `opts.vocab` is false), since its `key_terms` may
    * only cite lemmas from that list. Best-effort only: if the ~30s background window is cut off
-   * (can happen approving many questions from one exam at once), the row is simply left with
-   * `vocab_checked_at`/`explain_checked_at` still null and picked up later by `npm run topik-words`
-   * / `npm run topik-explain`.
+   * (can happen when a practice session picks up several never-studied questions at once), the row
+   * is simply left with `vocab_checked_at`/`explain_checked_at` still null — picked up by the next
+   * practice session, the review screen's "Tạo dữ liệu AI" button, or `npm run topik-words` /
+   * `npm run topik-explain` (M6.4-ish: generation is no longer triggered by import/approve).
    */
   const refreshContent = (c: Context<AppEnv>, profileId: string, row: QuestionRow, opts: { vocab: boolean; explain: boolean }) => {
     const llm = makeLlm(c.env);
@@ -265,7 +275,10 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       return c.body(null, 204);
     })
 
-    /** Approves every question matching a filter without changing their content (the review screen's "approve group"). */
+    /** Approves every question matching a filter without changing their content (the review screen's
+     * "approve group"). Never generates vocabulary/explanation (M6.4-ish): with ~600 questions imported
+     * at once, approving a whole exam must stay free — generation happens later, per-question, when
+     * it is actually picked for a practice session (or via the review screen's own-question button). */
     .post("/topik/questions/verify-bulk", zv("json", topikVerifyBulkRequestSchema.and(z.object({ profile_id: z.string().min(1) }))), async (c) => {
       const body = c.req.valid("json");
       const denied = await requireAdult(c, body.profile_id);
@@ -273,23 +286,6 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const db = getDb(c.env);
       const where = "exam" in body ? eq(topik_questions.exam, body.exam) : and(eq(topik_questions.section, body.section), gte(topik_questions.number, body.from), lte(topik_questions.number, body.to));
       const rows = await db.update(topik_questions).set({ verified: true, updated_at: new Date() }).where(where).returning({ id: topik_questions.id });
-      // Only rows never checked before (an already-verified row being re-approved keeps what it has);
-      // vocabulary and explanation are independent here, since a row can already have one but not
-      // the other (e.g. an older row from before M6.3 existed).
-      if (rows.length > 0) {
-        const needRows = await db
-          .select()
-          .from(topik_questions)
-          .where(
-            and(
-              inArray(topik_questions.id, rows.map((r) => r.id)),
-              or(isNull(topik_questions.vocab_checked_at), isNull(topik_questions.explain_checked_at)),
-            ),
-          );
-        for (const row of needRows) {
-          refreshContent(c, body.profile_id, row, { vocab: !row.vocab_checked_at, explain: !row.explain_checked_at });
-        }
-      }
       return c.json({ verified: rows.length });
     })
 
@@ -337,8 +333,58 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const sessionIds = buildTopikSession(candidates, resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url));
       const byId = new Map(questions.map((q) => [q.id, q]));
       const result = sessionIds.map((id) => toPracticeQuestion(byId.get(id)!));
+
+      // M6.4-ish: this is the actual generation trigger — only the handful of questions a real practice
+      // session picks ever cost an AI call, never a bulk import/approve of ~600 questions. A
+      // question already fully generated (common on a repeat session) costs nothing further.
+      for (const id of sessionIds) {
+        const row = byId.get(id)!;
+        if (!row.vocab_checked_at || !row.explain_checked_at) {
+          refreshContent(c, profile_id, row, { vocab: !row.vocab_checked_at, explain: !row.explain_checked_at });
+        }
+      }
       return c.json({ questions: result });
     })
+
+    /** Polled by the practice screen while a session-triggered (or manually started) generation is
+     * still running, and by the review screen after "Tạo dữ liệu AI" — see `topikQuestionContentSchema`. */
+    .get("/topik/questions/:id/content", idParam, zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
+      const { id } = c.req.valid("param");
+      const { profile_id } = c.req.valid("query");
+      const db = getDb(c.env);
+      const row = await db.select().from(topik_questions).where(eq(topik_questions.id, id)).get();
+      if (!row) return c.json(err("not_found"), 404);
+      const key_terms = await resolveKeyTermViews(db, profile_id, row.vocab ?? [], row.key_terms ?? []);
+      return c.json({
+        vocab: row.vocab ?? [],
+        vocab_ready: row.vocab_checked_at !== null,
+        explanation_vi: row.explanation_vi,
+        key_terms,
+        explain_ready: row.explain_checked_at !== null,
+      } satisfies z.infer<typeof topikQuestionContentSchema>);
+    })
+
+    /** Review screen's per-question "Tạo dữ liệu AI" (adult only): for a question nobody has
+     * practiced yet, generates whichever of vocab/explanation it is still missing without waiting
+     * for a real practice session. Starts the same background job GET /topik/session would. */
+    .post(
+      "/topik/questions/:id/generate-content",
+      idParam,
+      zv("json", z.object({ profile_id: z.string().min(1) })),
+      async (c) => {
+        const { id } = c.req.valid("param");
+        const { profile_id } = c.req.valid("json");
+        const denied = await requireAdult(c, profile_id);
+        if (denied) return denied;
+        const db = getDb(c.env);
+        const row = await db.select().from(topik_questions).where(eq(topik_questions.id, id)).get();
+        if (!row) return c.json(err("not_found"), 404);
+        const needsVocab = !row.vocab_checked_at;
+        const needsExplain = !row.explain_checked_at;
+        if (needsVocab || needsExplain) refreshContent(c, profile_id, row, { vocab: needsVocab, explain: needsExplain });
+        return c.json({ started: needsVocab || needsExplain } satisfies z.infer<typeof topikGenerateContentResponseSchema>);
+      },
+    )
 
     .post("/topik/attempts", zv("json", topikAttemptRequestSchema), async (c) => {
       const { profile_id, question_id, selected_option, duration_ms } = c.req.valid("json");
@@ -373,6 +419,12 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       });
       // Only revealed now (the answer is already known at this point) — never in GET /topik/session.
       const key_terms = await resolveKeyTermViews(db, profile_id, question.vocab ?? [], question.key_terms ?? []);
-      return c.json({ is_correct, correct_option: question.correct_option, explanation_vi: question.explanation_vi, key_terms });
+      return c.json({
+        is_correct,
+        correct_option: question.correct_option,
+        explanation_vi: question.explanation_vi,
+        key_terms,
+        explain_ready: question.explain_checked_at !== null,
+      });
     });
 };
