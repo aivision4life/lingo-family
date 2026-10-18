@@ -176,7 +176,41 @@ describe("blocks + practice session", () => {
     await t.env.DB.prepare("UPDATE topik_questions SET verified = 0 WHERE id = ?").bind((unverified.body as { id: string }).id).run();
 
     const blocks = (await t.api("GET", "/topik/blocks?section=reading")).body as { block: string; from: number; to: number; count: number }[];
-    expect(blocks).toEqual([{ section: "reading", block: "1~2", from: 1, to: 2, count: 2 }]);
+    expect(blocks).toEqual([{ section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2 }]);
+  });
+
+  // M6.9: the block picker shows "not studied / total" per profile, from this one query.
+  it("counts the questions a profile has never answered, per profile and per block", async () => {
+    const q1 = await createQuestion({ number: 1 });
+    await createQuestion({ number: 2, exam: "Test/연습2" });
+    await createQuestion({ number: 9, exam: "Test/연습3", block: "9" });
+
+    const blocksFor = async (profileId: string) =>
+      (await t.api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`)).body as { block: string; count: number; unseen: number }[];
+    expect(await blocksFor(adult)).toEqual([
+      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2 },
+      { section: "reading", block: "9", from: 9, to: 9, count: 1, unseen: 1 },
+    ]);
+
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 1, duration_ms: 1000 });
+    // Answering twice must not count the question twice (the join is over distinct question ids).
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 3, duration_ms: 1000 });
+
+    const afterAdult = await blocksFor(adult);
+    expect(afterAdult[0]).toMatchObject({ block: "1~2", count: 2, unseen: 1 });
+    expect(afterAdult[1]).toMatchObject({ block: "9", count: 1, unseen: 1 });
+    // Another profile's history is its own.
+    expect(await blocksFor(kid)).toMatchObject([{ unseen: 2 }, { unseen: 1 }]);
+  });
+
+  it("does not count an unverified question, answered or not", async () => {
+    await createQuestion({ number: 1 });
+    const hidden = await createQuestion({ number: 2, exam: "Test/연습2" });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: hidden.id, selected_option: 1, duration_ms: 1000 });
+    await t.env.DB.prepare("UPDATE topik_questions SET verified = 0 WHERE id = ?").bind(hidden.id).run();
+
+    const blocks = (await t.api("GET", `/topik/blocks?section=reading&profile_id=${adult}`)).body as { count: number; unseen: number }[];
+    expect(blocks).toMatchObject([{ count: 1, unseen: 1 }]);
   });
 
   it("a practice session never includes the answer, and defaults to the empty-card order", async () => {

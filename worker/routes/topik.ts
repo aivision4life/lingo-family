@@ -303,14 +303,25 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     })
 
     // --- Practice -----------------------------------------------------------------------------
-    .get("/topik/blocks", zv("query", z.object({ section: z.enum(["reading"]) })), async (c) => {
-      const { section } = c.req.valid("query");
+    // `profile_id` is optional on purpose: an installed PWA may still be running a build from
+    // before `unseen` existed, and it should keep working (it just gets unseen = count and ignores
+    // the field) instead of getting a 400 on the screen's only request.
+    .get("/topik/blocks", zv("query", z.object({ section: z.enum(["reading"]), profile_id: z.string().optional() })), async (c) => {
+      const { section, profile_id } = c.req.valid("query");
+      // One aggregate for every block, never one query per block: the LEFT JOIN is against this
+      // profile's distinct attempted question ids, so "unseen" = never answered once. Skipping a
+      // question during practice writes no attempt row, so a skipped question stays unseen.
       const rows = await c.env.DB.prepare(
-        `SELECT block, min(number) AS "from", max(number) AS "to", count(*) AS count
-         FROM topik_questions WHERE section = ?1 AND verified = 1 GROUP BY block ORDER BY min(number)`,
+        `SELECT q.block, min(q.number) AS "from", max(q.number) AS "to", count(*) AS count,
+                sum(CASE WHEN a.question_id IS NULL THEN 1 ELSE 0 END) AS unseen
+         FROM topik_questions q
+         LEFT JOIN (SELECT DISTINCT question_id FROM topik_attempts WHERE profile_id = ?2) a
+           ON a.question_id = q.id
+         WHERE q.section = ?1 AND q.verified = 1
+         GROUP BY q.block ORDER BY min(q.number)`,
       )
-        .bind(section)
-        .all<{ block: string; from: number; to: number; count: number }>();
+        .bind(section, profile_id ?? "")
+        .all<{ block: string; from: number; to: number; count: number; unseen: number }>();
       return c.json(rows.results.map((r) => ({ section, ...r })));
     })
 

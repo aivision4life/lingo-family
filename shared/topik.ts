@@ -208,6 +208,9 @@ export const topikBlockSchema = z.object({
   to: z.number().int(),
   /** How many verified questions exist in this range (may cover more than one `block` label). */
   count: z.number().int().nonnegative(),
+  /** Of those, how many the profile has never answered once (M6.9). A question skipped during a
+   * session writes no attempt, so it stays counted here until it is actually answered. */
+  unseen: z.number().int().nonnegative(),
 });
 export type TopikBlock = z.infer<typeof topikBlockSchema>;
 export const topikBlockListSchema = z.array(topikBlockSchema);

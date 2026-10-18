@@ -515,7 +515,8 @@
     "title": "TOPIK II practice",
     "noBlocks": "No questions yet. Go to \"Manage questions\" to import or add some.",
     "blockLabel": "Questions {{block}}",
-    "blockCount": "{{count}} question(s)",
+    "blockUnseen": "{{unseen}}/{{total}} not studied",
+    "blockTotal": "All blocks",
     "practice": {
       "title": "Questions {{from}}-{{to}}",
       "exit": "Exit",

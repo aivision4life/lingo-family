@@ -27,8 +27,13 @@ const TOPIK_MANAGE_PAGE_SIZE = 30;
 
 export type TopikQuestionFilter = { verified?: boolean; exam?: string; block?: string; q?: string };
 
-export const useTopikBlocks = () =>
-  useQuery({ queryKey: ["topik", "blocks"], queryFn: () => api("GET", "/topik/blocks?section=reading", topikBlockListSchema) });
+/** `profileId` decides the per-block "not studied yet" count, so it is part of the cache key. */
+export const useTopikBlocks = (profileId: string) =>
+  useQuery({
+    queryKey: ["topik", "blocks", profileId],
+    queryFn: () => api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`, topikBlockListSchema),
+    enabled: profileId !== "",
+  });
 
 export const useTopikSession = (profileId: string, from: number, to: number) =>
   useQuery({
