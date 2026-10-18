@@ -245,12 +245,21 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   const roundMatch = /\((\d+회)\)/.exec(labelText);
   const round = roundMatch ? roundMatch[1]! : null;
 
-  const answerPara = body.find((n) => tagOf(n) === "w:p");
-  const answerText = answerPara ? textOf(answerPara).trim() : "";
-  const answerMatch = ANSWER_LABEL.exec(answerText);
+  // The answer label ("4(4)") is usually the first paragraph under the question's Heading3, but some
+  // files repeat the block's instruction line inside each item, either before or after it — so the
+  // label is looked up by shape anywhere in the body, not by position.
+  const paragraphs = body.filter((n) => tagOf(n) === "w:p");
+  const answerPara = paragraphs.find((n) => ANSWER_LABEL.test(textOf(n).trim()));
+  const answerMatch = answerPara ? ANSWER_LABEL.exec(textOf(answerPara).trim()) : null;
   const errors: string[] = [];
-  if (!answerMatch) errors.push(`answer label not found or malformed (got "${answerText}")`);
+  if (!answerMatch) {
+    // No label anywhere: report the first paragraph, which is where it should have been.
+    const firstText = paragraphs[0] ? textOf(paragraphs[0]).trim() : "";
+    errors.push(`answer label not found or malformed (got "${firstText}")`);
+  }
   const declared_correct = answerMatch ? Number(answerMatch[2]) : null;
+  /** The label and a repeated instruction line are metadata, never part of the stem or an option. */
+  const isContent = (n: OrderedNode) => n !== answerPara && !(instruction !== null && textOf(n).trim() === instruction);
 
   const table = body.find((n) => tagOf(n) === "w:tbl");
   let parsed: { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] };
@@ -264,14 +273,14 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
       // table; a stray non-ListParagraph paragraph in between (the file's author's own Vietnamese
       // vocab gloss, e.g. "노소: già trẻ") is simply not ListParagraph-styled, so it is never picked
       // up as an option there — only its (here unused) stem_text/stem_image_rid would absorb it.
-      const afterTable = body.slice(body.indexOf(table) + 1).filter((n) => tagOf(n) === "w:p" && n !== answerPara);
+      const afterTable = body.slice(body.indexOf(table) + 1).filter((n) => tagOf(n) === "w:p" && isContent(n));
       const listParsed = parseListShape(afterTable);
       parsed = { stem_text: tableParsed.stem_text, stem_image_rid: tableParsed.stem_image_rid, options: listParsed.options };
     } else {
       parsed = tableParsed;
     }
   } else {
-    parsed = parseListShape(body.filter((n) => tagOf(n) === "w:p" && n !== answerPara));
+    parsed = parseListShape(paragraphs.filter(isContent));
   }
 
   if (parsed.options.length !== TOPIK_OPTION_COUNT) {

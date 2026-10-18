@@ -316,4 +316,41 @@ describe("parseTopikDocument", () => {
     });
   });
 
+  // Real shape in Cau03_04_MasterTopik (연습6 #3): the block's instruction line is repeated inside
+  // the item, above the answer label — reading the label as "the first paragraph" picked up the
+  // instruction instead and reported the whole question as malformed.
+  describe("the answer label is found by shape, not by position (M6.8)", () => {
+    const INSTRUCTION = "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.";
+    const body = table("밑줄 친 부분", ["가", "나", "다", "라"], 4);
+    const docWith = (...parts: string[]) =>
+      doc(heading("Heading1", "문항 3~4") + heading("Heading2", "연습6") + plain(INSTRUCTION) + heading("Heading3", "6-3") + parts.join(""));
+
+    it("finds it when the repeated instruction comes first", () => {
+      const item = parseTopikDocument(docWith(plain(INSTRUCTION), answer(4), body)).exams[0]!.items[0]!;
+      expect(item.declared_correct).toBe(4);
+      expect(item.errors).toEqual([]);
+    });
+
+    it("finds it when the repeated instruction comes after the label", () => {
+      const item = parseTopikDocument(docWith(answer(4), plain(INSTRUCTION), body)).exams[0]!.items[0]!;
+      expect(item.declared_correct).toBe(4);
+      expect(item.errors).toEqual([]);
+    });
+
+    it("keeps reporting the first paragraph when there is no label at all", () => {
+      const item = parseTopikDocument(docWith(plain(INSTRUCTION), body)).exams[0]!.items[0]!;
+      expect(item.declared_correct).toBeNull();
+      expect(item.errors[0]).toBe(`answer label not found or malformed (got "${INSTRUCTION}")`);
+    });
+
+    // A list-shape item has no table to take its stem from, so a repeated instruction line would
+    // otherwise be swallowed into the stem text now that it is no longer skipped by position.
+    it("never lets a repeated instruction become part of a list-shape stem", () => {
+      const listBody = plain(INSTRUCTION) + answer(2) + plain("지문입니다.") + [1, 2, 3, 4].map((n) => listOption(`${n}) 보기${n}`, n === 2)).join("");
+      const item = parseTopikDocument(docWith(listBody)).exams[0]!.items[0]!;
+      expect(item.stem_text).toBe("지문입니다.");
+      expect(item.errors).toEqual([]);
+    });
+  });
+
 });
