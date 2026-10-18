@@ -12,8 +12,17 @@ import { cn } from "@/lib/utils";
 export function TopikBlockPickerPage() {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
-  const blocks = useTopikBlocks(profile?.id ?? "");
+  const blocks = useTopikBlocks(canManageProfiles(profile) ? (profile?.id ?? "") : "");
   if (!profile) return null;
+  // Not just hidden from the nav: TOPIK II is an advanced-learner exam and a session has the
+  // server generate its vocabulary/explanations, which kid profiles never trigger (SPEC §10).
+  if (!canManageProfiles(profile)) {
+    return (
+      <PageShell title={t("topik.title")}>
+        <p>{t("topik.kidNotAllowed")}</p>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell title={t("topik.title")}>

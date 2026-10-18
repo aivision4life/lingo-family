@@ -6,6 +6,7 @@
     "main": "Điều hướng chính",
     "home": "Trang chủ",
     "review": "Ôn tập",
+    "topik": "TOPIK",
     "words": "Thư viện",
     "settings": "Cài đặt",
     "switchProfile": "Đổi hồ sơ",
@@ -92,7 +93,6 @@
       "title": "Trang chủ",
       "startReview": "Bắt đầu ôn tập",
       "practiceSpeaking": "Luyện phát âm",
-      "topik": "Luyện TOPIK II",
       "stats": "Thống kê"
     },
     "review": {
@@ -513,6 +513,7 @@
   },
   "topik": {
     "title": "Luyện TOPIK II",
+    "kidNotAllowed": "Phần luyện TOPIK II dành cho hồ sơ người lớn. Hãy nhờ bố mẹ nhé!",
     "noBlocks": "Chưa có câu hỏi nào. Vào \"Quản lý câu hỏi\" để nhập hoặc thêm câu hỏi.",
     "blockLabel": "Câu {{block}}",
     "blockLeftOf": "còn {{left}}/{{total}}",

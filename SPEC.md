@@ -456,7 +456,7 @@ Media storage (R2) keys:
 10. **Settings** (profile and app)
 11. **Stats** (P2)
 
-Navigation (M1.5): Home, Review, Library, Settings (room reserved for a later "Hanja" item, F7), each with an icon + i18n label; the active item is highlighted. Desktop (≥ 768 px): collapsible left sidebar with the active profile's avatar + name at the top. Phones (< 768 px): fixed bottom tab bar, avatar + name in the top-right corner. Tapping the avatar opens the profile picker. Add-word shortcuts (adults only): a "+ Add word" button at the top of the Library on every screen size, and on phones a floating "+" on Home and the Library, above the tab bar (safe-area aware, rendered by AppLayout). Two independent ways in, so one can never be the only one. The review screen and the profile picker hide all navigation (review keeps only its Exit button).
+Navigation (M1.5; TOPIK added M6.10): Home, Review, TOPIK, Library, Settings (room reserved for a later "Hanja" item, F7), each with an icon + i18n label. The tab bar builds one column per *visible* item, because "TOPIK" is adult-only — TOPIK II is an advanced-learner exam and a session has the server generate its vocabulary/explanations, an AI feature kid profiles never trigger — so a kid profile sees four items and the `/topik` route itself turns it away. The tab bar label is the short "TOPIK" (five full names do not fit at 360 px); the page title stays "Luyện TOPIK II". Home no longer repeats the TOPIK link: the tab bar now reaches it from every screen.  the active item is highlighted. Desktop (≥ 768 px): collapsible left sidebar with the active profile's avatar + name at the top. Phones (< 768 px): fixed bottom tab bar, avatar + name in the top-right corner. Tapping the avatar opens the profile picker. Add-word shortcuts (adults only): a "+ Add word" button at the top of the Library on every screen size, and on phones a floating "+" on Home and the Library, above the tab bar (safe-area aware, rendered by AppLayout). Two independent ways in, so one can never be the only one. The review screen and the profile picker hide all navigation (review keeps only its Exit button).
 
 Image editing (adults only): "Redraw" opens a small dialog with the editable prompt (style is appended automatically and not editable); "My photo" picks a file / camera photo, resizes it in the browser to ≤ 512 px WebP, then uploads.
 
@@ -540,6 +540,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M6.6 | Per-profile card types | Switch recognition / picture / listening on or off per profile; hidden, never reset | [x] |
 | M6.7 | TOPIK: read-only question view | "Xem" on each review row: the question as practice shows it, plus the correct answer, explanation and key terms | [x] |
 | M6.9 | TOPIK: block progress | "N/M chưa học" per block + a total row, from one aggregate query | [x] |
+| M6.10 | TOPIK in the main navigation | "TOPIK" tab after "Ôn tập", adult profiles only (the route is gated too) | [x] |
 
 ---
 

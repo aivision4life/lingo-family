@@ -6,6 +6,7 @@
     "main": "주요 메뉴",
     "home": "홈",
     "review": "복습",
+    "topik": "TOPIK",
     "words": "단어장",
     "settings": "설정",
     "switchProfile": "프로필 변경",
@@ -92,7 +93,6 @@
       "title": "홈",
       "startReview": "복습 시작",
       "practiceSpeaking": "발음 연습",
-      "topik": "TOPIK II 연습",
       "stats": "통계"
     },
     "review": {
@@ -513,6 +513,7 @@
   },
   "topik": {
     "title": "TOPIK II 연습",
+    "kidNotAllowed": "TOPIK II 연습은 어른 프로필만 이용할 수 있어요. 부모님께 부탁해 보세요!",
     "noBlocks": "아직 문제가 없습니다. \"문제 관리\"에서 가져오거나 추가하세요.",
     "blockLabel": "{{block}}번 문제",
     "blockLeftOf": "{{left}}/{{total}} 남음",

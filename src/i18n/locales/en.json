@@ -6,6 +6,7 @@
     "main": "Main navigation",
     "home": "Home",
     "review": "Review",
+    "topik": "TOPIK",
     "words": "Library",
     "settings": "Settings",
     "switchProfile": "Switch profile",
@@ -92,7 +93,6 @@
       "title": "Home",
       "startReview": "Start review",
       "practiceSpeaking": "Practice speaking",
-      "topik": "TOPIK II practice",
       "stats": "Stats"
     },
     "review": {
@@ -513,6 +513,7 @@
   },
   "topik": {
     "title": "TOPIK II practice",
+    "kidNotAllowed": "TOPIK II practice is for adult profiles. Ask a parent!",
     "noBlocks": "No questions yet. Go to \"Manage questions\" to import or add some.",
     "blockLabel": "Questions {{block}}",
     "blockLeftOf": "{{left}}/{{total}} left",

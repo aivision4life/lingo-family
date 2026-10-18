@@ -18,9 +18,6 @@ export function HomePage() {
       <LinkButton to="/practice" variant="secondary" size="lg">
         {t("pages.home.practiceSpeaking")}
       </LinkButton>
-      <LinkButton to="/topik" variant="secondary" size="lg">
-        {t("pages.home.topik")}
-      </LinkButton>
       <LinkButton to="/stats" variant="outline">
         {t("pages.home.stats")}
       </LinkButton>

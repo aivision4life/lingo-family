@@ -2,8 +2,9 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router";
+import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS } from "./navItems";
+import { visibleNavItems } from "./navItems";
 import { ProfileButton } from "./ProfileButton";
 
 // Collapsed/expanded is a per-device preference.
@@ -20,7 +21,9 @@ function readCollapsed(): boolean {
 /** Desktop (≥ 768px) navigation: profile at the top, items, collapse toggle at the bottom. */
 export function Sidebar() {
   const { t } = useTranslation();
+  const { profile } = useActiveProfile();
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const items = visibleNavItems(!!profile?.is_kid);
 
   const toggle = () => {
     setCollapsed((c) => {
@@ -45,7 +48,7 @@ export function Sidebar() {
 
       <nav aria-label={t("nav.main")} className="mt-2 flex-1">
         <ul className="flex flex-col gap-1">
-          {NAV_ITEMS.map(({ to, labelKey, icon: Icon }) => (
+          {items.map(({ to, labelKey, icon: Icon }) => (
             <li key={to}>
               <NavLink
                 to={to}
