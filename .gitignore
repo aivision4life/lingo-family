@@ -32,6 +32,6 @@ backups/
 # Image benchmark output (M1.8A)
 benchmarks/images/
 
-# TOPIK exam source material (copyrighted; M6.1)
-data/topik/
-data/topik-pending/
+# TOPIK exam source material (copyrighted; M6.1). Whole folder: any new staging dir
+# (data/incomming/, ...) must never reach git either.
+data/
