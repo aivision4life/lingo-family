@@ -105,6 +105,31 @@ describe("buildImportDraft", () => {
     expect(b.questions[0]).toMatchObject({ exam: "Yonsei-연습1", number: 3 });
   });
 
+  // Real bug: Cau05_08_MasterTopik has a blank paragraph styled "Heading 2" before "Master 8", which
+  // made its 5~8 questions land on 연습9/10/11 while 연습8 stayed stuck without them.
+  it("a blank Heading2 paragraph does not shift the 연습N label of the groups after it", () => {
+    const xml = doc(
+      heading("Heading1", "유형2: 문항 5~8") +
+        heading("Heading2", "Master 7") +
+        question("1-5", 1) +
+        heading("Heading2", "") +
+        heading("Heading2", "Master 8") +
+        question("1-5", 2),
+    );
+    const draft = buildImportDraft("TOPIK_Reading_Cau05_08_MasterTopik_VERSION1.docx", xml);
+    expect(draft.questions.map((q) => q.exam)).toEqual(["MasterTopik-연습1", "MasterTopik-연습2"]);
+  });
+
+  // The index must come from file structure, not from parse success, or a group's label would move
+  // the day its input file is fixed — orphaning everything already imported under the old label.
+  it("a group whose questions all fail to parse keeps its 연습N slot, so later groups do not renumber", () => {
+    const broken = heading("Heading2", "Master 7") + heading("Heading3", "1-5") + plain("??") + table("stem", ["a", "b", "c", "d"], 0);
+    const xml = doc(heading("Heading1", "유형2: 문항 5~8") + broken + heading("Heading2", "Master 8") + question("1-5", 2));
+    const draft = buildImportDraft("TOPIK_Reading_Cau05_08_MasterTopik_VERSION1.docx", xml);
+    expect(draft.errors.length).toBeGreaterThan(0);
+    expect(draft.questions.map((q) => q.exam)).toEqual(["MasterTopik-연습2"]);
+  });
+
   it("two different source files never collide even with identical, generic exam group text", () => {
     const xmlA = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));
     const xmlB = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));

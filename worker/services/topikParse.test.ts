@@ -248,4 +248,34 @@ describe("parseTopikDocument", () => {
     expect(result.exams[0]!.items[0]!.instruction).toBe("instruction A");
     expect(result.exams[1]!.items[0]!.instruction).toBe("instruction B");
   });
+  // A blank paragraph accidentally styled "Heading 2" is real (Cau05_08_MasterTopik has one between
+  // "Master 7" and "Master 8"); counting it would shift every later group's 연습N exam label by one.
+  it("does not let a Heading2 group without any question consume a group index", () => {
+    const group = (label: string, n: number) =>
+      heading("Heading2", label) + heading("Heading3", `1-${n}`) + answer(1) + table(`stem ${n}`, ["a", "b", "c", "d"], 1);
+    const xml = doc(heading("Heading1", "문항 5~8") + group("Master 7", 7) + heading("Heading2", "") + group("Master 8", 8));
+
+    const result = parseTopikDocument(xml);
+    expect(result.exams.map((e) => [e.exam, e.groupIndex, e.items.length])).toEqual([
+      ["Master 7", 1, 1],
+      ["", 0, 0],
+      ["Master 8", 2, 1],
+    ]);
+  });
+
+  // The counter must key off file *structure*, never parse success: a group that fails to parse
+  // today still owns its index, so fixing its input file tomorrow cannot renumber — and thereby
+  // orphan — the groups imported after it.
+  it("still counts a group whose every question fails to parse", () => {
+    const broken = heading("Heading2", "Master 7") + heading("Heading3", "1-7") + plain("??") + stemOnlyTable("stem 7");
+    const ok = heading("Heading2", "Master 8") + heading("Heading3", "1-8") + answer(1) + table("stem 8", ["a", "b", "c", "d"], 1);
+    const result = parseTopikDocument(doc(heading("Heading1", "문항 5~8") + broken + ok));
+
+    const [brokenExam, okExam] = result.exams;
+    expect(brokenExam!.items[0]!.errors.length).toBeGreaterThan(0);
+    expect(brokenExam!.groupIndex).toBe(1);
+    expect(okExam!.groupIndex).toBe(2);
+    expect(okExam!.items[0]!.errors).toEqual([]);
+  });
+
 });

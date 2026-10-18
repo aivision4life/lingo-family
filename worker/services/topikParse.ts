@@ -98,8 +98,19 @@ export type ParsedItem = {
   errors: string[];
 };
 
-/** `groupIndex` is a plain 1-based counter of Heading2 groups in the file, independent of the
- * group's own heading text (which varies a lot: "Yonsei-연습1", "연습1 (35회)", "연습1: Official"). */
+/**
+ * `groupIndex` is a 1-based counter of the file's Heading2 groups that actually hold questions,
+ * independent of the group's own heading text (which varies a lot: "Yonsei-연습1", "연습1 (35회)",
+ * "연습1: Official"). A group with no `Heading3` label at all gets `0` and does not consume an
+ * index: Word files really do contain a blank paragraph accidentally styled Heading 2 (seen in
+ * Cau05_08_MasterTopik, between "Master 7" and "Master 8"), and counting it would silently shift
+ * the `연습N` exam label of every later group in that file.
+ *
+ * "Holds questions" is deliberately a *structural* test (`items.length > 0`, i.e. at least one
+ * Heading3), never "parsed without errors": a group whose questions all fail to parse today must
+ * still consume its index, or fixing that group's input file tomorrow would renumber every later
+ * group and orphan the rows already imported under the old labels.
+ */
 export type ParsedExam = { exam: string; groupIndex: number; items: ParsedItem[] };
 
 export type ParseDocumentResult = {
@@ -302,7 +313,8 @@ export function parseTopikDocument(documentXml: string): ParseDocumentResult {
       continue;
     }
     if (style === "Heading2") {
-      currentExam = { exam: text, groupIndex: exams.length + 1, items: [] };
+      // groupIndex is assigned after the walk, once we know which groups hold questions.
+      currentExam = { exam: text, groupIndex: 0, items: [] };
       exams.push(currentExam);
       currentInstruction = null;
       sawHeading2InCurrentExam = true;
@@ -329,6 +341,12 @@ export function parseTopikDocument(documentXml: string): ParseDocumentResult {
     if (sawHeading2InCurrentExam && currentExam && currentExam.items.length === 0 && text) {
       currentInstruction = currentInstruction ? `${currentInstruction} ${text}` : text;
     }
+  }
+
+  let groupIndex = 0;
+  for (const exam of exams) {
+    if (exam.items.length === 0) continue;
+    exam.groupIndex = ++groupIndex;
   }
 
   if (!headingBlock) warnings.push('no "문항 N" / "문항 N~M" Heading1 found (block cross-check skipped)');
