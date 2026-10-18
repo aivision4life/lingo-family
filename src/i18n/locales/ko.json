@@ -515,7 +515,9 @@
     "title": "TOPIK II 연습",
     "noBlocks": "아직 문제가 없습니다. \"문제 관리\"에서 가져오거나 추가하세요.",
     "blockLabel": "{{block}}번 문제",
-    "blockUnseen": "미학습 {{unseen}}/{{total}}",
+    "blockLeft": "{{left}}개 남음",
+    "blockLeftOf": "{{left}}/{{total}} 남음",
+    "blockDone": "완료",
     "blockTotal": "전체",
     "practice": {
       "title": "{{from}}-{{to}}번 문제",
