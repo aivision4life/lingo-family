@@ -17,6 +17,12 @@ const table = (stem: string, opts: [string, string, string, string], correct: nu
 /** A stem-only table (1 row, no option rows) — the 11-12/16-18-style shape where the 4 options
  * are separate ListParagraph paragraphs after the table instead of more table rows. */
 const stemOnlyTable = (stem: string, stemRid: string | null = null) => `<w:tbl><w:tr>${cell(stem, false, stemRid)}</w:tr></w:tbl>`;
+/** A table whose stem row is split into two cells, with a blank spacer row before the options —
+ * the real review-card shape in Cau05_08_MasterTopik (연습1 #8). */
+const splitStemTable = (left: string, right: string, opts: [string, string, string, string], correct: number) =>
+  `<w:tbl><w:tr>${cell(left)}${cell(right)}</w:tr><w:tr>${cell("")}</w:tr><w:tr>${opts
+    .map((o, i) => cell(o, correct === i + 1))
+    .join("")}</w:tr></w:tbl>`;
 /** A table cell holding several paragraphs (the sentence-ordering shape: one "(가)…" line each). */
 const multiParaCell = (lines: string[]) => `<w:tc>${lines.map((l) => `<w:p><w:r><w:t>${l}</w:t></w:r></w:p>`).join("")}</w:tc>`;
 const listOption = (text: string, underline = false) =>
@@ -276,6 +282,38 @@ describe("parseTopikDocument", () => {
     expect(brokenExam!.groupIndex).toBe(1);
     expect(okExam!.groupIndex).toBe(2);
     expect(okExam!.items[0]!.errors).toEqual([]);
+  });
+
+  // Both bugs below came from one real question (Cau05_08_MasterTopik 연습1 #8) that reported
+  // "answer label says option 2, but option 3 is underlined" — the underline was right all along.
+  describe("a stem row split into two cells, with a spacer row (M6.8)", () => {
+    const xml = doc(
+      heading("Heading1", "문항 5~8") +
+        heading("Heading2", "연습1") +
+        heading("Heading3", "1-8") +
+        answer(2) +
+        splitStemTable("***** 매우 만족", "가격 대비 품질이 좋네요.", ["이용 방법", "사용 후기", "문의 사항", "상품 설명"], 2),
+    );
+
+    it("keeps every cell of the stem row (the second one held half the question)", () => {
+      expect(parseTopikDocument(xml).exams[0]!.items[0]!.stem_text).toBe("***** 매우 만족\n가격 대비 품질이 좋네요.");
+    });
+
+    it("ignores the blank spacer row instead of counting it as the first option", () => {
+      const item = parseTopikDocument(xml).exams[0]!.items[0]!;
+      expect(item.options.map((o) => o.text)).toEqual(["이용 방법", "사용 후기", "문의 사항", "상품 설명"]);
+      expect(item.options.findIndex((o) => o.marked) + 1).toBe(2); // matches the "2(2)" answer label
+      expect(item.errors).toEqual([]);
+    });
+
+    it("still keeps an option cell that has only an image (empty text is not the test)", () => {
+      const imageOptions = `<w:tbl><w:tr>${cell("stem")}</w:tr><w:tr>${cell("")}</w:tr><w:tr>${cell("", false, "rId1")}${cell("", true, "rId2")}${cell("", false, "rId3")}${cell("", false, "rId4")}</w:tr></w:tbl>`;
+      const item = parseTopikDocument(
+        doc(heading("Heading1", "문항 5~8") + heading("Heading2", "연습1") + heading("Heading3", "1-5") + answer(2) + imageOptions),
+      ).exams[0]!.items[0]!;
+      expect(item.options.map((o) => o.image_rid)).toEqual(["rId1", "rId2", "rId3", "rId4"]);
+      expect(item.errors).toEqual([]);
+    });
   });
 
 });

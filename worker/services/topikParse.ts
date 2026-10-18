@@ -191,12 +191,23 @@ function stemCellText(cell: OrderedNode): string {
 function parseTable(tbl: OrderedNode): { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] } {
   const rows = childrenOf(tbl).filter((c) => tagOf(c) === "w:tr");
   const cellsOf = (row: OrderedNode) => childrenOf(row).filter((c) => tagOf(c) === "w:tc");
-  const stemRow = rows[0];
-  const stemCell = stemRow ? cellsOf(stemRow)[0] : undefined;
-  const stem_text = stemCell ? stemCellText(stemCell) : "";
-  const stem_image_rid = stemCell ? embedIdOf(stemCell) : null;
+  // The stem row is usually one merged cell, but a review-card/notice question can split it in
+  // two (a rating on the left, the review text on the right — Cau05_08_MasterTopik 연습1 #8).
+  // Taking only the first cell silently dropped half the question, so every cell is kept.
+  const stemCells = rows[0] ? cellsOf(rows[0]) : [];
+  const stem_text = stemCells
+    .map(stemCellText)
+    .filter((text) => text !== "")
+    .join("\n");
+  const stem_image_rid = stemCells.map(embedIdOf).find((rid) => rid !== null) ?? null;
 
-  const optionCells = rows.slice(1).flatMap(cellsOf);
+  // A blank spacer row between the stem and the options is real (same file): counted as an option
+  // cell it shifted every option by one, which then looked like "the wrong option is underlined".
+  // A cell holding only an image is a legitimate option, so emptiness alone is not the test.
+  const optionCells = rows
+    .slice(1)
+    .flatMap(cellsOf)
+    .filter((cell) => cellText(cell).trim() !== "" || embedIdOf(cell) !== null);
   const options: ParsedOption[] = optionCells.slice(0, TOPIK_OPTION_COUNT).map((cell) => ({
     // Cell text is "1) 일어나는데" etc.; drop the leading "N) " marker, it is not part of the option.
     text: cellText(cell).replace(/^\d+\)\s*/, ""),

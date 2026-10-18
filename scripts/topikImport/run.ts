@@ -149,7 +149,10 @@ async function main() {
     console.error(`No ${DATA_DIR} directory — nothing to import.`);
     return;
   }
-  const fileNames = (await readdir(DATA_DIR)).filter((f) => f.toLowerCase().endsWith(".docx"));
+  // "~$name.docx" is Word's own lock file for a document that is currently open — it is not a zip
+  // at all, so including it crashed the whole run with an opaque JSZip "is this a zip file?" error
+  // just because the file happened to be open while importing.
+  const fileNames = (await readdir(DATA_DIR)).filter((f) => f.toLowerCase().endsWith(".docx") && !f.startsWith("~$"));
   if (fileNames.length === 0) {
     console.log(`No .docx files in ${DATA_DIR}.`);
     return;
