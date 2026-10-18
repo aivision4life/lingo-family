@@ -515,9 +515,8 @@
     "title": "Luyện TOPIK II",
     "noBlocks": "Chưa có câu hỏi nào. Vào \"Quản lý câu hỏi\" để nhập hoặc thêm câu hỏi.",
     "blockLabel": "Câu {{block}}",
-    "blockLeft": "còn {{left}}",
     "blockLeftOf": "còn {{left}}/{{total}}",
-    "blockDone": "Đã xong",
+    "blockDone": "Đã xong {{total}}/{{total}}",
     "blockTotal": "Tổng cộng",
     "practice": {
       "title": "Câu {{from}}-{{to}}",

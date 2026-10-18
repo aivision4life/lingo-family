@@ -55,7 +55,7 @@ function BlockList({ blocks }: { blocks: TopikBlock[] }) {
       ))}
       {/* px-6 matches the size="lg" rows above, so the labels and bars line up in one column. */}
       <div className="mt-1 border-t px-6 pt-3">
-        <BlockRow label={t("topik.blockTotal")} block={totals} bold showTotal />
+        <BlockRow label={t("topik.blockTotal")} block={totals} bold />
       </div>
     </>
   );
@@ -66,20 +66,9 @@ function BlockList({ blocks }: { blocks: TopikBlock[] }) {
  * alike: a finished block ("0 left of 7") and an untouched one ("24 left of 24") both have nothing
  * outstanding on screen but mean opposite things, so they differ in bar fill, label and weight.
  */
-function BlockRow({
-  label,
-  block,
-  bold = false,
-  showTotal = false,
-}: {
-  label: string;
-  block: Pick<TopikBlock, "count" | "unseen">;
-  bold?: boolean;
-  showTotal?: boolean;
-}) {
+function BlockRow({ label, block, bold = false }: { label: string; block: Pick<TopikBlock, "count" | "unseen">; bold?: boolean }) {
   const { t } = useTranslation();
   const { studied, percent, status } = blockProgress(block);
-  const left = showTotal ? t("topik.blockLeftOf", { left: block.unseen, total: block.count }) : t("topik.blockLeft", { left: block.unseen });
 
   return (
     <div className="flex w-full flex-col gap-1.5">
@@ -88,10 +77,12 @@ function BlockRow({
         {status === "done" ? (
           <span className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
             <Check className="size-4" aria-hidden />
-            {t("topik.blockDone")}
+            {t("topik.blockDone", { total: block.count })}
           </span>
         ) : (
-          <span className={cn("shrink-0 text-sm", status === "partial" ? "font-medium text-foreground" : "text-muted-foreground")}>{left}</span>
+          <span className={cn("shrink-0 text-sm", status === "partial" ? "font-medium text-foreground" : "text-muted-foreground")}>
+            {t("topik.blockLeftOf", { left: block.unseen, total: block.count })}
+          </span>
         )}
       </div>
       <div
@@ -104,7 +95,9 @@ function BlockRow({
         aria-valuemax={block.count}
         aria-valuenow={studied}
       >
-        <div className="h-full bg-primary transition-all" style={{ width: `${percent}%` }} />
+        {/* A finished block is faded on purpose: a full, solid bar would be the loudest thing on
+            the screen while being the one block there is nothing left to do in. */}
+        <div className={cn("h-full transition-all", status === "done" ? "bg-primary/30" : "bg-primary")} style={{ width: `${percent}%` }} />
       </div>
     </div>
   );
