@@ -10,11 +10,11 @@ import { truncate } from "./questionPreview";
 
 type Filter = "unverified" | "verified" | "all";
 
-type Props = { profileId: string; onAddNew: () => void; onEdit: (q: TopikQuestion) => void };
+type Props = { profileId: string; onAddNew: () => void; onView: (q: TopikQuestion) => void; onEdit: (q: TopikQuestion) => void };
 
 /** Review screen's list (M6.1, filters/search/pagination added as the bank grows toward ~600+
  * rows): tabs + exam/block dropdowns (scoped to the active tab) + a content/number search box. */
-export function TopikQuestionList({ profileId, onAddNew, onEdit }: Props) {
+export function TopikQuestionList({ profileId, onAddNew, onView, onEdit }: Props) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>("unverified");
   const [exam, setExam] = useState("");
@@ -126,6 +126,7 @@ export function TopikQuestionList({ profileId, onAddNew, onEdit }: Props) {
                     key={question.id}
                     question={question}
                     profileId={profileId}
+                    onView={() => onView(question)}
                     onEdit={() => onEdit(question)}
                     onDelete={() => del.mutate({ id: question.id, profile_id: profileId })}
                     deleting={del.isPending}
@@ -152,12 +153,14 @@ export function TopikQuestionList({ profileId, onAddNew, onEdit }: Props) {
 function QuestionRow({
   question,
   profileId,
+  onView,
   onEdit,
   onDelete,
   deleting,
 }: {
   question: TopikQuestion;
   profileId: string;
+  onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
@@ -165,7 +168,9 @@ function QuestionRow({
   const { t } = useTranslation();
   const preview = question.stem.text ? truncate(stripUnderline(question.stem.text), 40) : t("topik.manage.imageOnly");
   return (
-    <div className="flex items-start justify-between gap-2 rounded-md border p-2">
+    // On a phone the three actions would squeeze the preview text into a useless sliver, so they
+    // move to their own line below it; from sm up they sit beside it as before.
+    <div className="flex flex-col gap-2 rounded-md border p-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex min-w-0 flex-col">
         <span className="text-sm text-muted-foreground">
           {question.exam} · #{question.number} {!question.verified && `· ${t("topik.manage.unverifiedBadge")}`}{" "}
@@ -177,7 +182,10 @@ function QuestionRow({
         <span className="text-sm text-muted-foreground">{t("topik.manage.correctAnswer", { n: question.correct_option })}</span>
         <AiStatus question={question} profileId={profileId} />
       </div>
-      <div className="flex shrink-0 gap-2">
+      <div className="flex shrink-0 flex-wrap justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={onView}>
+          {t("topik.manage.view")}
+        </Button>
         <Button size="sm" variant="outline" onClick={onEdit}>
           {t("topik.manage.edit")}
         </Button>

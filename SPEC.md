@@ -348,6 +348,7 @@ Decisions (M2.2):
 - [x] Client: a wrong answer shows the explanation (with an AI badge) and key terms right away; a correct answer only shows a "Xem giải thích" link. Each addable key term has the same "Add to library" action as the M6.2 popup.
 - [x] "Add to library" (both the M6.2 popup and the M6.3 key-terms list) was changed from "open the Add-word screen" to **mark the term for later**, so answering questions is never interrupted: the button becomes "Đã đánh dấu" (tap again to un-mark). The marked list lives only in memory for the session (not D1); leaving the practice screen with marks still pending asks for confirmation first (in-app navigation and an actual tab close/reload).
 - [x] The end-of-session results screen lists every marked term (with a checkbox to drop some first) and one "Thêm tất cả vào thư viện" button: it runs the full normal enrichment (Hanja, all 3 glosses, example sentences, image, FSRS card) for each, one by one, with no per-word review screen — the review already happened implicitly by marking during practice. Respects the daily LLM/image quotas; hitting one stops the run and reports which terms still need adding later (with a link to the normal Add-word screen for a manual retry).
+- [x] **Read-only question view (M6.7):** every row in the review list has a "Xem" button beside "Sửa"/"Xoá" that shows the question laid out like practice — instruction, stem (line breaks kept, image at full width, the `<u>…</u>` phrase bold+underlined), all 4 options — plus what practice hides until you answer: which option is correct, the explanation and the key terms. A "Sửa" button switches to the edit form from there. The edit form is for typing, not for reading, which is why reviewing content needed its own screen. Words are not tappable here (that marks terms for a practice session's bulk add, which has no meaning outside one).
 - [x] One-off script `npm run topik-explain` (`scripts/topikExplain/`): same dry-run/`--apply`/`--force`/`--limit`/`--ids`/resumable convention as `topik-words`; only processes questions that already have a vocabulary.
 
 **Later stages (not yet built):**
@@ -536,6 +537,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M6.3 | TOPIK: explanations | Explanation + key terms on an attempt (never in the session), mark-then-bulk-add so adding words never interrupts practice | [x] |
 | M6.4 | TOPIK: mock test | Timed full mock test, one score at the end | [ ] |
 | M6.6 | Per-profile card types | Switch recognition / picture / listening on or off per profile; hidden, never reset | [x] |
+| M6.7 | TOPIK: read-only question view | "Xem" on each review row: the question as practice shows it, plus the correct answer, explanation and key terms | [x] |
 
 ---
 

@@ -9,12 +9,14 @@ import { topikErrorMessage } from "@/features/topik/errors";
 import { emptyTopikFormValues, topikFormValuesFromQuestion, type TopikFormValues } from "@/features/topik/formValues";
 import { TopikQuestionForm } from "@/features/topik/TopikQuestionForm";
 import { TopikQuestionList } from "@/features/topik/TopikQuestionList";
+import { TopikQuestionView } from "@/features/topik/TopikQuestionView";
 
-type Mode = { kind: "list" } | { kind: "create" } | { kind: "edit"; question: TopikQuestion };
+type Mode = { kind: "list" } | { kind: "create" } | { kind: "view"; question: TopikQuestion } | { kind: "edit"; question: TopikQuestion };
 
 /** Screen (M6.1) — `/topik/manage`: review imported questions, add/edit/delete by hand. Adults
  * only. Filtering/search/pagination (M6.4-ish scaling, as the bank grows toward ~600+ rows) lives
- * in `TopikQuestionList`; this page only switches between that list and the create/edit form. */
+ * in `TopikQuestionList`; this page only switches between that list, the read-only view (M6.7)
+ * and the create/edit form. */
 export function TopikManagePage() {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
@@ -35,7 +37,14 @@ export function TopikManagePage() {
         <TopikQuestionList
           profileId={profile.id}
           onAddNew={() => setMode({ kind: "create" })}
+          onView={(question) => setMode({ kind: "view", question })}
           onEdit={(question) => setMode({ kind: "edit", question })}
+        />
+      ) : mode.kind === "view" ? (
+        <TopikQuestionView
+          question={mode.question}
+          onEdit={() => setMode({ kind: "edit", question: mode.question })}
+          onBack={() => setMode({ kind: "list" })}
         />
       ) : (
         <QuestionEditor
