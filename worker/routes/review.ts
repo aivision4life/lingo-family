@@ -27,7 +27,7 @@ export const reviewRoutes = new Hono<AppEnv>()
       langs.map(async (lang) => {
         const q = await queueSummary(
           db,
-          { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart, isKid: profile.is_kid },
+          { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart, isKid: profile.is_kid, cardTypes: profile.card_types },
           await albumScopes(db, lang),
         );
         return { lang, due: q.due, new: q.new, by_type: q.byType, albums: q.albums };
@@ -56,7 +56,7 @@ export const reviewRoutes = new Hono<AppEnv>()
 
     const q = await todaysQueue(
       db,
-      { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart: localDayStart(now, tz), isKid: profile.is_kid },
+      { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart: localDayStart(now, tz), isKid: profile.is_kid, cardTypes: profile.card_types },
       wordIds,
     );
     return c.json({ items: q.items, now: now.getTime() });

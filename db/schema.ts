@@ -22,6 +22,7 @@ import {
   TOPIK_SECTIONS,
   UI_LANGS,
   USAGE_SERVICES,
+  type CardType,
   type LearnLang,
 } from "../shared/enums";
 import type { TopikOptions, TopikVocabEntry } from "../shared/topik";
@@ -68,6 +69,16 @@ export const profiles = sqliteTable("profiles", {
     .$type<LearnLang[]>()
     .notNull()
     .default(sql`'[]'`),
+  /**
+   * Which review card types this profile practises (M6.6). Turning one off only hides its cards
+   * from the queue: the rows, their FSRS schedule and their review history stay untouched, so
+   * turning it back on resumes the old schedule. Defaults to all three, which is what every
+   * profile did before this setting existed.
+   */
+  card_types: text("card_types", { mode: "json" })
+    .$type<CardType[]>()
+    .notNull()
+    .default(sql`'["recognition","picture","listening"]'`),
   created_at: createdAt(),
 });
 

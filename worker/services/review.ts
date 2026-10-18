@@ -1,9 +1,9 @@
 // Default decks, card creation and queue data for /api/review.
 import { and, count, eq, gte, isNull, sql } from "drizzle-orm";
 import { State } from "ts-fsrs";
-import { LEARN_LANGS, type LearnLang } from "../../shared/enums";
+import { LEARN_LANGS, type CardType, type LearnLang } from "../../shared/enums";
 import type { CardDto, QueueItem, TypeCounts } from "../../shared/review";
-import { buildQueue, emptyCardFields, type QueueCandidate } from "../../shared/scheduling";
+import { buildQueue, emptyCardFields, enabledChain, type QueueCandidate } from "../../shared/scheduling";
 import { cards, examples, phrases, profile_decks, profiles, review_logs, words } from "../../db/schema";
 import type { getDb } from "../env";
 import { toExample } from "./phrases";
@@ -180,7 +180,16 @@ async function introducedSince(db: Db, profileId: string, lang: LearnLang, daySt
   return row?.n ?? 0;
 }
 
-type QueueArgs = { profileId: string; lang: LearnLang; newLimit: number; now: Date; dayStart: Date; isKid: boolean };
+type QueueArgs = {
+  profileId: string;
+  lang: LearnLang;
+  newLimit: number;
+  now: Date;
+  dayStart: Date;
+  isKid: boolean;
+  /** Profile setting `card_types` (M6.6): which review card types take part. */
+  cardTypes: CardType[];
+};
 
 type CandidateRow = Awaited<ReturnType<typeof loadCandidates>>[number];
 
@@ -266,16 +275,24 @@ export async function loadQueueInputs(db: Db, a: QueueArgs): Promise<QueueInputs
 export function queueFrom({ rows: all, introducedToday }: QueueInputs, a: QueueArgs, wordIds?: ReadonlySet<string> | null) {
   const rows = wordIds ? all.filter((r) => wordIds.has(r.card.word_id)) : all;
 
-  // Unlock chain per item (word or phrase): recognition → picture → listening. An item without a
-  // picture card (no ready image yet) goes recognition → listening.
-  const stateOf = (type: "recognition" | "picture") =>
-    new Map(rows.filter((r) => r.card.card_type === type).map((r) => [itemKey(r.card), r.card.state]));
-  const recognitionState = stateOf("recognition");
-  const pictureState = stateOf("picture");
+  // Unlock chain per item (word or phrase): recognition → picture → listening, restricted to the
+  // profile's enabled types (M6.6). A disabled type is skipped exactly like a missing one, so with
+  // picture off listening waits for recognition — the same path an item with no ready image takes.
+  // Cards of a disabled type still get a prev_state here; buildQueue drops them by type anyway.
+  const chain = enabledChain(a.cardTypes);
+  const stateByType = new Map<CardType, Map<string, number>>();
+  for (const type of chain) {
+    stateByType.set(type, new Map(rows.filter((r) => r.card.card_type === type).map((r) => [itemKey(r.card), r.card.state])));
+  }
   const prevState = (c: typeof cards.$inferSelect) => {
+    const position = chain.indexOf(c.card_type);
+    if (position <= 0) return null; // the entry type has nothing to wait for (and buildQueue ignores it)
     const key = itemKey(c);
-    if (c.card_type === "picture") return recognitionState.get(key) ?? null;
-    if (c.card_type === "listening") return pictureState.get(key) ?? recognitionState.get(key) ?? null;
+    // Nearest enabled predecessor whose card actually exists for this item.
+    for (let i = position - 1; i >= 0; i--) {
+      const state = stateByType.get(chain[i]!)!.get(key);
+      if (state !== undefined) return state;
+    }
     return null;
   };
   const candidates: QueueCandidate[] = rows.map((r) => ({
@@ -286,7 +303,13 @@ export function queueFrom({ rows: all, introducedToday }: QueueInputs, a: QueueA
     word_created_at: (r.phrase?.created_at ?? r.word.created_at).getTime(),
     prev_state: prevState(r.card),
   }));
-  const queue = buildQueue(candidates, { now: a.now, dayStart: a.dayStart, newLimit: a.newLimit, introducedToday });
+  const queue = buildQueue(candidates, {
+    now: a.now,
+    dayStart: a.dayStart,
+    newLimit: a.newLimit,
+    introducedToday,
+    cardTypes: a.cardTypes,
+  });
 
   const byType: TypeCounts = { recognition: 0, picture: 0, listening: 0 };
   for (const c of [...queue.due, ...queue.newCards]) if (c.card_type in byType) byType[c.card_type as keyof TypeCounts]++;

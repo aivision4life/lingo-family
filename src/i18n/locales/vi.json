@@ -55,6 +55,8 @@
       "glossLang": "Ngôn ngữ nghĩa của từ",
       "glossLangHint": "Nghĩa trên thẻ học sẽ hiện bằng ngôn ngữ này.",
       "studyLangs": "Ngôn ngữ đang học",
+      "cardTypes": "Loại thẻ ôn tập",
+      "cardTypesHint": "Tắt một loại thì thẻ loại đó không hiện khi ôn, nhưng tiến độ vẫn được giữ; bật lại là học tiếp.",
       "dailyNewLimit": "Số thẻ mới mỗi ngày",
       "isKid": "Chế độ trẻ em",
       "isKidHint": "Giao diện đơn giản, không sửa/xoá được nội dung, không có PIN.",
@@ -70,6 +72,7 @@
       "name": "Tên cần từ 1 đến 30 ký tự.",
       "pin": "PIN gồm đúng 4 chữ số.",
       "study_langs": "Chọn ít nhất một ngôn ngữ.",
+      "card_types": "Chọn ít nhất một loại thẻ.",
       "daily_new_limit": "Nhập một số từ 0 đến 100.",
       "last_adult": "Phải luôn còn ít nhất một hồ sơ người lớn.",
       "generic": "Có lỗi xảy ra, vui lòng thử lại."
@@ -583,6 +586,7 @@
       "unverifiedBadge": "chưa duyệt",
       "imageOnly": "(chỉ có ảnh)",
       "correctAnswer": "Đáp án đúng: {{n}}",
+      "view": "Xem",
       "edit": "Sửa",
       "delete": "Xoá",
       "status": {
@@ -611,6 +615,15 @@
         "duplicate": "Câu này (đề + số câu) đã có, không ghi đè.",
         "generic": "Không lưu được, hãy thử lại."
       }
+    },
+    "view": {
+      "title": "Xem câu hỏi",
+      "noStem": "(câu hỏi này không có đề bài)",
+      "correctBadge": "Đáp án đúng",
+      "explanation": "Giải thích",
+      "explanationNone": "Câu này không có giải thích.",
+      "explanationPending": "Chưa tạo giải thích. Dùng nút “Tạo dữ liệu AI” ở danh sách, hoặc nó sẽ tự tạo khi câu này vào buổi luyện tập.",
+      "termNoGloss": "(không có trong từ vựng của câu)"
     }
   }
 }

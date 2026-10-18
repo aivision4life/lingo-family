@@ -30,6 +30,7 @@ const queue = async (pid: string) =>
 const summary = async (pid: string) => summarySchema.parse((await t.api("GET", `/review/summary?profile_id=${pid}&tz=${TZ}`)).body);
 const answer = (pid: string, cardId: string) =>
   t.api("POST", "/review/answer", { profile_id: pid, card_id: cardId, rating: 4, duration_ms: 1 });
+const setCardTypes = (pid: string, card_types: string[]) => t.api("PATCH", `/profiles/${pid}`, { card_types });
 const label = (i: { word: { kind: string; term: string }; card: { card_type: string } }) =>
   `${i.word.kind}:${i.word.term}/${i.card.card_type}`;
 const types = async (pid: string, table: "word" | "phrase") =>
@@ -126,5 +127,63 @@ describe("picture cards", () => {
     expect(item.examples.map((e) => e.sentence)).toEqual(["학생 예문"]);
     const phraseItem = (await queue(bo)).find((i) => i.word.kind === "phrase");
     expect(phraseItem?.examples ?? []).toEqual([]);
+  });
+});
+
+// M6.6: a profile can switch a review card type off. The cards, their FSRS schedule and their
+// review history must survive untouched — only the queue stops offering them.
+describe("card type setting", () => {
+  it("hides a disabled type from the queue and from the summary, without deleting its cards", async () => {
+    await setReady("words");
+    await setCardTypes(bo, ["recognition", "listening"]);
+    await answerType(bo, "recognition");
+
+    const labels = (await queue(bo)).map(label);
+    expect(labels).toContain("word:학생/listening"); // gated on recognition now that picture is off
+    expect(labels).not.toContain("word:학생/picture");
+    // The picture card itself still exists and keeps its row.
+    expect(await types(bo, "word")).toEqual(["listening", "picture", "recognition"]);
+
+    const [{ by_type }] = await summary(bo);
+    expect(by_type.picture).toBe(0);
+  });
+
+  it("re-enabling a type brings its cards back on their old schedule, not as new", async () => {
+    await setReady("words");
+    await answerType(bo, "recognition");
+    // Rated "Again", so the picture card stays in learning and due within the learn-ahead window:
+    // if re-enabling reset it, it would come back as a New card instead of this exact row.
+    const picture = (await queue(bo)).find((i) => i.card.card_type === "picture")!;
+    await t.api("POST", "/review/answer", { profile_id: bo, card_id: picture.card.id, rating: 1, duration_ms: 1 });
+    const before = await t.env.DB.prepare(
+      "SELECT id, reps, state, due FROM cards WHERE card_type = 'picture' AND phrase_id IS NULL",
+    ).first();
+    expect((before as { reps: number }).reps).toBe(1);
+
+    await setCardTypes(bo, ["recognition", "listening"]);
+    expect((await queue(bo)).map(label)).not.toContain("word:학생/picture");
+
+    await setCardTypes(bo, ["recognition", "picture", "listening"]);
+    const after = await t.env.DB.prepare(
+      "SELECT id, reps, state, due FROM cards WHERE card_type = 'picture' AND phrase_id IS NULL",
+    ).first();
+    expect(after).toEqual(before);
+    expect((await queue(bo)).map(label)).toContain("word:학생/picture");
+  });
+
+  it("with recognition off, picture becomes the entry type and obeys daily_new_limit", async () => {
+    await setReady("words");
+    await setReady("phrases");
+    await queue(bo); // sync so the phrase gets its picture card too
+    await setCardTypes(bo, ["picture", "listening"]);
+
+    // daily_new_limit is 1 in this file, so only the oldest item's picture card is introduced.
+    const labels = (await queue(bo)).map(label);
+    expect(labels).toEqual(["word:학생/picture"]);
+  });
+
+  it("rejects an empty list (an empty review session would look like a bug, not a setting)", async () => {
+    const res = await t.api("PATCH", `/profiles/${bo}`, { card_types: [] });
+    expect(res.status).toBe(400);
   });
 });

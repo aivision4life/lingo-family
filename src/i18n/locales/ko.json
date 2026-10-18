@@ -55,6 +55,8 @@
       "glossLang": "단어 뜻 언어",
       "glossLangHint": "학습 카드의 뜻이 이 언어로 표시됩니다.",
       "studyLangs": "학습 중인 언어",
+      "cardTypes": "복습 카드 종류",
+      "cardTypesHint": "끄면 해당 종류의 카드가 복습에 나오지 않지만 진도는 그대로 유지되며, 다시 켜면 이어서 학습합니다.",
       "dailyNewLimit": "하루 새 카드 수",
       "isKid": "어린이 모드",
       "isKidHint": "간단한 화면, 내용 수정/삭제 불가, PIN 없음.",
@@ -70,6 +72,7 @@
       "name": "이름은 1~30자여야 합니다.",
       "pin": "PIN은 숫자 4자리입니다.",
       "study_langs": "언어를 하나 이상 선택하세요.",
+      "card_types": "카드 종류를 하나 이상 선택하세요.",
       "daily_new_limit": "0에서 100 사이의 숫자를 입력하세요.",
       "last_adult": "어른 프로필이 최소 하나는 있어야 합니다.",
       "generic": "오류가 발생했습니다. 다시 시도해 주세요."
@@ -583,6 +586,7 @@
       "unverifiedBadge": "검토 필요",
       "imageOnly": "(이미지만)",
       "correctAnswer": "정답: {{n}}",
+      "view": "보기",
       "edit": "수정",
       "delete": "삭제",
       "status": {
@@ -611,6 +615,15 @@
         "duplicate": "이 문제(시험 + 번호)는 이미 있습니다. 덮어쓰지 않았습니다.",
         "generic": "저장하지 못했습니다. 다시 시도하세요."
       }
+    },
+    "view": {
+      "title": "문제 보기",
+      "noStem": "(이 문제에는 지문이 없습니다)",
+      "correctBadge": "정답",
+      "explanation": "해설",
+      "explanationNone": "이 문제에는 해설이 없습니다.",
+      "explanationPending": "해설이 아직 생성되지 않았습니다. 목록의 ‘AI 데이터 생성’ 버튼을 쓰거나, 이 문제가 연습에 나올 때 자동으로 생성됩니다.",
+      "termNoGloss": "(문제 어휘 목록에 없음)"
     }
   }
 }

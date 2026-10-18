@@ -1,0 +1,1 @@
+ALTER TABLE `profiles` ADD `card_types` text DEFAULT '["recognition","picture","listening"]' NOT NULL;

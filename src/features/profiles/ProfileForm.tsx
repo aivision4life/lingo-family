@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { UI_LANG_NATIVE_NAMES } from "@/i18n";
 import { toCreateInput, toUpdateInput, type FieldErrors, type FormValues } from "./formValues";
-import { AvatarPicker, StudyLangsPicker } from "./pickers";
+import { AvatarPicker, CardTypesPicker, StudyLangsPicker } from "./pickers";
 
 type CommonProps = {
   initial: FormValues;
@@ -102,6 +102,15 @@ export function ProfileForm(props: Props) {
 
       <FormField id="pf-study-langs" label={t("profiles.form.studyLangs")} error={errorText("study_langs")}>
         <StudyLangsPicker id="pf-study-langs" value={values.study_langs} onChange={(l) => set("study_langs", l)} />
+      </FormField>
+
+      <FormField
+        id="pf-card-types"
+        label={t("profiles.form.cardTypes")}
+        hint={t("profiles.form.cardTypesHint")}
+        error={errorText("card_types")}
+      >
+        <CardTypesPicker id="pf-card-types" value={values.card_types} onChange={(types) => set("card_types", types)} />
       </FormField>
 
       <FormField id="pf-limit" label={t("profiles.form.dailyNewLimit")} error={errorText("daily_new_limit")}>

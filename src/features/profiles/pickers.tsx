@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { LEARN_LANGS, type LearnLang } from "@shared/enums";
-import { AVATARS } from "@shared/profile";
+import { LEARN_LANGS, type CardType, type LearnLang } from "@shared/enums";
+import { AVATARS, REVIEW_CARD_TYPES } from "@shared/profile";
 import { cn } from "@/lib/utils";
 
 const chip = (selected: boolean) =>
@@ -55,6 +55,38 @@ export function StudyLangsPicker({ id, value, onChange }: StudyLangsPickerProps)
           className={cn(chip(value.includes(lang)), "px-2 text-sm")}
         >
           {t(`langs.${lang}`)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type CardTypesPickerProps = {
+  id: string;
+  value: CardType[];
+  onChange: (types: CardType[]) => void;
+};
+
+/**
+ * Which review card types this profile practises (M6.6). Switching one off only stops its cards
+ * from being offered — their schedule and history are kept, so switching it back on resumes.
+ */
+export function CardTypesPicker({ id, value, onChange }: CardTypesPickerProps) {
+  const { t } = useTranslation();
+  const toggle = (type: CardType) =>
+    onChange(value.includes(type) ? value.filter((x) => x !== type) : [...value, type]);
+
+  return (
+    <div id={id} role="group" className="grid grid-cols-3 gap-2">
+      {REVIEW_CARD_TYPES.map((type) => (
+        <button
+          key={type}
+          type="button"
+          aria-pressed={value.includes(type)}
+          onClick={() => toggle(type)}
+          className={cn(chip(value.includes(type)), "px-1 py-1 text-xs leading-tight sm:text-sm")}
+        >
+          {t(`review.cardType.${type}`)}
         </button>
       ))}
     </div>

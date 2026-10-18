@@ -85,6 +85,13 @@
       "when": 1792150803986,
       "tag": "0011_topik_explain",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792287568880,
+      "tag": "0012_profile_card_types",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,17 @@
 import { z } from "zod";
-import { learnLangSchema, uiLangSchema } from "./enums";
+import { cardTypeSchema, learnLangSchema, uiLangSchema, type CardType } from "./enums";
 
 /** Avatars are emoji (free, instant, kid-friendly). */
 export const AVATARS = [
   "🐻", "🐼", "🦊", "🐯", "🐰", "🐨", "🐸", "🐵",
   "🦁", "🐧", "🐳", "🦄", "🐙", "🐝", "🌻", "🚀",
 ] as const;
+
+/** The review card types a profile can switch off (M6.6); `speaking` is not a review type yet (M3). */
+export const REVIEW_CARD_TYPES = ["recognition", "picture", "listening"] as const satisfies readonly CardType[];
+export type ReviewCardType = (typeof REVIEW_CARD_TYPES)[number];
+/** What every profile did before the setting existed, and what a new one starts with. */
+export const DEFAULT_CARD_TYPES: ReviewCardType[] = [...REVIEW_CARD_TYPES];
 
 export const PIN_LENGTH = 4;
 export const DAILY_NEW_LIMIT_MAX = 100;
@@ -23,16 +29,30 @@ const editableFields = {
     .array(learnLangSchema)
     .min(1, "study_langs_required")
     .refine((langs) => new Set(langs).size === langs.length, "study_langs_duplicate"),
+  // At least one: with none enabled every review session would be empty, which looks like a bug
+  // rather than a setting. Turning a type off never deletes its cards — they just stop appearing.
+  card_types: z
+    .array(cardTypeSchema.extract(REVIEW_CARD_TYPES))
+    .min(1, "card_types_required")
+    .refine((types) => new Set(types).size === types.length, "card_types_duplicate"),
 };
 
 const kidHasNoPin = (p: { is_kid?: boolean; pin?: string | null }) => !(p.is_kid && p.pin);
 const kidPinIssue = { message: "kid_cannot_have_pin", path: ["pin"] };
 
-/** POST /api/profiles */
+/**
+ * POST /api/profiles. `card_types` may be left out — an installed PWA can still be running a build
+ * from before the setting existed, and it should keep working instead of getting a 400.
+ */
 export const profileCreateSchema = z
-  .object({ ...editableFields, pin: pinSchema.optional() })
+  .object({
+    ...editableFields,
+    card_types: editableFields.card_types.default(DEFAULT_CARD_TYPES),
+    pin: pinSchema.optional(),
+  })
   .refine(kidHasNoPin, kidPinIssue);
-export type ProfileCreate = z.infer<typeof profileCreateSchema>;
+/** What a client sends (so an optional field with a default stays optional here). */
+export type ProfileCreate = z.input<typeof profileCreateSchema>;
 
 /**
  * PATCH /api/profiles/:id — every field optional.
@@ -56,6 +76,7 @@ export const profileSchema = z.object({
   is_kid: z.boolean(),
   daily_new_limit: z.number().int(),
   study_langs: z.array(learnLangSchema),
+  card_types: z.array(cardTypeSchema),
   has_pin: z.boolean(),
   created_at: z.number(),
 });

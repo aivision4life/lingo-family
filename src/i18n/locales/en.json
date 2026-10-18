@@ -55,6 +55,8 @@
       "glossLang": "Meaning language",
       "glossLangHint": "Word meanings on cards are shown in this language.",
       "studyLangs": "Learning languages",
+      "cardTypes": "Review card types",
+      "cardTypesHint": "Turning one off hides those cards from reviews but keeps their progress; turn it back on to continue.",
       "dailyNewLimit": "New cards per day",
       "isKid": "Kid mode",
       "isKidHint": "Simple screens, cannot edit or delete content, no PIN.",
@@ -70,6 +72,7 @@
       "name": "Name must be 1 to 30 characters.",
       "pin": "PIN must be exactly 4 digits.",
       "study_langs": "Choose at least one language.",
+      "card_types": "Choose at least one card type.",
       "daily_new_limit": "Enter a number from 0 to 100.",
       "last_adult": "There must always be at least one adult profile.",
       "generic": "Something went wrong, please try again."
@@ -583,6 +586,7 @@
       "unverifiedBadge": "needs review",
       "imageOnly": "(image only)",
       "correctAnswer": "Correct answer: {{n}}",
+      "view": "View",
       "edit": "Edit",
       "delete": "Delete",
       "status": {
@@ -611,6 +615,15 @@
         "duplicate": "This question (exam + number) already exists; not overwritten.",
         "generic": "Could not save, please try again."
       }
+    },
+    "view": {
+      "title": "View question",
+      "noStem": "(this question has no stem text)",
+      "correctBadge": "Correct answer",
+      "explanation": "Explanation",
+      "explanationNone": "This question has no explanation.",
+      "explanationPending": "No explanation generated yet. Use “Generate AI data” in the list, or it is generated when this question comes up in practice.",
+      "termNoGloss": "(not in this question's vocabulary)"
     }
   }
 }

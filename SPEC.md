@@ -227,6 +227,7 @@ Decisions (2026-10-08, images):
   - **Speaking**: see image/meaning → say the word aloud → automatic score (see F5), then self-rate. P1
 - [x] **Unlock order: recognition → picture → listening.** A new card of the next type only becomes available after the previous type's card of the same item has been reviewed at least once. An item without a ready image has no picture card and goes recognition → listening; when its image becomes ready later, the picture card is added and an existing listening card keeps its progress. Picture and listening cards do not count toward `daily_new_limit`. (M1.9)
 - [x] Daily queue = due reviews + up to N new cards (per-profile setting, applied per language).
+- [x] **Per-profile card types (M6.6):** each profile chooses which of recognition / picture / listening it practises (`profiles.card_types`, default all three). Switching one off only hides its cards from the queue and the Home counts — the rows, their FSRS schedule and their review history are never touched, so switching it back on resumes the old schedule. Images still appear on card backs and on the word detail page; only the "guess the word from the picture" card type goes away. A disabled type is **transparent** to the unlock chain: the first enabled type becomes the entry type (the one `daily_new_limit` applies to) and each later type is gated on the nearest enabled type before it, so with picture off listening waits for recognition — exactly like an item with no ready image. At least one type must stay on.
 - [x] Keyboard shortcuts on PC (Space = flip, 1–4 = rating); large tap targets on phone.
 - [x] **Visual review screen (M1.9):** the image is the centre of the card. Back side: word/phrase, reading, meaning, audio, Hanja/Hán-Việt, and the example sentences, each with a small image + audio button.
 - [ ] Works **offline**: reviews are stored locally and synced when online.
@@ -360,7 +361,8 @@ Target model after M1.6–M1.9. Changes vs. the current schema are marked `← M
 
 ```
 profiles      id, name, avatar, ui_lang ('vi'|'ko'|'en'), gloss_lang ('vi'|'ko'|'en'), is_kid,
-              pin_hash?, daily_new_limit, study_langs (json, subset of ['ko','en']) ← M1.6, created_at
+              pin_hash?, daily_new_limit, study_langs (json, subset of ['ko','en']) ← M1.6,
+              card_types (json, subset of ['recognition','picture','listening']) ← M6.6, created_at
 
 words         id, lang ('ko'|'en') ← M1.6, term, reading, pos,
               gloss_vi, gloss_en, gloss_ko,
@@ -533,6 +535,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M6.2 | TOPIK: word lookup | Tap a word in a TOPIK question to see its meaning (AI-generated once per question, cached, exempt from the LLM quota) | [x] |
 | M6.3 | TOPIK: explanations | Explanation + key terms on an attempt (never in the session), mark-then-bulk-add so adding words never interrupts practice | [x] |
 | M6.4 | TOPIK: mock test | Timed full mock test, one score at the end | [ ] |
+| M6.6 | Per-profile card types | Switch recognition / picture / listening on or off per profile; hidden, never reset | [x] |
 
 ---
 

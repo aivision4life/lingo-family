@@ -9,6 +9,7 @@ import {
   repeatsInSession,
   type QueueCandidate,
 } from "./scheduling";
+import { DEFAULT_CARD_TYPES } from "./profile";
 
 const now = new Date("2026-10-08T03:00:00Z"); // 12:00 in Korea (UTC+9)
 const MIN = 60_000;
@@ -74,7 +75,7 @@ describe("buildQueue", () => {
     prev_state: null,
     ...over,
   });
-  const opts = { now, dayStart, newLimit: 2, introducedToday: 0 };
+  const opts = { now, dayStart, newLimit: 2, introducedToday: 0, cardTypes: DEFAULT_CARD_TYPES };
 
   it("puts due cards first (by due), then new cards, limited per day", () => {
     const due1 = c({ state: State.Review, due: now.getTime() - DAY });
@@ -114,4 +115,44 @@ describe("buildQueue", () => {
     const q = buildQueue([waiting, listening, picture, recognition], { ...opts, newLimit: 1 });
     expect(q.ids).toEqual([picture.id, listening.id, recognition.id]);
   });
+  // M6.6: a profile can switch a card type off. Its cards keep their schedule in the DB; they just
+  // stop being offered, so switching the type back on resumes exactly where it left off.
+  describe("disabled card types (M6.6)", () => {
+    it("leaves out cards of a disabled type, due ones included", () => {
+      const duePicture = c({ card_type: "picture", state: State.Review, due: now.getTime() - DAY });
+      const dueRecognition = c({ state: State.Review, due: now.getTime() - DAY });
+      const newListening = c({ card_type: "listening", prev_state: State.Review });
+      const q = buildQueue([duePicture, dueRecognition, newListening], { ...opts, cardTypes: ["recognition", "listening"] });
+      expect(q.ids).toEqual([dueRecognition.id, newListening.id]);
+    });
+
+    it("with picture off, listening is gated on recognition instead (the chain skips the disabled type)", () => {
+      // prev_state is computed by the caller over the enabled chain, so with picture off a
+      // listening card carries recognition's state here; what matters is that it is not blocked.
+      const ready = c({ card_type: "listening", prev_state: State.Review });
+      const waiting = c({ card_type: "listening", prev_state: State.New });
+      const q = buildQueue([ready, waiting], { ...opts, cardTypes: ["recognition", "listening"] });
+      expect(q.ids).toEqual([ready.id]);
+    });
+
+    it("the first enabled type is the entry type: with recognition off, new picture cards obey newLimit and need no predecessor", () => {
+      const pictures = [c({ card_type: "picture" }), c({ card_type: "picture" }), c({ card_type: "picture" })];
+      const q = buildQueue(pictures, { ...opts, newLimit: 2, cardTypes: ["picture", "listening"] });
+      expect(q.ids).toEqual([pictures[0]!.id, pictures[1]!.id]);
+    });
+
+    it("keeps the chain order of the enabled types (picture before listening, entry type last)", () => {
+      const picture = c({ card_type: "picture", prev_state: State.Review });
+      const listening = c({ card_type: "listening", prev_state: State.Review });
+      const recognition = c({});
+      const q = buildQueue([listening, recognition, picture], opts);
+      expect(q.ids).toEqual([picture.id, listening.id, recognition.id]);
+    });
+
+    it("returns an empty queue when no type is enabled, without touching any card", () => {
+      const cards = [c({}), c({ card_type: "picture", state: State.Review, due: now.getTime() - DAY })];
+      expect(buildQueue(cards, { ...opts, cardTypes: [] }).ids).toEqual([]);
+    });
+  });
+
 });

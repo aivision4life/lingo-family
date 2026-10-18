@@ -1,7 +1,8 @@
 import type { z } from "zod";
-import type { LearnLang, UiLang } from "@shared/enums";
+import type { CardType, LearnLang, UiLang } from "@shared/enums";
 import {
   AVATARS,
+  DEFAULT_CARD_TYPES,
   profileCreateSchema,
   profileUpdateSchema,
   type Profile,
@@ -18,12 +19,14 @@ export type FormValues = {
   is_kid: boolean;
   daily_new_limit: string;
   study_langs: LearnLang[];
+  /** Which review card types this profile practises (M6.6). */
+  card_types: CardType[];
   /** New PIN; empty = none (create) / keep (edit). */
   pin: string;
   removePin: boolean;
 };
 
-export const FIELDS_WITH_ERRORS = ["name", "pin", "study_langs", "daily_new_limit"] as const;
+export const FIELDS_WITH_ERRORS = ["name", "pin", "study_langs", "card_types", "daily_new_limit"] as const;
 export type FieldWithError = (typeof FIELDS_WITH_ERRORS)[number];
 export type FieldErrors = Partial<Record<FieldWithError, true>>;
 
@@ -38,6 +41,7 @@ export function emptyFormValues(uiLang: UiLang): FormValues {
     is_kid: false,
     daily_new_limit: "10",
     study_langs: [],
+    card_types: DEFAULT_CARD_TYPES,
     pin: "",
     removePin: false,
   };
@@ -54,6 +58,7 @@ export function formValuesFromProfile(p: Profile): FormValues {
     is_kid: p.is_kid,
     daily_new_limit: String(p.daily_new_limit),
     study_langs: p.study_langs,
+    card_types: p.card_types,
     pin: "",
     removePin: false,
   };
@@ -68,6 +73,7 @@ const commonFields = (v: FormValues) => ({
   // Empty input must fail validation instead of becoming 0.
   daily_new_limit: v.daily_new_limit.trim() === "" ? Number.NaN : Number(v.daily_new_limit),
   study_langs: v.study_langs,
+  card_types: v.card_types,
 });
 
 function parse<S extends z.ZodType>(schema: S, input: unknown): Result<z.output<S>> {
