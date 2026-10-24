@@ -21,6 +21,8 @@ export type FormValues = {
   study_langs: LearnLang[];
   /** Which review card types this profile practises (M6.6). */
   card_types: CardType[];
+  /** Review only what this profile added itself (M6.12). */
+  own_words_only: boolean;
   /** New PIN; empty = none (create) / keep (edit). */
   pin: string;
   removePin: boolean;
@@ -42,6 +44,7 @@ export function emptyFormValues(uiLang: UiLang): FormValues {
     daily_new_limit: "10",
     study_langs: [],
     card_types: DEFAULT_CARD_TYPES,
+    own_words_only: false,
     pin: "",
     removePin: false,
   };
@@ -59,6 +62,7 @@ export function formValuesFromProfile(p: Profile): FormValues {
     daily_new_limit: String(p.daily_new_limit),
     study_langs: p.study_langs,
     card_types: p.card_types,
+    own_words_only: p.own_words_only,
     pin: "",
     removePin: false,
   };
@@ -74,6 +78,7 @@ const commonFields = (v: FormValues) => ({
   daily_new_limit: v.daily_new_limit.trim() === "" ? Number.NaN : Number(v.daily_new_limit),
   study_langs: v.study_langs,
   card_types: v.card_types,
+  own_words_only: v.own_words_only,
 });
 
 function parse<S extends z.ZodType>(schema: S, input: unknown): Result<z.output<S>> {

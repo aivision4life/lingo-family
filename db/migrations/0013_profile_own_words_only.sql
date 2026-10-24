@@ -1,0 +1,1 @@
+ALTER TABLE `profiles` ADD `own_words_only` integer DEFAULT false NOT NULL;

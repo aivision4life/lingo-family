@@ -152,14 +152,25 @@ export const toCardDto = (c: typeof cards.$inferSelect): CardDto => ({
 });
 
 /** Cards of a profile in one studied language, with their word and (for phrase cards) phrase. */
-async function loadCandidates(db: Db, profileId: string, lang: LearnLang, includePhrases: boolean) {
+async function loadCandidates(db: Db, profileId: string, lang: LearnLang, includePhrases: boolean, ownWordsOnly = false) {
+  // M6.12 "only words I added": a phrase answers for its own creator, a word card for the word's.
+  // Written out rather than COALESCE'd so a phrase whose creator is unknown (content moved in
+  // before `created_by_profile` was backfilled) is excluded instead of inheriting its root word's.
+  const ownOnly = sql`CASE WHEN ${cards.phrase_id} IS NULL THEN ${words.created_by_profile} ELSE ${phrases.created_by_profile} END = ${profileId}`;
   return db
     .select({ card: cards, word: words, phrase: phrases })
     .from(cards)
     .innerJoin(words, eq(words.id, cards.word_id))
     .leftJoin(phrases, eq(phrases.id, cards.phrase_id))
     .innerJoin(profile_decks, and(eq(profile_decks.profile_id, profileId), eq(profile_decks.deck_id, defaultDeckId(lang))))
-    .where(and(eq(cards.profile_id, profileId), eq(words.lang, lang), includePhrases ? undefined : isNull(cards.phrase_id)));
+    .where(
+      and(
+        eq(cards.profile_id, profileId),
+        eq(words.lang, lang),
+        includePhrases ? undefined : isNull(cards.phrase_id),
+        ownWordsOnly ? ownOnly : undefined,
+      ),
+    );
 }
 
 /** New recognition cards of `lang` first reviewed since `dayStart` (counts toward the daily limit). */
@@ -189,6 +200,8 @@ type QueueArgs = {
   isKid: boolean;
   /** Profile setting `card_types` (M6.6): which review card types take part. */
   cardTypes: CardType[];
+  /** Profile setting `own_words_only` (M6.12): only cards of items this profile created. */
+  ownWordsOnly: boolean;
 };
 
 type CandidateRow = Awaited<ReturnType<typeof loadCandidates>>[number];
@@ -262,7 +275,7 @@ export type QueueInputs = { rows: CandidateRow[]; introducedToday: number };
 
 export async function loadQueueInputs(db: Db, a: QueueArgs): Promise<QueueInputs> {
   // Kid profiles never see phrase cards (even ones created before they became a kid profile).
-  const rows = await loadCandidates(db, a.profileId, a.lang, !a.isKid);
+  const rows = await loadCandidates(db, a.profileId, a.lang, !a.isKid, a.ownWordsOnly);
   return { rows, introducedToday: await introducedSince(db, a.profileId, a.lang, a.dayStart) };
 }
 

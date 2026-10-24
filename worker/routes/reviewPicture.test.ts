@@ -187,3 +187,60 @@ describe("card type setting", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// M6.12: "only review words I added". Like the card-type setting, it only hides cards — the rows,
+// their FSRS schedule and their history must survive, so turning it off resumes them.
+describe("own words only", () => {
+  const setOwnWordsOnly = (pid: string, own_words_only: boolean) => t.api("PATCH", `/profiles/${pid}`, { own_words_only });
+
+  it("keeps only the profile's own words in the queue, and the summary agrees with it", async () => {
+    // `bo` already owns 학생 (+ its phrase 대학생) from beforeEach; me owns another word.
+    const me = await createProfile({ name: "Mẹ", daily_new_limit: 10 });
+    await t.api("POST", "/words", word(me, "사과"));
+    await setOwnWordsOnly(me, true);
+
+    const labels = (await queue(me)).map(label);
+    expect(labels).toContain("word:사과/recognition");
+    expect(labels.some((l) => l.includes("학생"))).toBe(false);
+
+    // Home's counts come from the same filtered inputs, so they match the queue exactly.
+    const [{ due, new: fresh }] = await summary(me);
+    expect(due + fresh).toBe(labels.length);
+  });
+
+  it("hides a phrase whose own creator is someone else, even when its root word is mine", async () => {
+    const me = await createProfile({ name: "Mẹ", daily_new_limit: 10 });
+    await t.api("POST", "/words", word(me, "사과", [phrase("사과 주스")]));
+    await t.env.DB.prepare("UPDATE phrases SET created_by_profile = ? WHERE text = ?").bind(bo, "사과 주스").run();
+    await setOwnWordsOnly(me, true);
+
+    const labels = (await queue(me)).map(label);
+    expect(labels).toContain("word:사과/recognition");
+    expect(labels).not.toContain("phrase:사과 주스/recognition");
+  });
+
+  it("turning it off again brings the hidden cards back on their old schedule, not as new", async () => {
+    const me = await createProfile({ name: "Mẹ", daily_new_limit: 10 });
+    await t.api("POST", "/words", word(me, "사과"));
+    // Study someone else's word first, then hide it.
+    await t.env.DB.prepare("UPDATE words SET created_by_profile = ? WHERE term = ?").bind(bo, "학생").run();
+    const theirs = (await queue(me)).find((i) => i.word.term === "학생")!;
+    await t.api("POST", "/review/answer", { profile_id: me, card_id: theirs.card.id, rating: 1, duration_ms: 1 });
+    const before = await t.env.DB.prepare("SELECT id, reps, state, due FROM cards WHERE id = ?").bind(theirs.card.id).first();
+    expect((before as { reps: number }).reps).toBe(1);
+
+    await setOwnWordsOnly(me, true);
+    expect((await queue(me)).some((i) => i.word.term === "학생")).toBe(false);
+    // Hidden, not deleted: the row is still there, untouched, while it is out of the queue.
+    expect(await t.env.DB.prepare("SELECT id, reps, state, due FROM cards WHERE id = ?").bind(theirs.card.id).first()).toEqual(before);
+
+    await setOwnWordsOnly(me, false);
+    expect(await t.env.DB.prepare("SELECT id, reps, state, due FROM cards WHERE id = ?").bind(theirs.card.id).first()).toEqual(before);
+    expect((await queue(me)).some((i) => i.word.term === "학생")).toBe(true);
+  });
+
+  it("is off by default, so an existing profile sees everything as before", async () => {
+    const me = await createProfile({ name: "Mẹ", daily_new_limit: 10 });
+    expect((await queue(me)).some((i) => i.word.term === "학생")).toBe(true);
+  });
+});

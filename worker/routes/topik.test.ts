@@ -1,3 +1,4 @@
+import { State } from "ts-fsrs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { TopikQuestionInput, TopikVocabEntry } from "../../shared/topik";
 import { fakeLlm } from "../test/fakeLlm";
@@ -176,7 +177,7 @@ describe("blocks + practice session", () => {
     await t.env.DB.prepare("UPDATE topik_questions SET verified = 0 WHERE id = ?").bind((unverified.body as { id: string }).id).run();
 
     const blocks = (await t.api("GET", "/topik/blocks?section=reading")).body as { block: string; from: number; to: number; count: number }[];
-    expect(blocks).toEqual([{ section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2 }]);
+    expect(blocks).toEqual([{ section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0 }]);
   });
 
   // M6.9: the block picker shows "not studied / total" per profile, from this one query.
@@ -188,8 +189,8 @@ describe("blocks + practice session", () => {
     const blocksFor = async (profileId: string) =>
       (await t.api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`)).body as { block: string; count: number; unseen: number }[];
     expect(await blocksFor(adult)).toEqual([
-      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2 },
-      { section: "reading", block: "9", from: 9, to: 9, count: 1, unseen: 1 },
+      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0 },
+      { section: "reading", block: "9", from: 9, to: 9, count: 1, unseen: 1, mastered: 0 },
     ]);
 
     await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 1, duration_ms: 1000 });
@@ -201,6 +202,26 @@ describe("blocks + practice session", () => {
     expect(afterAdult[1]).toMatchObject({ block: "9", count: 1, unseen: 1 });
     // Another profile's history is its own.
     expect(await blocksFor(kid)).toMatchObject([{ unseen: 2 }, { unseen: 1 }]);
+  });
+
+  // M6.11: the bar's dark segment. "Mastered" = the question's own card reached ts-fsrs Review,
+  // the same rule the vocabulary key-terms use for "already knows it".
+  it("counts a question as mastered only once its card reaches the Review state", async () => {
+    const q = await createQuestion({ number: 1 });
+    await createQuestion({ number: 2, exam: "Test/연습2" });
+    const blocksFor = async (profileId: string) =>
+      (await t.api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`)).body as { count: number; unseen: number; mastered: number }[];
+
+    // One correct answer: the card exists and is in learning, not Review yet.
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 3, duration_ms: 1000 });
+    expect(await blocksFor(adult)).toMatchObject([{ count: 2, unseen: 1, mastered: 0 }]);
+
+    await t.env.DB.prepare("UPDATE topik_cards SET state = ? WHERE profile_id = ? AND question_id = ?")
+      .bind(State.Review, adult, q.id)
+      .run();
+    expect(await blocksFor(adult)).toMatchObject([{ count: 2, unseen: 1, mastered: 1 }]);
+    // Another profile has its own cards, so its own count.
+    expect(await blocksFor(kid)).toMatchObject([{ count: 2, unseen: 2, mastered: 0 }]);
   });
 
   it("does not count an unverified question, answered or not", async () => {

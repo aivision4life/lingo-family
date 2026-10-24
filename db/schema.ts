@@ -79,6 +79,13 @@ export const profiles = sqliteTable("profiles", {
     .$type<CardType[]>()
     .notNull()
     .default(sql`'["recognition","picture","listening"]'`),
+  /**
+   * Review only the words/phrases this profile created itself (M6.12). Like `card_types`, this
+   * only hides cards from the queue and the Home counts: no card is deleted and no schedule is
+   * reset, so turning it off again resumes every hidden card where it left off. Default false,
+   * which is what every profile did before the setting existed.
+   */
+  own_words_only: bool("own_words_only").notNull().default(false),
   created_at: createdAt(),
 });
 

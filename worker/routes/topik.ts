@@ -10,6 +10,7 @@
 // topikExplain.ts.
 import { and, asc, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
+import { State } from "ts-fsrs";
 import { z } from "zod";
 import { applyReview, emptyCardFields, type CardFields } from "../../shared/scheduling";
 import {
@@ -308,20 +309,23 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     // the field) instead of getting a 400 on the screen's only request.
     .get("/topik/blocks", zv("query", z.object({ section: z.enum(["reading"]), profile_id: z.string().optional() })), async (c) => {
       const { section, profile_id } = c.req.valid("query");
-      // One aggregate for every block, never one query per block: the LEFT JOIN is against this
-      // profile's distinct attempted question ids, so "unseen" = never answered once. Skipping a
-      // question during practice writes no attempt row, so a skipped question stays unseen.
+      // One aggregate for the whole screen, never one query per block. Two left joins against
+      // this profile's own rows: "unseen" = no attempt ever (skipping writes no attempt, so a
+      // skipped question stays unseen), "mastered" = its card reached ts-fsrs Review, the same
+      // definition the vocabulary side uses for "already knows it".
       const rows = await c.env.DB.prepare(
         `SELECT q.block, min(q.number) AS "from", max(q.number) AS "to", count(*) AS count,
-                sum(CASE WHEN a.question_id IS NULL THEN 1 ELSE 0 END) AS unseen
+                sum(CASE WHEN a.question_id IS NULL THEN 1 ELSE 0 END) AS unseen,
+                sum(CASE WHEN c.state = ?3 THEN 1 ELSE 0 END) AS mastered
          FROM topik_questions q
          LEFT JOIN (SELECT DISTINCT question_id FROM topik_attempts WHERE profile_id = ?2) a
            ON a.question_id = q.id
+         LEFT JOIN topik_cards c ON c.question_id = q.id AND c.profile_id = ?2
          WHERE q.section = ?1 AND q.verified = 1
          GROUP BY q.block ORDER BY min(q.number)`,
       )
-        .bind(section, profile_id ?? "")
-        .all<{ block: string; from: number; to: number; count: number; unseen: number }>();
+        .bind(section, profile_id ?? "", State.Review)
+        .all<{ block: string; from: number; to: number; count: number; unseen: number; mastered: number }>();
       return c.json(rows.results.map((r) => ({ section, ...r })));
     })
 

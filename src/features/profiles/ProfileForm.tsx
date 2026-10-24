@@ -113,6 +113,15 @@ export function ProfileForm(props: Props) {
         <CardTypesPicker id="pf-card-types" value={values.card_types} onChange={(types) => set("card_types", types)} />
       </FormField>
 
+      <div className="flex flex-col gap-1">
+        {/* The whole row is the tap target, so the small switch still meets 44px. */}
+        <label className="flex min-h-11 items-center justify-between gap-3 font-medium">
+          {t("profiles.form.ownWordsOnly")}
+          <Switch checked={values.own_words_only} onCheckedChange={(on) => set("own_words_only", on)} />
+        </label>
+        <p className="text-sm text-muted-foreground">{t("profiles.form.ownWordsOnlyHint")}</p>
+      </div>
+
       <FormField id="pf-limit" label={t("profiles.form.dailyNewLimit")} error={errorText("daily_new_limit")}>
         <Input
           id="pf-limit"

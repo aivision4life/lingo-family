@@ -211,6 +211,9 @@ export const topikBlockSchema = z.object({
   /** Of those, how many the profile has never answered once (M6.9). A question skipped during a
    * session writes no attempt, so it stays counted here until it is actually answered. */
   unseen: z.number().int().nonnegative(),
+  /** Of those, how many the profile already knows: the question's card reached ts-fsrs `Review`
+   * (M6.11) — the same "already knows it" rule the vocabulary key-terms use. */
+  mastered: z.number().int().nonnegative(),
 });
 export type TopikBlock = z.infer<typeof topikBlockSchema>;
 export const topikBlockListSchema = z.array(topikBlockSchema);

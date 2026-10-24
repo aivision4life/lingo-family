@@ -29,6 +29,8 @@ const editableFields = {
     .array(learnLangSchema)
     .min(1, "study_langs_required")
     .refine((langs) => new Set(langs).size === langs.length, "study_langs_duplicate"),
+  /** Review only what this profile added itself (M6.12); hides cards, never deletes them. */
+  own_words_only: z.boolean(),
   // At least one: with none enabled every review session would be empty, which looks like a bug
   // rather than a setting. Turning a type off never deletes its cards — they just stop appearing.
   card_types: z
@@ -48,6 +50,7 @@ export const profileCreateSchema = z
   .object({
     ...editableFields,
     card_types: editableFields.card_types.default(DEFAULT_CARD_TYPES),
+    own_words_only: editableFields.own_words_only.default(false),
     pin: pinSchema.optional(),
   })
   .refine(kidHasNoPin, kidPinIssue);
@@ -77,6 +80,7 @@ export const profileSchema = z.object({
   daily_new_limit: z.number().int(),
   study_langs: z.array(learnLangSchema),
   card_types: z.array(cardTypeSchema),
+  own_words_only: z.boolean(),
   has_pin: z.boolean(),
   created_at: z.number(),
 });
