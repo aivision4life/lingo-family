@@ -28,24 +28,21 @@ describe("blockProgress", () => {
     });
   });
 
-  // The two cases that looked identical before: both show no work outstanding, for opposite reasons.
-  it("tells a finished block apart from one that was never opened", () => {
-    expect(blockProgress({ count: 7, unseen: 0, mastered: 7 })).toEqual({
-      studied: 7,
-      masteredPercent: 100,
-      learningPercent: 0,
-      status: "done",
-    });
+  // "Done" has to mean learnt, not merely opened: a block answered end to end but remembered
+  // nowhere is still work left, and labelling it "Đã xong" told the opposite story.
+  it("is only done once every question is mastered, not once every question was answered", () => {
+    expect(blockProgress({ count: 7, unseen: 0, mastered: 7 }).status).toBe("done");
+    expect(blockProgress({ count: 7, unseen: 0, mastered: 0 })).toMatchObject({ masteredPercent: 0, learningPercent: 100, status: "partial" });
+    expect(blockProgress({ count: 7, unseen: 0, mastered: 6 }).status).toBe("partial");
+  });
+
+  it("tells a part-done block apart from one that was never opened", () => {
     expect(blockProgress({ count: 24, unseen: 24, mastered: 0 })).toEqual({
       studied: 0,
       masteredPercent: 0,
       learningPercent: 0,
       status: "untouched",
     });
-  });
-
-  it("counts a finished-but-not-mastered block as done, with only the lighter segment", () => {
-    expect(blockProgress({ count: 4, unseen: 0, mastered: 0 })).toMatchObject({ masteredPercent: 0, learningPercent: 100, status: "done" });
   });
 
   it("never calls an empty block done", () => {

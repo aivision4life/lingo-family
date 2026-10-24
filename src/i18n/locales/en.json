@@ -518,8 +518,8 @@
     "kidNotAllowed": "TOPIK II practice is for adult profiles. Ask a parent!",
     "noBlocks": "No questions yet. Go to \"Manage questions\" to import or add some.",
     "blockLabel": "Questions {{block}}",
-    "blockMastered": "{{mastered}} known",
-    "blockLeftOf": "{{left}}/{{total}} left",
+    "blockMastered": "{{mastered}}/{{total}} known",
+    "blockUnanswered": "{{unseen}} not tried",
     "blockDone": "Done {{total}}/{{total}}",
     "blockTotal": "All blocks",
     "practice": {

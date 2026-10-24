@@ -72,57 +72,52 @@ function BlockList({ blocks }: { blocks: TopikBlock[] }) {
 
 /**
  * The bar is the thing to read; the numbers beside it are the detail. Two filled segments — dark
- * for what the profile already knows (its card reached ts-fsrs Review), lighter for what it has
- * answered but not learnt yet — then the empty remainder. The three states must not look alike: a
- * finished block ("0 left of 7") and an untouched one ("24 left of 24") both have nothing
- * outstanding on screen but mean opposite things.
+ * for what the profile already knows (its card reached ts-fsrs Review), a mid tone for what it has
+ * answered but not learnt yet — then the empty remainder.
+ *
+ * "Đã xong" appears only once every question is *known*. It used to appear once every question had
+ * been answered once, which read as "nothing left here" on a block the learner remembered nothing
+ * from. The counts are always spelled out, zeros included: "thuộc 0/7" is exactly the fact that
+ * mislabelled block was hiding.
  */
 function BlockRow({ label, block, bold = false }: { label: string; block: Pick<TopikBlock, "count" | "unseen" | "mastered">; bold?: boolean }) {
   const { t } = useTranslation();
-  const { studied, masteredPercent, learningPercent, status } = blockProgress(block);
+  const { masteredPercent, learningPercent, status } = blockProgress(block);
   const done = status === "done";
 
   return (
     <div className="flex w-full flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-2">
         <span className={cn("truncate", bold && "font-semibold")}>{label}</span>
-        <span className="flex shrink-0 items-baseline gap-1.5 text-sm">
-          {/* "thuộc 0" on a block nobody has opened yet is noise, so it only appears once there is
-              something to report. */}
-          {block.mastered > 0 && (
-            <>
-              <span className="text-muted-foreground">{t("topik.blockMastered", { mastered: block.mastered })}</span>
-              <span className="text-muted-foreground" aria-hidden>
-                ·
-              </span>
-            </>
-          )}
-          {done ? (
-            <span className="flex items-center gap-1 text-muted-foreground">
-              <Check className="size-4 self-center" aria-hidden />
-              {t("topik.blockDone", { total: block.count })}
+        {done ? (
+          <span className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
+            <Check className="size-4" aria-hidden />
+            {t("topik.blockDone", { total: block.count })}
+          </span>
+        ) : (
+          <span className={cn("shrink-0 text-sm", status === "partial" ? "text-foreground" : "text-muted-foreground")}>
+            <span className={status === "partial" ? "font-medium" : undefined}>
+              {t("topik.blockMastered", { mastered: block.mastered, total: block.count })}
             </span>
-          ) : (
-            <span className={cn(status === "partial" ? "font-medium text-foreground" : "text-muted-foreground")}>
-              {t("topik.blockLeftOf", { left: block.unseen, total: block.count })}
-            </span>
-          )}
-        </span>
+            <span className="text-muted-foreground"> · {t("topik.blockUnanswered", { unseen: block.unseen })}</span>
+          </span>
+        )}
       </div>
       <div
         // Not bg-muted (the usual track): it is the same token value as the secondary button these
         // rows sit on, so the unfinished part would be invisible exactly where it matters most.
-        className="flex h-1 overflow-hidden rounded-full bg-border"
+        className="flex h-1.5 overflow-hidden rounded-full bg-border"
         role="progressbar"
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={block.count}
-        aria-valuenow={studied}
+        aria-valuenow={block.mastered}
       >
-        {/* A finished block keeps both segments faded: a full, solid bar would be the loudest
-            thing on the screen while being the one block there is nothing left to do in. */}
+        {/* Three clearly separated tones, all from existing tokens: near-black primary (known),
+            mid-grey muted-foreground (answered, not known), light border (untouched). A fully
+            mastered block is faded — nothing is left to do there, so it must not shout. */}
         <div className={cn("h-full transition-all", done ? "bg-primary/30" : "bg-primary")} style={{ width: `${masteredPercent}%` }} />
-        <div className={cn("h-full transition-all", done ? "bg-primary/15" : "bg-primary/40")} style={{ width: `${learningPercent}%` }} />
+        <div className="h-full bg-muted-foreground/70 transition-all" style={{ width: `${learningPercent}%` }} />
       </div>
     </div>
   );

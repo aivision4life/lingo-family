@@ -518,8 +518,8 @@
     "kidNotAllowed": "Phần luyện TOPIK II dành cho hồ sơ người lớn. Hãy nhờ bố mẹ nhé!",
     "noBlocks": "Chưa có câu hỏi nào. Vào \"Quản lý câu hỏi\" để nhập hoặc thêm câu hỏi.",
     "blockLabel": "Câu {{block}}",
-    "blockMastered": "thuộc {{mastered}}",
-    "blockLeftOf": "còn {{left}}/{{total}}",
+    "blockMastered": "thuộc {{mastered}}/{{total}}",
+    "blockUnanswered": "chưa làm {{unseen}}",
     "blockDone": "Đã xong {{total}}/{{total}}",
     "blockTotal": "Tổng cộng",
     "practice": {

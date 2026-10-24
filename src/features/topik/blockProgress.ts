@@ -17,9 +17,10 @@ export function blockTotals(blocks: readonly Counts[]): Counts {
 /**
  * How far through a block the profile is.
  *
- * The bar has two filled segments — mastered, then "answered but not mastered yet" — so the three
- * states are told apart on purpose: "0 left of 7" (finished) and "24 left of 24" (never opened)
- * are both "nothing to do right now" at a glance but mean opposite things.
+ * "done" means *learnt*, not merely *opened*: a block where every question has been answered once
+ * but none is remembered is still work to do, and calling that "Đã xong" was actively misleading.
+ * The bar's two filled segments say the same thing — dark for mastered, a mid tone for answered
+ * but not mastered yet — above the empty remainder.
  *
  * `mastered` comes from the cards table and `unseen` from the attempts table, so a half-written
  * state (a card row without its attempt row) could in principle make them overlap; the learning
@@ -29,7 +30,7 @@ export function blockProgress(b: Counts): {
   studied: number;
   /** Width of the dark segment: questions whose card reached ts-fsrs Review. */
   masteredPercent: number;
-  /** Width of the lighter segment right after it: answered, not mastered yet. */
+  /** Width of the mid-tone segment right after it: answered, not mastered yet. */
   learningPercent: number;
   status: "done" | "untouched" | "partial";
 } {
@@ -37,6 +38,6 @@ export function blockProgress(b: Counts): {
   const mastered = Math.min(b.mastered, studied);
   const pct = (n: number) => (b.count > 0 ? Math.round((n / b.count) * 100) : 0);
   // An empty block cannot be "done" — there is nothing to have finished.
-  const status = b.count > 0 && b.unseen === 0 ? "done" : studied === 0 ? "untouched" : "partial";
+  const status = b.count > 0 && mastered === b.count ? "done" : studied === 0 ? "untouched" : "partial";
   return { studied, masteredPercent: pct(mastered), learningPercent: pct(studied - mastered), status };
 }
