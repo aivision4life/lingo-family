@@ -519,7 +519,7 @@
     "noBlocks": "No questions yet. Go to \"Manage questions\" to import or add some.",
     "blockLabel": "Questions {{block}}",
     "blockMastered": "{{mastered}}/{{total}} known",
-    "blockUnanswered": "{{unseen}} not tried",
+    "blockUnanswered": "{{unseen}} to do",
     "blockDone": "Done {{total}}/{{total}}",
     "blockTotal": "All blocks",
     "practice": {
