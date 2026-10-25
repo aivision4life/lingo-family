@@ -189,9 +189,10 @@ describe("planAudio", () => {
     10_000,
   );
 
-  it("assigns one segment per question when the counts agree", () => {
+  it("assigns one clip per question when the Word files cover the whole paper", () => {
     const plan = planAudio(segments, [q(1), q(2), q(3)], 90_000);
     expect(plan.problems).toEqual([]);
+    expect(plan.coverage).toBe("full");
     expect([...plan.assignment]).toEqual([
       [1, 1],
       [2, 2],
@@ -199,23 +200,50 @@ describe("planAudio", () => {
     ]);
   });
 
-  it("points both questions of a shared pair at the same segment", () => {
-    const two = buildSegments([{ start_ms: 30_000, end_ms: 38_000 }], 90_000, 10_000);
-    const plan = planAudio(two, [q(21), q(22, true), q(23)], 90_000);
+  it("points both questions of a shared pair at the same clip", () => {
+    const plan = planAudio(segments, [q(1), q(2, true), q(3)], 90_000);
     expect(plan.expected).toBe(2);
     expect([...plan.assignment]).toEqual([
-      [21, 1],
-      [22, 1],
-      [23, 2],
+      [1, 1],
+      [2, 1],
+      [3, 2],
     ]);
   });
 
-  // The whole point of the safety rule: one miscounted clip would shift every later question onto
-  // the wrong audio, and each would still play normally, so nothing would look broken.
-  it("assigns nothing when the counts disagree, and says why", () => {
+  // Typing up three questions to try the workflow out, against the whole paper's audio.
+  it("assigns from the front when the Word files cover only the start of the paper", () => {
     const plan = planAudio(segments, [q(1), q(2)], 90_000);
+    expect(plan.coverage).toBe("partial");
+    expect([...plan.assignment]).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
+    expect(plan.problems).toEqual([]);
+  });
+
+  // The whole point of the safety rule: one misaligned clip would move every later question onto
+  // the wrong audio, and each would still play normally, so nothing would look broken.
+  it("refuses to assign when the questions start mid-paper, even if the counts happen to match", () => {
+    const plan = planAudio(segments, [q(21), q(22, true), q(23)], 90_000);
     expect(plan.assignment.size).toBe(0);
-    expect(plan.problems[0]).toContain("found 3 segment(s) in the audio but the Word file(s) expect 2");
+    expect(plan.coverage).toBe("none");
+    expect(plan.problems[0]).toContain("not a run starting at 1");
+  });
+
+  it("refuses to assign when a question is missing from the middle", () => {
+    const plan = planAudio(segments, [q(1), q(3)], 90_000);
+    expect(plan.assignment.size).toBe(0);
+    expect(plan.problems[0]).toContain("not a run starting at 1");
+  });
+
+  it("refuses to assign when the audio has fewer clips than the questions need", () => {
+    const plan = planAudio(segments, [q(1), q(2), q(3), q(4)], 90_000);
+    expect(plan.assignment.size).toBe(0);
+    expect(plan.problems[0]).toContain("expect 4 clip(s) but only 3 were found");
+  });
+
+  it("says so when no question was found at all", () => {
+    expect(planAudio(segments, [], 90_000).problems[0]).toContain("no questions found");
   });
 
   it("reports a nonsensical boundary", () => {

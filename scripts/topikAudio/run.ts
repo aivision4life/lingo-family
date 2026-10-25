@@ -179,8 +179,15 @@ function report(p: ExamPlan) {
         `(lời xướng số câu thứ hai của một cặp dùng chung hội thoại; ngưỡng --min-speech ${minSpeechMs / 1000}s)`,
     );
   }
+  const numbers = p.questions.map((q) => q.number).sort((a, b) => a - b);
+  const assigned = new Set(p.plan.assignment.values()).size;
+  console.log(
+    p.questions.length === 0
+      ? "  Word: chưa có câu nào cho đề này trong data/topik/"
+      : `  Word phủ ${p.questions.length} câu (${numbers[0]}–${numbers.at(-1)}), đã gán ${assigned}/${p.plan.segments.length} đoạn` +
+          `${p.plan.coverage === "partial" ? ` — còn ${p.plan.segments.length - assigned} đoạn chưa gán câu` : ""}`,
+  );
   for (const problem of p.plan.problems) console.log(`  PROBLEM: ${problem}`);
-  if (p.questions.length === 0) console.log("  PROBLEM: no listening questions found for this exam in data/topik/");
 
   const byNumber = [...p.plan.assignment].sort((a, b) => a[0] - b[0]);
   const questionsOf = (idx: number) => byNumber.filter(([, s]) => s === idx).map(([n]) => `#${n}`);

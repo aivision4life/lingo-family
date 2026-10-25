@@ -141,19 +141,26 @@ export function expectedSegmentCount(questions: readonly { number: number; same_
 
 export type AudioPlan = {
   segments: Segment[];
-  /** `question.number` → 1-based segment index, empty when the counts disagree. */
+  /** `question.number` → 1-based segment index, empty when nothing could safely be assigned. */
   assignment: Map<number, number>;
   expected: number;
+  /** "full" = the Word files cover the whole paper, "partial" = questions 1..n of it. */
+  coverage: "none" | "partial" | "full";
   problems: string[];
 };
 
 /**
  * Matches proposed segments against the questions of one exam.
  *
- * When the counts disagree, nothing is assigned. Assigning in order anyway would put every
- * question after the miscount onto the wrong clip, and — unlike a missing file — each one would
- * still play perfectly normal audio, so the mistake would surface only as answers that slowly stop
- * making sense. The exam stays unverified and out of practice until a human has looked.
+ * Questions may cover only the start of the paper — handy while trying the workflow out on a few
+ * questions before typing up all fifty — and then the clips they need are taken from the front and
+ * the rest are left unassigned.
+ *
+ * What is never allowed is assigning when the question numbers do not run 1, 2, 3 … without a
+ * hole. Starting mid-paper ("21~22") says nothing about which clip question 21 belongs to, and a
+ * question missing from the middle shifts every question after it onto the wrong clip. Both would
+ * still play perfectly normal audio — unlike a missing file, the mistake surfaces only as answers
+ * that slowly stop making sense — so the exam stays unassigned and unverified until a human looks.
  */
 export function planAudio(
   segments: Segment[],
@@ -162,28 +169,36 @@ export function planAudio(
 ): AudioPlan {
   const expected = expectedSegmentCount(questions);
   const problems: string[] = [];
-  if (segments.length !== expected) {
-    problems.push(
-      `found ${segments.length} segment(s) in the audio but the Word file(s) expect ${expected}` +
-        ` — questions were NOT assigned; fix the boundaries by hand before approving`,
-    );
-  }
   for (const s of segments) {
     if (s.start_ms >= s.end_ms) problems.push(`segment ${s.idx}: starts at or after it ends`);
     else if (s.speech_end_ms < s.start_ms || s.speech_end_ms > s.end_ms) problems.push(`segment ${s.idx}: speech end outside the segment`);
     if (s.end_ms > durationMs) problems.push(`segment ${s.idx}: ends past the end of the file`);
   }
 
+  const ordered = [...questions].sort((a, b) => a.number - b.number);
+  const fromQuestionOne = ordered.length > 0 && ordered.every((q, i) => q.number === i + 1);
   const assignment = new Map<number, number>();
-  if (segments.length === expected) {
-    const ordered = [...questions].sort((a, b) => a.number - b.number);
+  let coverage: AudioPlan["coverage"] = "none";
+
+  if (ordered.length === 0) {
+    problems.push("no questions found for this exam in the Word files — nothing was assigned");
+  } else if (!fromQuestionOne) {
+    problems.push(
+      `the Word file(s) cover questions ${ordered[0]!.number}-${ordered.at(-1)!.number}, which is not a run starting at 1` +
+        ` — nothing was assigned, because there is no way to tell which clip the first of them belongs to`,
+    );
+  } else if (expected > segments.length) {
+    problems.push(`the Word file(s) expect ${expected} clip(s) but only ${segments.length} were found — nothing was assigned`);
+  } else {
     let idx = 0;
     for (const [i, q] of ordered.entries()) {
       if (i === 0 || !q.same_segment) idx += 1;
       assignment.set(q.number, idx);
     }
+    coverage = expected === segments.length ? "full" : "partial";
   }
-  return { segments, assignment, expected, problems };
+
+  return { segments, assignment, expected, coverage, problems };
 }
 
 /** "01:02.340" — how timestamps are shown in the report and the review screen. */
