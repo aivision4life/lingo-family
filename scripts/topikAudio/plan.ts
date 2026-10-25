@@ -65,16 +65,67 @@ export function buildSegments(silences: readonly Silence[], durationMs: number, 
 }
 
 /**
- * Where the introduction ends: the start of speech after the longest silence inside the opening
- * part of the file. The spoken introduction is followed by the paper's longest early pause, which
- * makes this a good first guess — and only a guess, which is why the result is always reviewed by
- * hand before anything reaches practice.
+ * Only the pauses long enough to separate two clips. A listening paper pauses constantly *inside* a
+ * dialogue (speaker turns, ~1-2s) and then much longer after each question (~15-18s), so the two
+ * populations sit far apart and any threshold in the empty band between them gives the same answer.
+ * `silenceHistogram` prints that band, so a wrong threshold is visible instead of being guessed at.
  */
-export function pickIntroEnd(silences: readonly Silence[], searchWindowMs: number): number {
-  const early = silences.filter((s) => s.start_ms <= searchWindowMs);
-  if (early.length === 0) return 0;
-  const longest = early.reduce((best, s) => (s.end_ms - s.start_ms > best.end_ms - best.start_ms ? s : best));
-  return longest.end_ms;
+export const boundarySilences = (silences: readonly Silence[], minMs: number): Silence[] =>
+  silences.filter((s) => s.end_ms - s.start_ms >= minMs);
+
+/**
+ * Where the spoken introduction ends: at the start of speech after the *first* pause of at least
+ * `minPauseMs`, searched only in the opening `windowMs` of the file.
+ *
+ * Not the longest early pause: the gap after the instructions can be short (1.7s in the first real
+ * paper) while the answer gaps that follow are ten times longer, so "longest" would skip the whole
+ * first question. 0 means no pause was found and the caller should treat the file as starting
+ * straight into question 1 — which the review screen will show as a suspiciously long segment 1.
+ */
+export function pickIntroEnd(silences: readonly Silence[], minPauseMs: number, windowMs: number): number {
+  const first = silences.find((s) => s.start_ms <= windowMs && s.end_ms - s.start_ms >= minPauseMs);
+  return first?.end_ms ?? 0;
+}
+
+/** Counts silences per duration band, for the report: the threshold should land in an empty band. */
+export function silenceHistogram(silences: readonly Silence[]): { label: string; count: number }[] {
+  const bands = [1, 2, 3, 5, 8, 12, 20];
+  const durations = silences.map((s) => s.end_ms - s.start_ms);
+  const rows = bands.map((upper, i) => ({
+    label: `${i === 0 ? "0" : bands[i - 1]}-${upper}s`,
+    count: durations.filter((d) => d >= (i === 0 ? 0 : bands[i - 1]!) * 1000 && d < upper * 1000).length,
+  }));
+  rows.push({ label: "≥20s", count: durations.filter((d) => d >= 20_000).length });
+  return rows;
+}
+
+/**
+ * Folds "clips" that are only a second of speech into the clip before them.
+ *
+ * In a real paper the second question of a pair (21-22, 23-24 … 49-50) is introduced by the
+ * narrator saying just its number, which lands between two answer gaps and therefore looks like a
+ * clip of its own: the first measured paper produced exactly 15 of them, all ≈1s, against 35 real
+ * clips of 14s or more. Replaying "오십 번" to a learner is useless — both questions of a pair are
+ * asked about the same dialogue.
+ *
+ * The merged clip keeps the dialogue's own `start_ms`/`speech_end_ms`, so practice still plays the
+ * talking and nothing else, while `end_ms` stretches to where the next real clip begins, which is
+ * what the timed mock test needs. The merge is always reported, and the exam stays unverified.
+ */
+export function mergeShortSegments(segments: readonly Segment[], minSpeechMs: number): { segments: Segment[]; merged: number } {
+  const out: Segment[] = [];
+  let merged = 0;
+  for (const s of segments) {
+    const previous = out.at(-1);
+    // A short *first* segment has nothing to merge into; it is kept so it surfaces as a mismatch.
+    if (previous && s.speech_end_ms - s.start_ms < minSpeechMs) {
+      previous.end_ms = s.end_ms;
+      merged += 1;
+      continue;
+    }
+    out.push({ ...s, idx: out.length + 1 });
+  }
+  return { segments: out, merged };
 }
 
 /**

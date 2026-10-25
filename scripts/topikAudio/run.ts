@@ -26,14 +26,18 @@ import JSZip from "jszip";
 import { getPlatformProxy } from "wrangler";
 import { buildImportDraft } from "../../worker/services/topikImport";
 import {
+  boundarySilences,
   buildSegments,
   examFromAudioName,
+  mergeShortSegments,
   formatMs,
   parseSilenceLog,
   pickIntroEnd,
   planAudio,
+  silenceHistogram,
   type AudioPlan,
   type Segment,
+  type Silence,
 } from "./plan";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
@@ -47,17 +51,40 @@ const DOCX_DIR = "data/topik";
 const PROD_DB_NAME = "lingo-family";
 const PROD_MEDIA_BUCKET = "lingo-family-media";
 
-/** Silence quieter than this, for at least this long, may separate two clips. */
-const SILENCE_DB = -35;
-const SILENCE_MIN_S = 1.0;
+/**
+ * A pause quieter than `--noise` dB and at least `--silence` seconds long ends a clip. Measured on
+ * a real paper: pauses inside a dialogue are 1-2s and the gap for answering is 15-18s, with
+ * nothing in between, so 5s sits in the middle of a very wide empty band. The report prints the
+ * whole distribution, so if another paper is paced differently it shows rather than guessing.
+ */
+const DEFAULT_NOISE_DB = -35;
+const DEFAULT_SILENCE_S = 5;
+/** Detection itself runs sensitive, so the short pause after the instructions is still seen. */
+const DETECT_SILENCE_S = 0.8;
+/**
+ * A "clip" with less speech than this is the narrator announcing the second question of a pair,
+ * not a clip (see plan.ts `mergeShortSegments`). Real clips in the measured paper are 14s+, the
+ * announcements ~1s, so 5s sits in the middle of a very wide gap.
+ */
+const DEFAULT_MIN_SPEECH_S = 5;
 /** The spoken introduction is looked for in the first two minutes only. */
 const INTRO_WINDOW_MS = 120_000;
+const INTRO_MIN_PAUSE_MS = 800;
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
 const force = args.includes("--force");
-const examFilter = args[args.indexOf("--exam") + 1];
-const onlyExam = args.includes("--exam") ? examFilter : undefined;
+const flag = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+const onlyExam = flag("--exam");
+const noiseDb = Number(flag("--noise") ?? DEFAULT_NOISE_DB);
+const silenceMs = Math.round(Number(flag("--silence") ?? DEFAULT_SILENCE_S) * 1000);
+/** "01:42.487" or "102.487" → ms, for --intro when the automatic guess lands in the wrong place. */
+function parseTime(text: string): number {
+  const [m, sec] = text.includes(":") ? text.split(":") : ["0", text];
+  return Math.round((Number(m) * 60 + Number(sec)) * 1000);
+}
+const introOverride = flag("--intro") ? parseTime(flag("--intro")!) : undefined;
+const minSpeechMs = Math.round(Number(flag("--min-speech") ?? DEFAULT_MIN_SPEECH_S) * 1000);
 
 function ffprobeDurationMs(file: string): number {
   const r = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], { encoding: "utf8" });
@@ -66,8 +93,11 @@ function ffprobeDurationMs(file: string): number {
 }
 
 function ffmpegSilenceLog(file: string): string {
+  // One pass at the sensitive threshold: the long gaps are filtered out of this same list, while
+  // the short pause after the instructions stays visible for the intro guess.
+  const detect = Math.min(DETECT_SILENCE_S, silenceMs / 1000);
   // silencedetect writes to stderr; -f null discards the decoded audio.
-  const r = spawnSync("ffmpeg", ["-i", file, "-af", `silencedetect=noise=${SILENCE_DB}dB:d=${SILENCE_MIN_S}`, "-f", "null", "-"], {
+  const r = spawnSync("ffmpeg", ["-i", file, "-af", `silencedetect=noise=${noiseDb}dB:d=${detect}`, "-f", "null", "-"], {
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
   });
@@ -122,6 +152,9 @@ type ExamPlan = {
   file: string;
   fileSize: number;
   durationMs: number;
+  introEndMs: number;
+  mergedShort: number;
+  silences: Silence[];
   plan: AudioPlan;
   questions: { number: number; same_segment: boolean; file: string }[];
 };
@@ -132,6 +165,20 @@ function report(p: ExamPlan) {
     `  ${(p.fileSize / 1024 / 1024).toFixed(1)} MB, ${formatMs(p.durationMs)} long, ` +
       `${p.plan.segments.length} segment(s) found, ${p.plan.expected} expected from ${p.questions.length} question(s)`,
   );
+  console.log(`  Lời dẫn mở đầu: 00:00.000 → ${formatMs(p.introEndMs)} (bỏ, không thuộc đoạn nào)`);
+  // The threshold should sit in an empty band between the short in-dialogue pauses and the long
+  // answer gaps; printing the bands makes a badly chosen one obvious instead of a mystery.
+  const bands = silenceHistogram(p.silences)
+    .filter((b) => b.count > 0)
+    .map((b) => `${b.label}:${b.count}`)
+    .join("  ");
+  console.log(`  Khoảng lặng (ngưỡng ${silenceMs / 1000}s, ${noiseDb}dB): ${bands}`);
+  if (p.mergedShort > 0) {
+    console.log(
+      `  Đã gộp ${p.mergedShort} đoạn chỉ có ~1 giây tiếng nói vào đoạn trước ` +
+        `(lời xướng số câu thứ hai của một cặp dùng chung hội thoại; ngưỡng --min-speech ${minSpeechMs / 1000}s)`,
+    );
+  }
   for (const problem of p.plan.problems) console.log(`  PROBLEM: ${problem}`);
   if (p.questions.length === 0) console.log("  PROBLEM: no listening questions found for this exam in data/topik/");
 
@@ -218,10 +265,21 @@ async function main() {
     const file = path.join(AUDIO_DIR, fileName);
     const durationMs = ffprobeDurationMs(file);
     const silences = parseSilenceLog(ffmpegSilenceLog(file), durationMs);
-    const introEnd = pickIntroEnd(silences, INTRO_WINDOW_MS);
-    const segments = buildSegments(silences, durationMs, introEnd);
+    const introEnd = introOverride ?? pickIntroEnd(silences, INTRO_MIN_PAUSE_MS, INTRO_WINDOW_MS);
+    const detected = buildSegments(boundarySilences(silences, silenceMs), durationMs, introEnd);
+    const { segments, merged } = mergeShortSegments(detected, minSpeechMs);
     const questions = await listeningQuestions(exam);
-    plans.push({ exam, file, fileSize: statSync(file).size, durationMs, plan: planAudio(segments, questions, durationMs), questions });
+    plans.push({
+      exam,
+      file,
+      fileSize: statSync(file).size,
+      durationMs,
+      introEndMs: introEnd,
+      mergedShort: merged,
+      silences,
+      plan: planAudio(segments, questions, durationMs),
+      questions,
+    });
   }
 
   for (const p of plans) report(p);

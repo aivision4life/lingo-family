@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  boundarySilences,
   buildSegments,
   examFromAudioName,
   expectedSegmentCount,
   formatMs,
+  mergeShortSegments,
   parseSilenceLog,
   pickIntroEnd,
   planAudio,
+  silenceHistogram,
   type Silence,
 } from "./plan";
 
@@ -63,17 +66,97 @@ describe("buildSegments", () => {
 });
 
 describe("pickIntroEnd", () => {
-  it("takes the end of the longest early silence", () => {
-    const silences: Silence[] = [
-      { start_ms: 2_000, end_ms: 3_000 },
-      { start_ms: 5_000, end_ms: 12_000 },
-      { start_ms: 30_000, end_ms: 40_000 }, // outside the search window
-    ];
-    expect(pickIntroEnd(silences, 20_000)).toBe(12_000);
+  // Measured on the first real paper: the instructions run for 100s and are followed by a pause of
+  // only 1.7s, while every answer gap after that is 15-18s. Taking the *longest* early pause would
+  // therefore skip past question 1 entirely.
+  const realistic: Silence[] = [
+    { start_ms: 100_833, end_ms: 102_487 }, // 1.7s, right after the instructions
+    { start_ms: 154_436, end_ms: 169_786 }, // 15.3s, the first answer gap
+  ];
+
+  it("takes the first pause long enough to count, not the longest one", () => {
+    expect(pickIntroEnd(realistic, 800, 120_000)).toBe(102_487);
+  });
+
+  it("ignores pauses shorter than the minimum and ones past the window", () => {
+    expect(pickIntroEnd(realistic, 5_000, 120_000)).toBe(0);
+    expect(pickIntroEnd(realistic, 800, 60_000)).toBe(0);
   });
 
   it("starts at zero when the file opens straight into the first question", () => {
-    expect(pickIntroEnd([], 20_000)).toBe(0);
+    expect(pickIntroEnd([], 800, 120_000)).toBe(0);
+  });
+});
+
+describe("boundarySilences", () => {
+  const silences: Silence[] = [
+    { start_ms: 0, end_ms: 1_500 }, // 1.5s: a speaker turn inside a dialogue
+    { start_ms: 10_000, end_ms: 25_300 }, // 15.3s: an answer gap
+  ];
+
+  it("keeps only the pauses that are long enough to end a clip", () => {
+    expect(boundarySilences(silences, 5_000)).toEqual([{ start_ms: 10_000, end_ms: 25_300 }]);
+  });
+
+  // The real paper's two populations are 1-2s and 15-18s, so anything in between behaves the same.
+  it("gives the same answer anywhere inside the empty band between the two populations", () => {
+    for (const threshold of [3_000, 5_000, 8_000, 12_000]) expect(boundarySilences(silences, threshold)).toHaveLength(1);
+  });
+});
+
+describe("silenceHistogram", () => {
+  it("counts the pauses per band so a bad threshold is visible", () => {
+    const silences: Silence[] = [
+      { start_ms: 0, end_ms: 500 },
+      { start_ms: 1_000, end_ms: 2_500 },
+      { start_ms: 5_000, end_ms: 20_300 },
+      { start_ms: 30_000, end_ms: 51_000 },
+    ];
+    expect(silenceHistogram(silences)).toEqual([
+      { label: "0-1s", count: 1 },
+      { label: "1-2s", count: 1 },
+      { label: "2-3s", count: 0 },
+      { label: "3-5s", count: 0 },
+      { label: "5-8s", count: 0 },
+      { label: "8-12s", count: 0 },
+      { label: "12-20s", count: 1 }, // the 15.3s answer gap
+      { label: "≥20s", count: 1 },
+    ]);
+  });
+});
+
+describe("mergeShortSegments", () => {
+  // Shaped like the real paper: a dialogue, then the narrator saying only "22번" between the two
+  // answer gaps, which silence detection cannot tell from a clip of its own.
+  const segments = [
+    { idx: 1, start_ms: 0, speech_end_ms: 30_000, end_ms: 45_000 },
+    { idx: 2, start_ms: 45_000, speech_end_ms: 46_100, end_ms: 64_000 },
+    { idx: 3, start_ms: 64_000, speech_end_ms: 100_000, end_ms: 115_000 },
+  ];
+
+  it("folds the announcement into the dialogue before it", () => {
+    const { segments: out, merged } = mergeShortSegments(segments, 5_000);
+    expect(merged).toBe(1);
+    expect(out).toEqual([
+      // The dialogue's own speech end is kept, so practice replays the talking and not the gap;
+      // end_ms stretches over the announcement, which the timed mock test needs.
+      { idx: 1, start_ms: 0, speech_end_ms: 30_000, end_ms: 64_000 },
+      { idx: 2, start_ms: 64_000, speech_end_ms: 100_000, end_ms: 115_000 },
+    ]);
+  });
+
+  it("renumbers what is left so the indexes stay 1..n", () => {
+    expect(mergeShortSegments(segments, 5_000).segments.map((s) => s.idx)).toEqual([1, 2]);
+  });
+
+  it("keeps a short first segment, which has nothing to merge into", () => {
+    const first = [{ idx: 1, start_ms: 0, speech_end_ms: 900, end_ms: 20_000 }, segments[2]!];
+    expect(mergeShortSegments(first, 5_000).merged).toBe(0);
+  });
+
+  it("changes nothing when every clip is long enough", () => {
+    const long = [segments[0]!, segments[2]!];
+    expect(mergeShortSegments(long, 5_000)).toEqual({ segments: [long[0], { ...long[1], idx: 2 }], merged: 0 });
   });
 });
 
