@@ -670,6 +670,22 @@ describe("listening audio", () => {
     expect(session.questions).toHaveLength(1);
   });
 
+  // The picker must not promise work that practice cannot serve: a listening block is counted only
+  // once its questions have a clip and the exam's audio has been approved.
+  it("counts a listening block only once its audio is usable", async () => {
+    const q = await listening(1);
+    const audioId = await addAudio();
+    const segmentId = await addSegment(audioId, 1, 1000, 20000, 26000);
+    const blocks = async () =>
+      (await t.api("GET", `/topik/blocks?section=listening&profile_id=${adult}`)).body as { block: string; count: number }[];
+
+    expect(await blocks()).toEqual([]); // no clip yet
+    await t.api("PATCH", `/topik/questions/${q.id}/segment`, { profile_id: adult, segment_id: segmentId });
+    expect(await blocks()).toEqual([]); // clip, but the audio is not approved
+    await t.api("PATCH", `/topik/audio/${audioId}`, { profile_id: adult, verified: true });
+    expect(await blocks()).toMatchObject([{ block: "1~3", count: 1 }]);
+  });
+
   it("is adult-only", async () => {
     const audioId = await addAudio();
     expect((await t.api("GET", `/topik/audio?profile_id=${kid}`)).status).toBe(403);

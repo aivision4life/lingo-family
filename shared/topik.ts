@@ -11,12 +11,19 @@ export const TOPIK_IMAGE_MAX_SIDE = 1600;
 export const TOPIK_IMAGE_MAX_BYTES = 1_000_000;
 
 /** A stem or one option: text and/or an image (R2 key, content-addressed like other uploads). */
+const topikContentFields = { text: z.string().trim().nullable(), image_key: z.string().nullable() };
+
+/** A stem or one option as it may be *saved*: it has to carry something. */
 export const topikContentSchema = z
-  .object({
-    text: z.string().trim().nullable(),
-    image_key: z.string().nullable(),
-  })
+  .object(topikContentFields)
   .refine((c) => c.text !== null || c.image_key !== null, { message: "topik_content_empty", path: ["text"] });
+
+/**
+ * The same shape as it may be *sent to practice*, where empty is legitimate: a listening
+ * question's stem is its transcript and the server withholds it until the learner has answered
+ * (M7.1), so requiring content here would reject exactly the payload the rule is protecting.
+ */
+export const topikSentContentSchema = z.object(topikContentFields);
 export type TopikContent = z.infer<typeof topikContentSchema>;
 
 export const topikOptionsSchema = z.tuple([topikContentSchema, topikContentSchema, topikContentSchema, topikContentSchema]);
@@ -198,6 +205,7 @@ export type TopikClip = z.infer<typeof topikClipSchema>;
  */
 export const topikPracticeQuestionSchema = z.object({
   ...commonFields,
+  stem: topikSentContentSchema,
   id: z.string(),
   vocab: topikVocabListSchema,
   vocab_ready: z.boolean(),

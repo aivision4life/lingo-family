@@ -11,6 +11,7 @@
 import { and, asc, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { State } from "ts-fsrs";
+import { topikSectionSchema } from "../../shared/enums";
 import { z } from "zod";
 import { applyReview, emptyCardFields, type CardFields } from "../../shared/scheduling";
 import {
@@ -413,7 +414,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     // `profile_id` is optional on purpose: an installed PWA may still be running a build from
     // before `unseen` existed, and it should keep working (it just gets unseen = count and ignores
     // the field) instead of getting a 400 on the screen's only request.
-    .get("/topik/blocks", zv("query", z.object({ section: z.enum(["reading"]), profile_id: z.string().optional() })), async (c) => {
+    .get("/topik/blocks", zv("query", z.object({ section: topikSectionSchema, profile_id: z.string().optional() })), async (c) => {
       const { section, profile_id } = c.req.valid("query");
       // One aggregate for the whole screen, never one query per block. Two left joins against
       // this profile's own rows: "unseen" = no attempt ever (skipping writes no attempt, so a
@@ -428,6 +429,10 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
            ON a.question_id = q.id
          LEFT JOIN topik_cards c ON c.question_id = q.id AND c.profile_id = ?2
          WHERE q.section = ?1 AND q.verified = 1
+           -- Listening counts only what practice can actually serve (M7.1): a block promising
+           -- "50 to do" that then starts an empty session is worse than not listing it at all.
+           AND (q.section <> 'listening' OR (q.segment_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM topik_audio au WHERE au.section = q.section AND au.exam = q.exam AND au.verified = 1)))
          GROUP BY q.block ORDER BY min(q.number)`,
       )
         .bind(section, profile_id ?? "", State.Review)
