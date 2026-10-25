@@ -18,18 +18,21 @@ import {
   TOPIK_IMAGE_MAX_BYTES,
   TOPIK_IMAGE_MAX_SIDE,
   topikAttemptRequestSchema,
+  topikAudioVerifySchema,
   topikGenerateContentResponseSchema,
   topikQuestionContentSchema,
   topikQuestionInputSchema,
   topikQuestionListQuerySchema,
+  topikQuestionSegmentSchema,
   topikQuestionStatsSchema,
   topikQuestionUpdateSchema,
+  topikSegmentUpdateSchema,
   topikSessionRequestSchema,
   topikVerifyBulkRequestSchema,
   type TopikPracticeQuestion,
   type TopikQuestion,
 } from "../../shared/topik";
-import { topik_attempts, topik_cards, topik_questions } from "../../db/schema";
+import { topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { requireAdult } from "../lib/access";
 import { runInBackground } from "../lib/background";
@@ -303,6 +306,98 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       return c.json({ image_key: stored.key });
     })
 
+    // --- Listening audio (M7.1, adults only) --------------------------------------------------
+    // One mp3 per exam; a segment is a pair of timestamps into it, so re-cutting never touches the
+    // file. None of an exam's questions reach practice until `verified` is set here by hand: a
+    // one-clip offset plays perfectly normal audio and would surface only as answers that stop
+    // making sense.
+    .get("/topik/audio", zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
+      const { profile_id } = c.req.valid("query");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const rows = await c.env.DB.prepare(
+        `SELECT a.*, (SELECT count(*) FROM topik_segments s WHERE s.audio_id = a.id) AS segment_count,
+                (SELECT count(*) FROM topik_questions q WHERE q.section = a.section AND q.exam = a.exam) AS question_count,
+                (SELECT count(*) FROM topik_questions q WHERE q.section = a.section AND q.exam = a.exam AND q.segment_id IS NULL) AS unassigned_questions
+         FROM topik_audio a ORDER BY a.exam`,
+      ).all<Record<string, unknown>>();
+      return c.json(rows.results.map((r) => ({ ...r, verified: !!r.verified })));
+    })
+
+    .get("/topik/audio/:id", idParam, zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
+      const { id } = c.req.valid("param");
+      const { profile_id } = c.req.valid("query");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const audio = await c.env.DB.prepare("SELECT * FROM topik_audio WHERE id = ?").bind(id).first<Record<string, unknown>>();
+      if (!audio) return c.json(err("not_found"), 404);
+
+      const segments = await c.env.DB.prepare(
+        `SELECT s.*, (SELECT group_concat(q.number) FROM topik_questions q WHERE q.segment_id = s.id) AS question_numbers
+         FROM topik_segments s WHERE s.audio_id = ? ORDER BY s.idx`,
+      )
+        .bind(id)
+        .all<Record<string, unknown> & { question_numbers: string | null }>();
+      const unassigned = await c.env.DB.prepare(
+        "SELECT count(*) AS n FROM topik_questions WHERE section = ? AND exam = ? AND segment_id IS NULL",
+      )
+        .bind(audio.section, audio.exam)
+        .first<{ n: number }>();
+
+      return c.json({
+        ...audio,
+        verified: !!audio.verified,
+        unassigned_questions: unassigned?.n ?? 0,
+        segments: segments.results.map(({ question_numbers, ...s }) => ({
+          ...s,
+          questions: (question_numbers ?? "")
+            .split(",")
+            .filter(Boolean)
+            .map(Number)
+            .sort((a, b) => a - b),
+        })),
+      });
+    })
+
+    .patch("/topik/segments/:id", idParam, zv("json", topikSegmentUpdateSchema.extend({ profile_id: z.string().min(1) })), async (c) => {
+      const { id } = c.req.valid("param");
+      const { profile_id, ...patch } = c.req.valid("json");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const db = getDb(c.env);
+      const [row] = await db.update(topik_segments).set(patch).where(eq(topik_segments.id, id)).returning();
+      if (!row) return c.json(err("not_found"), 404);
+      // Editing a boundary invalidates the approval: the clips changed since they were checked.
+      await db.update(topik_audio).set({ verified: false, updated_at: new Date() }).where(eq(topik_audio.id, row.audio_id));
+      return c.json({ ...row, questions: [] });
+    })
+
+    .patch("/topik/questions/:id/segment", idParam, zv("json", topikQuestionSegmentSchema.extend({ profile_id: z.string().min(1) })), async (c) => {
+      const { id } = c.req.valid("param");
+      const { profile_id, segment_id } = c.req.valid("json");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const db = getDb(c.env);
+      const [row] = await db.update(topik_questions).set({ segment_id }).where(eq(topik_questions.id, id)).returning();
+      if (!row) return c.json(err("not_found"), 404);
+      if (segment_id) {
+        const segment = await db.select().from(topik_segments).where(eq(topik_segments.id, segment_id)).get();
+        if (segment) await db.update(topik_audio).set({ verified: false, updated_at: new Date() }).where(eq(topik_audio.id, segment.audio_id));
+      }
+      return c.json(toQuestion(row));
+    })
+
+    .patch("/topik/audio/:id", idParam, zv("json", topikAudioVerifySchema.extend({ profile_id: z.string().min(1) })), async (c) => {
+      const { id } = c.req.valid("param");
+      const { profile_id, verified } = c.req.valid("json");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const db = getDb(c.env);
+      const [row] = await db.update(topik_audio).set({ verified, updated_at: new Date() }).where(eq(topik_audio.id, id)).returning();
+      if (!row) return c.json(err("not_found"), 404);
+      return c.json({ ...row, verified: !!row.verified });
+    })
+
     // --- Practice -----------------------------------------------------------------------------
     // `profile_id` is optional on purpose: an installed PWA may still be running a build from
     // before `unseen` existed, and it should keep working (it just gets unseen = count and ignores
@@ -332,10 +427,28 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     .get("/topik/session", zv("query", topikSessionRequestSchema), async (c) => {
       const { profile_id, section, from, to } = c.req.valid("query");
       const db = getDb(c.env);
+      // A listening question is only usable once it has a clip AND an adult has approved that
+      // exam's boundaries (M7.1): a one-clip offset plays perfectly normal audio, so a wrong
+      // mapping is invisible while practising and would surface only as answers that stop making
+      // sense. Reading questions have no audio and are unaffected.
+      const audioReady =
+        section === "listening"
+          ? sql`${topik_questions.segment_id} IS NOT NULL AND EXISTS (
+                SELECT 1 FROM topik_audio a
+                WHERE a.section = ${topik_questions.section} AND a.exam = ${topik_questions.exam} AND a.verified = 1)`
+          : undefined;
       const questions = await db
         .select()
         .from(topik_questions)
-        .where(and(eq(topik_questions.section, section), eq(topik_questions.verified, true), gte(topik_questions.number, from), lte(topik_questions.number, to)))
+        .where(
+          and(
+            eq(topik_questions.section, section),
+            eq(topik_questions.verified, true),
+            gte(topik_questions.number, from),
+            lte(topik_questions.number, to),
+            audioReady,
+          ),
+        )
         .orderBy(asc(topik_questions.number));
       if (questions.length === 0) return c.json({ questions: [] });
 

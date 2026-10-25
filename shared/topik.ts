@@ -200,6 +200,63 @@ export type TopikQuestionContent = z.infer<typeof topikQuestionContentSchema>;
  * vocab/explanation this one question is still missing. */
 export const topikGenerateContentResponseSchema = z.object({ started: z.boolean() });
 
+// --- Listening audio (M7.1) -----------------------------------------------------------------
+
+/**
+ * One clip of a listening paper's single mp3. The three timestamps are deliberate: practice plays
+ * `start_ms` → `speech_end_ms` (the talking, without the 15-second answer gap that follows), while
+ * a timed mock test plays `start_ms` → `end_ms`, the paper's own pacing.
+ */
+export const topikSegmentSchema = z.object({
+  id: z.string(),
+  idx: z.number().int().positive(),
+  start_ms: z.number().int().nonnegative(),
+  speech_end_ms: z.number().int().nonnegative(),
+  end_ms: z.number().int().nonnegative(),
+  /** Question numbers asked about this clip; several when a dialogue carries a pair. */
+  questions: z.array(z.number().int().positive()),
+});
+export type TopikSegment = z.infer<typeof topikSegmentSchema>;
+
+/** One exam's audio with its clips, for the review screen. */
+export const topikAudioSchema = z.object({
+  id: z.string(),
+  section: topikSectionSchema,
+  exam: z.string(),
+  /** R2 key; play it through `/api/media/<key>` with a byte range. */
+  audio_key: z.string(),
+  duration_ms: z.number().int().nonnegative(),
+  /** Until this is true, none of the exam's questions reach practice. */
+  verified: z.boolean(),
+  /** How many of the exam's questions have no clip yet. */
+  unassigned_questions: z.number().int().nonnegative(),
+  segments: z.array(topikSegmentSchema),
+});
+export type TopikAudio = z.infer<typeof topikAudioSchema>;
+
+/** Row in the audio list (no segments). */
+export const topikAudioSummarySchema = topikAudioSchema.omit({ segments: true }).extend({
+  segment_count: z.number().int().nonnegative(),
+  question_count: z.number().int().nonnegative(),
+});
+export type TopikAudioSummary = z.infer<typeof topikAudioSummarySchema>;
+export const topikAudioListSchema = z.array(topikAudioSummarySchema);
+
+const msField = z.number().int().nonnegative();
+
+/** PATCH /api/topik/segments/:id — any subset of the three timestamps. */
+export const topikSegmentUpdateSchema = z
+  .object({ start_ms: msField, speech_end_ms: msField, end_ms: msField })
+  .partial()
+  .refine((p) => Object.keys(p).length > 0, "nothing_to_update");
+export type TopikSegmentUpdate = z.infer<typeof topikSegmentUpdateSchema>;
+
+/** PATCH /api/topik/questions/:id/segment — `segment_id: null` unlinks the question. */
+export const topikQuestionSegmentSchema = z.object({ segment_id: z.string().nullable() });
+
+/** PATCH /api/topik/audio/:id — approving (or un-approving) a whole exam's clips. */
+export const topikAudioVerifySchema = z.object({ verified: z.boolean() });
+
 /** One contiguous run of question numbers sharing the same instruction (for the block picker). */
 export const topikBlockSchema = z.object({
   section: topikSectionSchema,

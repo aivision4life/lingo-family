@@ -15,7 +15,7 @@ beforeAll(async () => {
 afterAll(() => t.dispose());
 
 beforeEach(async () => {
-  for (const table of ["topik_attempts", "topik_cards", "topik_questions", "profiles"]) {
+  for (const table of ["topik_attempts", "topik_cards", "topik_segments", "topik_audio", "topik_questions", "profiles"]) {
     await t.env.DB.prepare(`DELETE FROM ${table}`).run();
   }
   adult = ((await t.api("POST", "/profiles", profile())).body as { id: string }).id;
@@ -580,5 +580,105 @@ describe("answer explanation exposure (M6.3)", () => {
     expect((res.body as { key_terms: { existing_word_id: string | null }[] }).key_terms).toEqual([
       { lemma: "일어나다", pos: "verb", gloss_vi: "thức dậy", existing_word_id: "w1" },
     ]);
+  });
+});
+
+// M7.1: one mp3 per listening exam, clips are timestamps into it, and nothing reaches practice
+// until an adult approves the boundaries.
+describe("listening audio", () => {
+  const listening = (number: number, over: Partial<TopikQuestionInput> = {}) =>
+    createQuestion({ section: "listening", exam: "Listen-60회", number, block: "1~3", ...over });
+
+  const addAudio = async (verified = false) => {
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    await t.env.DB.prepare(
+      `INSERT INTO topik_audio (id, section, exam, audio_key, duration_ms, verified, created_at, updated_at)
+       VALUES (?, 'listening', 'Listen-60회', 'topik/audio/${"a".repeat(40)}.mp3', 600000, ?, ?, ?)`,
+    ).bind(id, verified ? 1 : 0, now, now).run();
+    return id;
+  };
+  const addSegment = async (audioId: string, idx: number, start: number, speechEnd: number, end: number) => {
+    const id = crypto.randomUUID();
+    await t.env.DB.prepare(
+      "INSERT INTO topik_segments (id, audio_id, idx, start_ms, speech_end_ms, end_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(id, audioId, idx, start, speechEnd, end, Date.now()).run();
+    return id;
+  };
+
+  it("lists an exam's audio with its segment and question counts", async () => {
+    const q = await listening(1);
+    const audioId = await addAudio();
+    const segmentId = await addSegment(audioId, 1, 1000, 20000, 26000);
+    await t.api("PATCH", `/topik/questions/${q.id}/segment`, { profile_id: adult, segment_id: segmentId });
+
+    const list = (await t.api("GET", `/topik/audio?profile_id=${adult}`)).body as Record<string, unknown>[];
+    expect(list).toMatchObject([{ exam: "Listen-60회", verified: false, segment_count: 1, question_count: 1, unassigned_questions: 0 }]);
+  });
+
+  it("returns the segments with the question numbers asked about each", async () => {
+    const q21 = await listening(21);
+    const q22 = await listening(22);
+    const audioId = await addAudio();
+    const shared = await addSegment(audioId, 1, 1000, 20000, 26000);
+    await addSegment(audioId, 2, 26000, 40000, 44000);
+    for (const q of [q21, q22]) await t.api("PATCH", `/topik/questions/${q.id}/segment`, { profile_id: adult, segment_id: shared });
+
+    const audio = (await t.api("GET", `/topik/audio/${audioId}?profile_id=${adult}`)).body as { segments: { idx: number; questions: number[] }[] };
+    // A dialogue carrying a pair: both questions point at the same clip.
+    expect(audio.segments.map((s) => s.questions)).toEqual([[21, 22], []]);
+  });
+
+  it("edits a boundary without touching the mp3, and un-approves the exam", async () => {
+    const audioId = await addAudio(true);
+    const segmentId = await addSegment(audioId, 1, 1000, 20000, 26000);
+
+    const res = await t.api("PATCH", `/topik/segments/${segmentId}`, { profile_id: adult, start_ms: 1500, speech_end_ms: 19000 });
+    expect(res.status).toBe(200);
+    const row = await t.env.DB.prepare("SELECT start_ms, speech_end_ms, end_ms FROM topik_segments WHERE id = ?").bind(segmentId).first();
+    expect(row).toEqual({ start_ms: 1500, speech_end_ms: 19000, end_ms: 26000 });
+    // The clips changed since they were checked, so the approval has to be earned again.
+    expect(await t.env.DB.prepare("SELECT verified FROM topik_audio WHERE id = ?").bind(audioId).first()).toEqual({ verified: 0 });
+  });
+
+  it("keeps a listening question out of practice until its audio is approved", async () => {
+    const q = await listening(1);
+    const audioId = await addAudio();
+    const segmentId = await addSegment(audioId, 1, 1000, 20000, 26000);
+    await t.api("PATCH", `/topik/questions/${q.id}/segment`, { profile_id: adult, segment_id: segmentId });
+
+    const session = async () =>
+      ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3`)).body as { questions: unknown[] }).questions;
+    expect(await session()).toHaveLength(0);
+
+    await t.api("PATCH", `/topik/audio/${audioId}`, { profile_id: adult, verified: true });
+    expect(await session()).toHaveLength(1);
+  });
+
+  it("keeps a listening question with no clip out of practice even when the audio is approved", async () => {
+    await listening(1); // never linked to a segment
+    const audioId = await addAudio(true);
+    await addSegment(audioId, 1, 1000, 20000, 26000);
+    const session = (await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3`)).body as { questions: unknown[] };
+    expect(session.questions).toHaveLength(0);
+  });
+
+  // Reading has no audio; the new gate must not touch it.
+  it("does not apply the audio gate to reading questions", async () => {
+    await createQuestion({ number: 1 });
+    const session = (await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=3`)).body as { questions: unknown[] };
+    expect(session.questions).toHaveLength(1);
+  });
+
+  it("is adult-only", async () => {
+    const audioId = await addAudio();
+    expect((await t.api("GET", `/topik/audio?profile_id=${kid}`)).status).toBe(403);
+    expect((await t.api("GET", `/topik/audio/${audioId}?profile_id=${kid}`)).status).toBe(403);
+    expect((await t.api("PATCH", `/topik/audio/${audioId}`, { profile_id: kid, verified: true })).status).toBe(403);
+  });
+
+  it("404s on an unknown audio or segment", async () => {
+    expect((await t.api("GET", `/topik/audio/nope?profile_id=${adult}`)).status).toBe(404);
+    expect((await t.api("PATCH", "/topik/segments/nope", { profile_id: adult, start_ms: 0 })).status).toBe(404);
   });
 });

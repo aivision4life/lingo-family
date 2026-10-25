@@ -5,6 +5,7 @@
 //   npm run topik-audio                     dry run (default): prints the proposed segments
 //   npm run topik-audio -- --apply          backs up production D1, uploads the mp3, writes the segments
 //   npm run topik-audio -- --apply --force  also replaces an exam's existing audio + segments
+//   npm run topik-audio -- --apply --local         writes to the local dev D1/R2 instead (try it out first)
 //   npm run topik-audio -- --exam 8DeOfficial-60회   only this exam
 //
 // An exam's audio ALWAYS lands unverified, so none of its questions reach practice until an adult
@@ -73,6 +74,8 @@ const INTRO_MIN_PAUSE_MS = 800;
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
+/** Write to the dev server's own D1/R2 (.wrangler/state) instead of production. */
+const local = args.includes("--local");
 const force = args.includes("--force");
 const flag = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const onlyExam = flag("--exam");
@@ -258,7 +261,9 @@ async function main() {
     console.log(`No .mp3 files in ${AUDIO_DIR}.`);
     return;
   }
-  console.log(apply ? `APPLY${force ? " --force" : ""}: will write to production` : "DRY RUN: nothing is written");
+  console.log(
+    apply ? `APPLY${force ? " --force" : ""}: will write to ${local ? "the LOCAL dev database" : "production"}` : "DRY RUN: nothing is written",
+  );
 
   const plans: ExamPlan[] = [];
   for (const fileName of files) {
@@ -298,9 +303,11 @@ async function main() {
     return;
   }
 
-  backupProduction();
-  const configPath = tempConfig();
-  const proxy = await getPlatformProxy({ configPath, remoteBindings: true });
+  // Local runs touch only .wrangler/state, which `npm run dev` serves and no one else shares.
+  if (!local) backupProduction();
+  const proxy = local
+    ? await getPlatformProxy({ remoteBindings: false })
+    : await getPlatformProxy({ configPath: tempConfig(), remoteBindings: true });
   try {
     const db = proxy.env.DB as unknown as D1Like;
     const bucket = proxy.env.MEDIA as unknown as R2Like;

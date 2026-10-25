@@ -630,6 +630,43 @@
       "explanationNone": "This question has no explanation.",
       "explanationPending": "No explanation generated yet. Use “Generate AI data” in the list, or it is generated when this question comes up in practice.",
       "termNoGloss": "(not in this question's vocabulary)"
+    },
+    "tab": {
+      "questions": "Questions",
+      "audio": "Listening clips"
+    },
+    "audio": {
+      "empty": "No listening papers yet. Run `npm run topik-audio -- --apply` to upload an mp3.",
+      "edit": "Edit clips",
+      "listLine": "{{segments}} clips · {{questions}} questions · {{duration}}",
+      "summary": "{{count}} clips · {{duration}} total",
+      "unassigned": "{{count}} question(s) with no clip",
+      "approved": "Audio approved",
+      "notApproved": "Audio not approved",
+      "approve": "Approve audio",
+      "unapprove": "Un-approve",
+      "approvedHint": "This paper's questions are used in practice.",
+      "readyHint": "Listen to a few clips, then approve. Until you do, none of this paper's questions appear in practice.",
+      "blockedHint": "There are still boundary problems or questions with no clip — fix those first.",
+      "segmentN": "Clip {{n}}",
+      "questionsOn": "Questions {{numbers}}",
+      "noQuestion": "No question linked",
+      "playPractice": "Play as in practice",
+      "playWhole": "Play whole clip",
+      "nudge": "{{field}} {{by}} seconds",
+      "field": {
+        "start_ms": "Start",
+        "speech_end_ms": "Speech ends",
+        "end_ms": "End"
+      },
+      "problem": {
+        "startsAfterEnd": "The start cannot be after the end.",
+        "speechOutside": "The speech end must be inside the clip.",
+        "pastFile": "The clip runs past the end of the file.",
+        "noQuestion": "No question is linked to this clip.",
+        "overlapsNext": "This clip overlaps the next one.",
+        "gapToNext": "There is a gap between this clip and the next."
+      }
     }
   }
 }

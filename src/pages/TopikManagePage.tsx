@@ -10,8 +10,16 @@ import { emptyTopikFormValues, topikFormValuesFromQuestion, type TopikFormValues
 import { TopikQuestionForm } from "@/features/topik/TopikQuestionForm";
 import { TopikQuestionList } from "@/features/topik/TopikQuestionList";
 import { TopikQuestionView } from "@/features/topik/TopikQuestionView";
+import { TopikAudioEditor } from "@/features/topik/TopikAudioEditor";
+import { TopikAudioList } from "@/features/topik/TopikAudioList";
 
-type Mode = { kind: "list" } | { kind: "create" } | { kind: "view"; question: TopikQuestion } | { kind: "edit"; question: TopikQuestion };
+type Mode =
+  | { kind: "list" }
+  | { kind: "create" }
+  | { kind: "view"; question: TopikQuestion }
+  | { kind: "edit"; question: TopikQuestion }
+  | { kind: "audio" }
+  | { kind: "audioEdit"; audioId: string };
 
 /** Screen (M6.1) — `/topik/manage`: review imported questions, add/edit/delete by hand. Adults
  * only. Filtering/search/pagination (M6.4-ish scaling, as the bank grows toward ~600+ rows) lives
@@ -33,7 +41,21 @@ export function TopikManagePage() {
 
   return (
     <PageShell title={t("topik.manage.title")}>
-      {mode.kind === "list" ? (
+      {/* Two jobs on one screen: the question bank, and the listening papers' clip boundaries. */}
+      {(mode.kind === "list" || mode.kind === "audio") && (
+        <div className="flex flex-wrap gap-2">
+          {(["list", "audio"] as const).map((kind) => (
+            <Button key={kind} size="sm" variant={mode.kind === kind ? "default" : "outline"} onClick={() => setMode({ kind })}>
+              {t(kind === "list" ? "topik.tab.questions" : "topik.tab.audio")}
+            </Button>
+          ))}
+        </div>
+      )}
+      {mode.kind === "audio" ? (
+        <TopikAudioList profileId={profile.id} onOpen={(audio) => setMode({ kind: "audioEdit", audioId: audio.id })} />
+      ) : mode.kind === "audioEdit" ? (
+        <TopikAudioEditor audioId={mode.audioId} profileId={profile.id} onBack={() => setMode({ kind: "audio" })} />
+      ) : mode.kind === "list" ? (
         <TopikQuestionList
           profileId={profile.id}
           onAddNew={() => setMode({ kind: "create" })}

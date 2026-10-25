@@ -36,7 +36,7 @@ const subscribe = (listener: () => void) => {
 /** URL of a stored media file (`audio_key` from the API). */
 export const mediaUrl = (key: string) => `/api/media/${key}`;
 
-export function playAudio(key: string) {
+function ensureAudio(): HTMLAudioElement {
   if (!audio) {
     audio = new Audio();
     audio.addEventListener("ended", () => {
@@ -45,13 +45,57 @@ export function playAudio(key: string) {
     });
     audio.addEventListener("pause", () => setState({ playingKey: null }));
   }
-  audio.pause();
-  audio.src = mediaUrl(key);
+  return audio;
+}
+
+export function playAudio(key: string) {
+  ensureAudio();
+  audio!.pause();
+  audio!.src = mediaUrl(key);
   // Loading a new source resets playbackRate to defaultPlaybackRate, so set both.
-  audio.defaultPlaybackRate = state.rate;
-  audio.playbackRate = state.rate;
+  audio!.defaultPlaybackRate = state.rate;
+  audio!.playbackRate = state.rate;
   setState({ playingKey: key });
-  audio.play().catch(() => setState({ playingKey: null }));
+  audio!.play().catch(() => setState({ playingKey: null }));
+}
+
+/**
+ * Plays one clip of a longer file (M7.1): seeks to `startMs` and stops at `endMs`.
+ *
+ * The server answers byte ranges, so the browser fetches only the part it needs instead of the
+ * whole ~30 MB exam before the first sound. Stopping is done by watching `timeupdate` rather than
+ * by a timer: a timer drifts whenever the audio stalls to buffer, and would cut a clip short on a
+ * slow connection.
+ */
+export function playSegment(key: string, startMs: number, endMs: number) {
+  const el = ensureAudio();
+  const url = mediaUrl(key);
+  const start = startMs / 1000;
+  const stopAt = endMs / 1000;
+
+  const begin = () => {
+    el.currentTime = start;
+    el.play().catch(() => setState({ playingKey: null }));
+  };
+  const watch = () => {
+    if (el.currentTime < stopAt) return;
+    el.pause();
+    el.removeEventListener("timeupdate", watch);
+    endedListeners.forEach((l) => l());
+  };
+
+  el.pause();
+  el.removeEventListener("timeupdate", watch);
+  el.defaultPlaybackRate = state.rate;
+  el.playbackRate = state.rate;
+  setState({ playingKey: key });
+  el.addEventListener("timeupdate", watch);
+  // A fresh source has no duration yet, so seeking has to wait for the metadata.
+  if (el.src.endsWith(url)) begin();
+  else {
+    el.src = url;
+    el.addEventListener("loadedmetadata", begin, { once: true });
+  }
 }
 
 /** Stops whatever is playing (e.g. when the Focus view closes). */

@@ -1,6 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   topikAttemptResultSchema,
+  topikAudioListSchema,
+  topikAudioSchema,
   topikBlockListSchema,
   topikFacetsSchema,
   topikGenerateContentResponseSchema,
@@ -13,6 +15,7 @@ import {
   topikVerifyBulkResponseSchema,
   type TopikQuestionInput,
   type TopikQuestionUpdate,
+  type TopikSegmentUpdate,
   type TopikVerifyBulkRequest,
 } from "@shared/topik";
 import { api, apiUpload } from "@/lib/api";
@@ -142,3 +145,43 @@ export const useUploadTopikImage = () =>
     mutationFn: ({ profileId, blob }: { profileId: string; blob: Blob }) =>
       apiUpload(`/topik/questions/upload-image?profile_id=${encodeURIComponent(profileId)}`, blob, topikImageUploadResponseSchema),
   });
+
+// --- Listening audio (M7.1, adults only) -------------------------------------------------------
+
+export const useTopikAudioList = (profileId: string) =>
+  useQuery({
+    queryKey: ["topik", "audio", profileId],
+    queryFn: () => api("GET", `/topik/audio?profile_id=${profileId}`, topikAudioListSchema),
+    enabled: profileId !== "",
+  });
+
+export const useTopikAudio = (id: string, profileId: string) =>
+  useQuery({
+    queryKey: ["topik", "audio", profileId, id],
+    queryFn: () => api("GET", `/topik/audio/${id}?profile_id=${profileId}`, topikAudioSchema),
+    enabled: id !== "" && profileId !== "",
+  });
+
+/** Every mutation here invalidates the whole audio tree: a boundary edit also un-approves the exam. */
+const useAudioMutation = <TVariables>(run: (v: TVariables) => Promise<unknown>) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: run,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["topik"] }),
+  });
+};
+
+export const useUpdateTopikSegment = () =>
+  useAudioMutation(({ id, profile_id, patch }: { id: string; profile_id: string; patch: TopikSegmentUpdate }) =>
+    api("PATCH", `/topik/segments/${id}`, null, { ...patch, profile_id }),
+  );
+
+export const useSetQuestionSegment = () =>
+  useAudioMutation(({ id, profile_id, segment_id }: { id: string; profile_id: string; segment_id: string | null }) =>
+    api("PATCH", `/topik/questions/${id}/segment`, topikQuestionSchema, { segment_id, profile_id }),
+  );
+
+export const useVerifyTopikAudio = () =>
+  useAudioMutation(({ id, profile_id, verified }: { id: string; profile_id: string; verified: boolean }) =>
+    api("PATCH", `/topik/audio/${id}`, null, { verified, profile_id }),
+  );

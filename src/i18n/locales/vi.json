@@ -630,6 +630,43 @@
       "explanationNone": "Câu này không có giải thích.",
       "explanationPending": "Chưa tạo giải thích. Dùng nút “Tạo dữ liệu AI” ở danh sách, hoặc nó sẽ tự tạo khi câu này vào buổi luyện tập.",
       "termNoGloss": "(không có trong từ vựng của câu)"
+    },
+    "tab": {
+      "questions": "Câu hỏi",
+      "audio": "Đoạn nghe"
+    },
+    "audio": {
+      "empty": "Chưa có đề nghe nào. Chạy `npm run topik-audio -- --apply` để nạp file mp3.",
+      "edit": "Sửa mốc",
+      "listLine": "{{segments}} đoạn · {{questions}} câu · {{duration}}",
+      "summary": "{{count}} đoạn · tổng {{duration}}",
+      "unassigned": "{{count}} câu chưa gán đoạn",
+      "approved": "Đã duyệt phần âm thanh",
+      "notApproved": "Chưa duyệt phần âm thanh",
+      "approve": "Duyệt phần âm thanh",
+      "unapprove": "Bỏ duyệt",
+      "approvedHint": "Các câu của đề này đã được dùng khi luyện tập.",
+      "readyHint": "Nghe thử vài đoạn rồi bấm duyệt. Trước khi duyệt, không câu nào của đề vào buổi luyện.",
+      "blockedHint": "Còn lỗi mốc thời gian hoặc còn câu chưa gán đoạn — sửa xong mới duyệt được.",
+      "segmentN": "Đoạn {{n}}",
+      "questionsOn": "Câu {{numbers}}",
+      "noQuestion": "Chưa gán câu nào",
+      "playPractice": "Nghe (như lúc luyện)",
+      "playWhole": "Nghe trọn đoạn",
+      "nudge": "{{field}} {{by}} giây",
+      "field": {
+        "start_ms": "Bắt đầu",
+        "speech_end_ms": "Hết tiếng",
+        "end_ms": "Kết thúc"
+      },
+      "problem": {
+        "startsAfterEnd": "Điểm bắt đầu không được sau điểm kết thúc.",
+        "speechOutside": "Mốc hết tiếng phải nằm trong đoạn.",
+        "pastFile": "Đoạn vượt quá độ dài file.",
+        "noQuestion": "Đoạn này chưa gán câu nào.",
+        "overlapsNext": "Đoạn này chồng lên đoạn sau.",
+        "gapToNext": "Có khoảng trống giữa đoạn này và đoạn sau."
+      }
     }
   }
 }
