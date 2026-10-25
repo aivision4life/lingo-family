@@ -29,6 +29,7 @@ import {
   topikSegmentUpdateSchema,
   topikSessionRequestSchema,
   topikVerifyBulkRequestSchema,
+  type TopikClip,
   type TopikPracticeQuestion,
   type TopikQuestion,
 } from "../../shared/topik";
@@ -76,18 +77,28 @@ const toQuestion = (r: QuestionRow): TopikQuestion => ({
 });
 
 /** The practice view of a question: never carries `correct_option`. */
-const toPracticeQuestion = (r: QuestionRow): TopikPracticeQuestion => ({
-  id: r.id,
-  section: r.section,
-  exam: r.exam,
-  number: r.number,
-  block: r.block,
-  instruction: r.instruction,
-  stem: { text: r.stem_text, image_key: r.stem_image_key },
-  options: r.options,
-  vocab: r.vocab ?? [],
-  vocab_ready: r.vocab_checked_at !== null,
-});
+/**
+ * A listening question's stem is its transcript, typed in the same Word table as the question, and
+ * its `vocab` is generated from that transcript — so both are withheld until the learner has
+ * answered, exactly like `correct_option`. Hiding them in the UI would not be enough: they would
+ * still be sitting in the session response. They come back with the attempt result.
+ */
+const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): TopikPracticeQuestion => {
+  const hideTranscript = r.section === "listening";
+  return {
+    id: r.id,
+    section: r.section,
+    exam: r.exam,
+    number: r.number,
+    block: r.block,
+    instruction: r.instruction,
+    stem: { text: hideTranscript ? null : r.stem_text, image_key: r.stem_image_key },
+    options: r.options,
+    vocab: hideTranscript ? [] : (r.vocab ?? []),
+    vocab_ready: r.vocab_checked_at !== null,
+    audio: clip,
+  };
+};
 
 const toCardFields = (r: typeof topik_cards.$inferSelect): CardFields => ({
   due: r.due,
@@ -461,7 +472,32 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
 
       const sessionIds = buildTopikSession(candidates, resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url));
       const byId = new Map(questions.map((q) => [q.id, q]));
-      const result = sessionIds.map((id) => toPracticeQuestion(byId.get(id)!));
+
+      // One query for every clip this session needs; a question with no clip never got here (the
+      // session query requires one for listening).
+      const clipByQuestion = new Map<string, TopikClip>();
+      const segmentIds = [...new Set(sessionIds.map((id) => byId.get(id)!.segment_id).filter((x) => x !== null))];
+      if (segmentIds.length > 0) {
+        const clips = await db
+          .select({ segment: topik_segments, audio: topik_audio })
+          .from(topik_segments)
+          .innerJoin(topik_audio, eq(topik_audio.id, topik_segments.audio_id))
+          .where(inArray(topik_segments.id, segmentIds));
+        const bySegment = new Map(clips.map((c2) => [c2.segment.id, c2]));
+        for (const id of sessionIds) {
+          const row = byId.get(id)!;
+          const found = row.segment_id ? bySegment.get(row.segment_id) : undefined;
+          if (found) {
+            clipByQuestion.set(id, {
+              audio_key: found.audio.audio_key,
+              start_ms: found.segment.start_ms,
+              speech_end_ms: found.segment.speech_end_ms,
+              end_ms: found.segment.end_ms,
+            });
+          }
+        }
+      }
+      const result = sessionIds.map((id) => toPracticeQuestion(byId.get(id)!, clipByQuestion.get(id) ?? null));
 
       // M6.4-ish: this is the actual generation trigger — only the handful of questions a real practice
       // session picks ever cost an AI call, never a bulk import/approve of ~600 questions. A
@@ -484,8 +520,19 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const row = await db.select().from(topik_questions).where(eq(topik_questions.id, id)).get();
       if (!row) return c.json(err("not_found"), 404);
       const key_terms = await resolveKeyTermViews(db, profile_id, row.vocab ?? [], row.key_terms ?? []);
+      // M7.1: a listening question's vocabulary comes from its transcript, so it stays hidden until
+      // this profile has actually answered the question — the same reason the transcript itself is
+      // not in the session response. One cheap lookup, and only while something is still pending.
+      const attempted =
+        row.section !== "listening" ||
+        (await db
+          .select({ id: topik_attempts.id })
+          .from(topik_attempts)
+          .where(and(eq(topik_attempts.profile_id, profile_id), eq(topik_attempts.question_id, id)))
+          .limit(1)
+          .get()) !== undefined;
       return c.json({
-        vocab: row.vocab ?? [],
+        vocab: attempted ? (row.vocab ?? []) : [],
         vocab_ready: row.vocab_checked_at !== null,
         explanation_vi: row.explanation_vi,
         key_terms,
@@ -568,6 +615,10 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         explanation_vi: question.explanation_vi,
         key_terms,
         explain_ready: question.explain_checked_at !== null,
+        // M7.1: a listening question's transcript (and the words tapped in it) were withheld from
+        // the session response so the exercise stayed a listening one. The answer is in now.
+        transcript: question.section === "listening" ? question.stem_text : null,
+        vocab: question.vocab ?? [],
       });
     });
 };

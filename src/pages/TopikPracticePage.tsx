@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useBlocker, useSearchParams } from "react-router";
+import type { TopikSection } from "@shared/enums";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +29,9 @@ export function TopikPracticePage() {
   const [params] = useSearchParams();
   const from = Number(params.get("from"));
   const to = Number(params.get("to"));
-  const session = useTopikSession(profile?.id ?? "", from, to);
+  // Reading unless the link says otherwise, so an old bookmark keeps working.
+  const section: TopikSection = params.get("section") === "listening" ? "listening" : "reading";
+  const session = useTopikSession(profile?.id ?? "", section, from, to);
 
   return (
     <MarkedWordsProvider>

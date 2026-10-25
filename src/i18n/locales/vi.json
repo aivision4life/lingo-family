@@ -572,7 +572,12 @@
         "title": "Thoát buổi luyện tập?",
         "description": "Bạn có {{count}} từ đã đánh dấu nhưng chưa thêm vào thư viện. Thoát bây giờ sẽ mất danh sách này.",
         "leave": "Thoát, bỏ danh sách"
-      }
+      },
+      "playAudio": "Nghe đoạn này",
+      "stopAudio": "Dừng",
+      "replay": "Nghe lại",
+      "showTranscript": "Xem lời thoại",
+      "transcript": "Lời thoại"
     },
     "manage": {
       "title": "Quản lý câu hỏi TOPIK",
@@ -667,6 +672,10 @@
         "overlapsNext": "Đoạn này chồng lên đoạn sau.",
         "gapToNext": "Có khoảng trống giữa đoạn này và đoạn sau."
       }
+    },
+    "section": {
+      "reading": "Đọc",
+      "listening": "Nghe"
     }
   }
 }

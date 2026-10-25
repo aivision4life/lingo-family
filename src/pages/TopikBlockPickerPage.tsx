@@ -1,6 +1,9 @@
 import { Check } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { TOPIK_SECTIONS, type TopikSection } from "@shared/enums";
 import type { TopikBlock } from "@shared/topik";
+import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
@@ -12,7 +15,8 @@ import { cn } from "@/lib/utils";
 export function TopikBlockPickerPage() {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
-  const blocks = useTopikBlocks(canManageProfiles(profile) ? (profile?.id ?? "") : "");
+  const [section, setSection] = useState<TopikSection>("reading");
+  const blocks = useTopikBlocks(canManageProfiles(profile) ? (profile?.id ?? "") : "", section);
   if (!profile) return null;
   // Not just hidden from the nav: TOPIK II is an advanced-learner exam and a session has the
   // server generate its vocabulary/explanations, which kid profiles never trigger (SPEC §10).
@@ -31,6 +35,13 @@ export function TopikBlockPickerPage() {
           {t("topik.manage.title")}
         </LinkButton>
       )}
+      <div className="flex flex-wrap gap-2">
+        {TOPIK_SECTIONS.map((s) => (
+          <Button key={s} size="sm" variant={section === s ? "default" : "outline"} onClick={() => setSection(s)}>
+            {t(`topik.section.${s}`)}
+          </Button>
+        ))}
+      </div>
       {blocks.isPending ? (
         <p className="text-muted-foreground">{t("common.loading")}</p>
       ) : blocks.isError ? (
@@ -38,14 +49,14 @@ export function TopikBlockPickerPage() {
       ) : blocks.data.length === 0 ? (
         <p className="text-muted-foreground">{t("topik.noBlocks")}</p>
       ) : (
-        <BlockList blocks={blocks.data} />
+        <BlockList blocks={blocks.data} section={section} />
       )}
     </PageShell>
   );
 }
 
 /** Every block, then one total row set apart by a rule above it (M6.9). */
-function BlockList({ blocks }: { blocks: TopikBlock[] }) {
+function BlockList({ blocks, section }: { blocks: TopikBlock[]; section: TopikSection }) {
   const { t } = useTranslation();
   const totals = blockTotals(blocks);
 
@@ -54,7 +65,7 @@ function BlockList({ blocks }: { blocks: TopikBlock[] }) {
       {blocks.map((b) => (
         <LinkButton
           key={b.block}
-          to={`/topik/practice?from=${b.from}&to=${b.to}`}
+          to={`/topik/practice?section=${section}&from=${b.from}&to=${b.to}`}
           variant="secondary"
           size="lg"
           className="h-auto flex-col items-stretch gap-1.5 py-3"

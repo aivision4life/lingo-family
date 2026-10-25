@@ -572,7 +572,12 @@
         "title": "연습을 종료할까요?",
         "description": "표시했지만 아직 추가하지 않은 단어가 {{count}}개 있습니다. 지금 나가면 목록이 사라집니다.",
         "leave": "나가고 목록 버리기"
-      }
+      },
+      "playAudio": "듣기",
+      "stopAudio": "정지",
+      "replay": "다시 듣기",
+      "showTranscript": "대본 보기",
+      "transcript": "대본"
     },
     "manage": {
       "title": "TOPIK 문제 관리",
@@ -667,6 +672,10 @@
         "overlapsNext": "다음 구간과 겹칩니다.",
         "gapToNext": "다음 구간과 사이에 빈 곳이 있습니다."
       }
+    },
+    "section": {
+      "reading": "읽기",
+      "listening": "듣기"
     }
   }
 }

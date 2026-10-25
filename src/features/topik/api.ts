@@ -18,6 +18,7 @@ import {
   type TopikSegmentUpdate,
   type TopikVerifyBulkRequest,
 } from "@shared/topik";
+import type { TopikSection } from "@shared/enums";
 import { api, apiUpload } from "@/lib/api";
 
 /** How often the practice/review screens re-check `GET .../content` while something is still
@@ -31,17 +32,17 @@ const TOPIK_MANAGE_PAGE_SIZE = 30;
 export type TopikQuestionFilter = { verified?: boolean; exam?: string; block?: string; q?: string };
 
 /** `profileId` decides the per-block "not studied yet" count, so it is part of the cache key. */
-export const useTopikBlocks = (profileId: string) =>
+export const useTopikBlocks = (profileId: string, section: TopikSection) =>
   useQuery({
-    queryKey: ["topik", "blocks", profileId],
-    queryFn: () => api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`, topikBlockListSchema),
+    queryKey: ["topik", "blocks", profileId, section],
+    queryFn: () => api("GET", `/topik/blocks?section=${section}&profile_id=${profileId}`, topikBlockListSchema),
     enabled: profileId !== "",
   });
 
-export const useTopikSession = (profileId: string, from: number, to: number) =>
+export const useTopikSession = (profileId: string, section: TopikSection, from: number, to: number) =>
   useQuery({
-    queryKey: ["topik", "session", profileId, from, to],
-    queryFn: () => api("GET", `/topik/session?profile_id=${profileId}&section=reading&from=${from}&to=${to}`, topikSessionResponseSchema),
+    queryKey: ["topik", "session", profileId, section, from, to],
+    queryFn: () => api("GET", `/topik/session?profile_id=${profileId}&section=${section}&from=${from}&to=${to}`, topikSessionResponseSchema),
     enabled: from > 0 && to > 0,
   });
 

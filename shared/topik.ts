@@ -174,11 +174,36 @@ export type TopikQuestionPage = z.infer<typeof topikQuestionPageSchema>;
 export const topikFacetsSchema = z.object({ exams: z.array(z.string()), blocks: z.array(z.string()) });
 export type TopikFacets = z.infer<typeof topikFacetsSchema>;
 
-/** Question as sent for practice: never carries the answer. `vocab` is safe to include (no spoiler).
+/** The clip a listening question is asked about, as practice needs it (M7.1). */
+export const topikClipSchema = z.object({
+  audio_key: z.string(),
+  start_ms: z.number().int().nonnegative(),
+  speech_end_ms: z.number().int().nonnegative(),
+  end_ms: z.number().int().nonnegative(),
+});
+export type TopikClip = z.infer<typeof topikClipSchema>;
+
+/**
+ * Question as sent for practice: never carries the answer.
+ *
+ * For a **listening** question the server also strips `stem.text` and `vocab` (M7.1). The stem of a
+ * listening question is its transcript, typed in the same Word table as the question, and the
+ * vocabulary is generated from that transcript — sending either before the learner answers would
+ * turn a listening exercise into a reading one. Both arrive with the attempt result instead.
+ * Reading questions are unaffected.
+ *
  * `vocab_ready` false means generation was just kicked off (GET /topik/session, M6.4-ish) and the
  * client should poll `GET /topik/questions/:id/content` for it instead of treating `vocab: []` as
- * "nothing to tap". */
-export const topikPracticeQuestionSchema = z.object({ ...commonFields, id: z.string(), vocab: topikVocabListSchema, vocab_ready: z.boolean() });
+ * "nothing to tap".
+ */
+export const topikPracticeQuestionSchema = z.object({
+  ...commonFields,
+  id: z.string(),
+  vocab: topikVocabListSchema,
+  vocab_ready: z.boolean(),
+  /** Listening only; null for reading and for a listening question with no clip yet. */
+  audio: topikClipSchema.nullable(),
+});
 export type TopikPracticeQuestion = z.infer<typeof topikPracticeQuestionSchema>;
 
 /** `GET /topik/questions/:id/content` — polled by the practice screen while vocab and/or the
@@ -310,6 +335,11 @@ export const topikAttemptResultSchema = z.object({
   /** false while the explanation is still being generated in the background (M6.4-ish, triggered at
    * session start) — the client shows "Đang tạo giải thích..." and polls `.../content` for it. */
   explain_ready: z.boolean(),
+  /** M7.1: a listening question's transcript, withheld until now for the same reason as the answer
+   * itself. null for reading (whose stem was readable all along) and when none was typed. */
+  transcript: z.string().nullable(),
+  /** The transcript's tappable words, withheld from the session response for the same reason. */
+  vocab: topikVocabListSchema,
 });
 export type TopikAttemptResult = z.infer<typeof topikAttemptResultSchema>;
 

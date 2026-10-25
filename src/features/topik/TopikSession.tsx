@@ -7,7 +7,9 @@ import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
 import { useSubmitTopikAttempt, useTopikQuestionContent, useTopikQuestionStats } from "./api";
 import { markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplanation, type SessionStates } from "./sessionState";
+import { TopikClipPlayer } from "./TopikClipPlayer";
 import { TopikExplanation } from "./TopikExplanation";
+import { TopikTranscript } from "./TopikTranscript";
 import { TopikSessionResults } from "./TopikSessionResults";
 import { TopikWordTap } from "./TopikWordPopover";
 import { segmentTextWithUnderline } from "./vocabSegments";
@@ -127,16 +129,20 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
           <TappableText text={question.instruction} vocab={question.vocab} />
         </p>
       )}
-      <div className="flex flex-col gap-2 rounded-lg border p-4">
-        {question.stem.image_key && (
-          <img src={imageUrl(question.stem.image_key)} alt="" className="w-full rounded-md object-contain" />
-        )}
-        {question.stem.text && (
-          <p className="text-lg">
-            <TappableText text={question.stem.text} vocab={question.vocab} />
-          </p>
-        )}
-      </div>
+      {/* A listening question has no stem to read: its transcript is withheld by the server until
+          the answer is in (M7.1), and what takes its place is the clip. */}
+      {question.audio ? (
+        <TopikClipPlayer clip={question.audio} questionId={question.id} />
+      ) : (
+        <div className="flex flex-col gap-2 rounded-lg border p-4">
+          {question.stem.image_key && <img src={imageUrl(question.stem.image_key)} alt="" className="w-full rounded-md object-contain" />}
+          {question.stem.text && (
+            <p className="text-lg">
+              <TappableText text={question.stem.text} vocab={question.vocab} />
+            </p>
+          )}
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => {
           const opt = question.options[n - 1]!;
@@ -188,6 +194,8 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
         </Button>
         <Button onClick={() => goTo(index + 1)}>{index + 1 < questions.length ? t("topik.practice.next") : t("topik.practice.finish")}</Button>
       </div>
+      {/* Only now may the transcript be read — this is where a listening question is learnt from. */}
+      {effectiveResult?.transcript && <TopikTranscript text={effectiveResult.transcript} vocab={effectiveResult.vocab} />}
       {effectiveResult && (
         <TopikExplanation
           explanation_vi={effectiveResult.explanation_vi}

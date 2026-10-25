@@ -682,3 +682,76 @@ describe("listening audio", () => {
     expect((await t.api("PATCH", "/topik/segments/nope", { profile_id: adult, start_ms: 0 })).status).toBe(404);
   });
 });
+
+// M7.1: the stem of a listening question is its transcript, typed in the same Word table. Sending
+// it (or the vocabulary built from it) before the learner answers would turn a listening exercise
+// into a reading one, so the server withholds both — hiding them in the UI would not be enough.
+describe("listening transcript", () => {
+  const setup = async (stemText: string | null = "남자: 어디에 가요?") => {
+    const q = await createQuestion({ section: "listening", exam: "Listen-60회", number: 1, block: "1~3", stem: { text: stemText, image_key: null } });
+    const audioId = crypto.randomUUID();
+    const segmentId = crypto.randomUUID();
+    const now = Date.now();
+    await t.env.DB.prepare(
+      `INSERT INTO topik_audio (id, section, exam, audio_key, duration_ms, verified, created_at, updated_at)
+       VALUES (?, 'listening', 'Listen-60회', 'topik/audio/${"b".repeat(40)}.mp3', 600000, 1, ?, ?)`,
+    ).bind(audioId, now, now).run();
+    await t.env.DB.prepare(
+      "INSERT INTO topik_segments (id, audio_id, idx, start_ms, speech_end_ms, end_ms, created_at) VALUES (?, ?, 1, 1000, 20000, 26000, ?)",
+    ).bind(segmentId, audioId, now).run();
+    await t.env.DB.prepare("UPDATE topik_questions SET segment_id = ?, vocab = ?, vocab_checked_at = ? WHERE id = ?")
+      .bind(segmentId, JSON.stringify([{ surface: "어디", lemma: "어디", pos: "pronoun", gloss_vi: "ở đâu" }]), now, q.id)
+      .run();
+    return q;
+  };
+  const session = async () =>
+    ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3`)).body as {
+      questions: { stem: { text: string | null }; vocab: unknown[]; audio: Record<string, unknown> | null }[];
+    }).questions;
+
+  it("never sends the transcript or its vocabulary with the question", async () => {
+    await setup();
+    const [question] = await session();
+    expect(question!.stem.text).toBeNull();
+    expect(question!.vocab).toEqual([]);
+  });
+
+  it("sends the clip to play instead", async () => {
+    await setup();
+    const [question] = await session();
+    expect(question!.audio).toEqual({ audio_key: `topik/audio/${"b".repeat(40)}.mp3`, start_ms: 1000, speech_end_ms: 20000, end_ms: 26000 });
+  });
+
+  it("returns the transcript and its vocabulary with the attempt result", async () => {
+    const q = await setup();
+    const res = await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 1000 });
+    expect(res.body).toMatchObject({ transcript: "남자: 어디에 가요?", vocab: [{ lemma: "어디" }] });
+  });
+
+  it("keeps the polled content free of the vocabulary until the question has been answered", async () => {
+    const q = await setup();
+    const content = async (profileId: string) =>
+      (await t.api("GET", `/topik/questions/${q.id}/content?profile_id=${profileId}`)).body as { vocab: unknown[]; vocab_ready: boolean };
+
+    expect(await content(adult)).toMatchObject({ vocab: [], vocab_ready: true });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 1000 });
+    expect((await content(adult)).vocab).toHaveLength(1);
+    // Another profile has not answered it yet, so it still gets nothing.
+    expect((await content(kid)).vocab).toEqual([]);
+  });
+
+  // Reading stems were always meant to be read; the new rule must not touch them.
+  it("still sends a reading question's stem and vocabulary up front", async () => {
+    const q = await createQuestion({ number: 1, stem: { text: "읽기 지문", image_key: null } });
+    await t.env.DB.prepare("UPDATE topik_questions SET vocab = ?, vocab_checked_at = ? WHERE id = ?")
+      .bind(JSON.stringify([{ surface: "지문", lemma: "지문", pos: "noun", gloss_vi: "đoạn văn" }]), Date.now(), q.id)
+      .run();
+    const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=3`)).body as {
+      questions: { stem: { text: string | null }; vocab: unknown[]; audio: unknown }[];
+    }).questions;
+    expect(questions[0]).toMatchObject({ stem: { text: "읽기 지문" }, audio: null });
+    expect(questions[0]!.vocab).toHaveLength(1);
+    const attempt = await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 1 });
+    expect((attempt.body as { transcript: string | null }).transcript).toBeNull();
+  });
+});
