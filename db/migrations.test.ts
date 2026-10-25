@@ -1,6 +1,6 @@
 // Runs the real migration files in order against an in-memory local D1 and checks that
 // 0001_remove_zh deletes Chinese data (FK-safe), keeps everything else and renames Hanja.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { getPlatformProxy, type PlatformProxy } from "wrangler";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -9,9 +9,19 @@ const dir = path.resolve(import.meta.dirname, "migrations");
 let proxy: PlatformProxy<Env>;
 let DB: D1Database;
 
+const applied = new Set<string>();
+
 async function apply(file: string) {
   for (const stmt of readFileSync(path.join(dir, file), "utf8").split("--> statement-breakpoint")) {
     if (stmt.trim()) await DB.prepare(stmt).run();
+  }
+  applied.add(file);
+}
+
+/** Brings the schema up to date: applies, in order, every migration no earlier block applied. */
+async function applyRemaining() {
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
+    if (!applied.has(file)) await apply(file);
   }
 }
 
@@ -335,5 +345,57 @@ describe("migration 0007_library_scope_indexes", () => {
       }>()
     ).results.map((r) => r.name);
     expect(names.sort()).toEqual(["cards_profile_word_idx", "words_created_by_idx"]);
+  });
+});
+
+describe("migration 0014_topik_listening_audio", () => {
+  beforeAll(async () => {
+    await applyRemaining();
+    const now = Date.now();
+    await DB.prepare(
+      `INSERT INTO topik_questions (id, section, exam, number, block, options, correct_option, verified, created_at, updated_at)
+       VALUES ('q-l1', 'listening', 'Test-60회', 1, '1~3', '[]', 1, 1, ?, ?)`,
+    ).bind(now, now).run();
+    await DB.prepare(
+      "INSERT INTO topik_audio (id, section, exam, audio_key, duration_ms, verified, created_at, updated_at) VALUES ('a-1', 'listening', 'Test-60회', 'topik/audio/x.mp3', 600000, 0, ?, ?)",
+    ).bind(now, now).run();
+    await DB.prepare(
+      "INSERT INTO topik_segments (id, audio_id, idx, start_ms, speech_end_ms, end_ms, created_at) VALUES ('s-1', 'a-1', 1, 1000, 20000, 26000, ?)",
+    ).bind(now).run();
+    await DB.prepare("UPDATE topik_questions SET segment_id = 's-1' WHERE id = 'q-l1'").run();
+  });
+
+  it("stores one audio per exam and refuses a duplicate", async () => {
+    const now = Date.now();
+    await expect(
+      DB.prepare(
+        "INSERT INTO topik_audio (id, section, exam, audio_key, duration_ms, verified, created_at, updated_at) VALUES ('a-dup', 'listening', 'Test-60회', 'topik/audio/y.mp3', 1, 0, ?, ?)",
+      ).bind(now, now).run(),
+    ).rejects.toThrow(/UNIQUE/);
+  });
+
+  it("lets several questions share one segment", async () => {
+    const now = Date.now();
+    await DB.prepare(
+      `INSERT INTO topik_questions (id, section, exam, number, block, options, correct_option, verified, segment_id, created_at, updated_at)
+       VALUES ('q-l2', 'listening', 'Test-60회', 2, '1~3', '[]', 2, 1, 's-1', ?, ?)`,
+    ).bind(now, now).run();
+    expect(await count("SELECT count(*) AS n FROM topik_questions WHERE segment_id = 's-1'")).toBe(2);
+  });
+
+  // Re-cutting an exam must never cost review history: the questions stay, only the link drops.
+  it("deleting a segment keeps its questions and clears their link", async () => {
+    await DB.prepare("DELETE FROM topik_segments WHERE id = 's-1'").run();
+    expect(await count("SELECT count(*) AS n FROM topik_questions WHERE id IN ('q-l1', 'q-l2')")).toBe(2);
+    expect(await count("SELECT count(*) AS n FROM topik_questions WHERE segment_id IS NOT NULL")).toBe(0);
+  });
+
+  it("deleting the audio takes its segments with it", async () => {
+    const now = Date.now();
+    await DB.prepare(
+      "INSERT INTO topik_segments (id, audio_id, idx, start_ms, speech_end_ms, end_ms, created_at) VALUES ('s-2', 'a-1', 2, 26000, 40000, 44000, ?)",
+    ).bind(now).run();
+    await DB.prepare("DELETE FROM topik_audio WHERE id = 'a-1'").run();
+    expect(await count("SELECT count(*) AS n FROM topik_segments")).toBe(0);
   });
 });

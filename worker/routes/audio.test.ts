@@ -141,4 +141,35 @@ describe("GET /api/media/audio/...", () => {
     expect((await t.raw(`/api/media/audio/ko/ko-KR-SunHiNeural/${"0".repeat(40)}.mp3`)).status).toBe(404);
     expect((await t.raw("/api/media/audio/../secret")).status).toBe(404);
   });
+
+  // M7.1: a TOPIK listening paper is one ~30 MB mp3 and practice plays a clip from the middle, so
+  // the bytes asked for must be the only bytes served. <audio> on iOS always asks this way.
+  it("serves a byte range as 206 without sending the rest of the file", async () => {
+    const d = await detail((await createWord({ examples: [] })).id);
+    const whole = "mp3:ko-KR-SunHiNeural:학생";
+    const res = await t.raw(`/api/media/${d.audio_key}`, { Range: "bytes=4-8" });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("accept-ranges")).toBe("bytes");
+    expect(res.headers.get("content-range")).toBe(`bytes 4-8/${new TextEncoder().encode(whole).length}`);
+    expect(res.headers.get("content-length")).toBe("5");
+    expect(await res.text()).toBe(whole.slice(4, 9));
+  });
+
+  it("advertises range support on a normal request and refuses a range past the end", async () => {
+    const d = await detail((await createWord({ examples: [] })).id);
+    expect((await t.raw(`/api/media/${d.audio_key}`)).headers.get("accept-ranges")).toBe("bytes");
+
+    const res = await t.raw(`/api/media/${d.audio_key}`, { Range: "bytes=99999-" });
+    expect(res.status).toBe(416);
+    expect(res.headers.get("content-range")).toMatch(/^bytes \*\/\d+$/);
+  });
+
+  // A range we cannot answer must never break playback: serve the whole file instead.
+  it("ignores a range header it does not understand", async () => {
+    const d = await detail((await createWord({ examples: [] })).id);
+    const res = await t.raw(`/api/media/${d.audio_key}`, { Range: "bytes=0-9, 20-29" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("mp3:ko-KR-SunHiNeural:학생");
+  });
 });

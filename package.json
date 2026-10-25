@@ -23,6 +23,7 @@
     "assign-creator": "node benchmarks/run.mjs scripts/assignCreator/run.ts",
     "scan-llm-content": "node benchmarks/run.mjs scripts/scanLlmContent/run.ts",
     "topik-import": "node benchmarks/run.mjs scripts/topikImport/run.ts",
+    "topik-audio": "node benchmarks/run.mjs scripts/topikAudio/run.ts",
     "topik-words": "node benchmarks/run.mjs scripts/topikWords/run.ts",
     "topik-explain": "node benchmarks/run.mjs scripts/topikExplain/run.ts"
   },

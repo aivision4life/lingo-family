@@ -353,4 +353,37 @@ describe("parseTopikDocument", () => {
     });
   });
 
+  // M7.1 listening: most questions have their own audio clip, so the file marks only the minority
+  // that share the previous one's. The marker is metadata — it must never reach the stem.
+  describe("the CHUNG ĐOẠN marker", () => {
+    const item = (extra: string) =>
+      parseTopikDocument(
+        doc(
+          heading("Heading1", "문항 21~22") +
+            heading("Heading2", "연습1") +
+            heading("Heading3", "1-22") +
+            answer(2) +
+            extra +
+            table("대화를 듣고", ["가", "나", "다", "라"], 2),
+        ),
+      ).exams[0]!.items[0]!;
+
+    it("is off unless the file says so", () => {
+      expect(item("").same_segment).toBe(false);
+    });
+
+    it("is read with or without Vietnamese diacritics, in any case", () => {
+      for (const marker of ["CHUNG ĐOẠN", "chung đoạn", "CHUNG DOAN", "Chung Doan"]) {
+        expect(item(plain(marker)).same_segment).toBe(true);
+      }
+    });
+
+    it("never becomes part of the stem or an option", () => {
+      const parsed = item(plain("CHUNG ĐOẠN"));
+      expect(parsed.stem_text).toBe("대화를 듣고");
+      expect(parsed.options.map((o) => o.text)).toEqual(["가", "나", "다", "라"]);
+      expect(parsed.errors).toEqual([]);
+    });
+  });
+
 });

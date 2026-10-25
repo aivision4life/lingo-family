@@ -24,6 +24,7 @@ const question = (over: Partial<DraftQuestion> = {}): DraftQuestion => ({
   number: 1,
   block: "1",
   instruction: null,
+  same_segment: false,
   stem: { text: "stem", image_rid: null },
   options: [
     { text: "a", image_rid: null },

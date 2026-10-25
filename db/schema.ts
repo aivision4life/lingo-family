@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  type AnySQLiteColumn,
   primaryKey,
   real,
   sqliteTable,
@@ -426,6 +427,13 @@ export const topik_questions = sqliteTable(
     explain_checked_at: timestamp("explain_checked_at"),
     /** false until an adult reviews a freshly imported question and saves it. */
     verified: integer("verified", { mode: "boolean" }).notNull().default(false),
+    /**
+     * Listening only (M7.1): which clip of the exam's single mp3 this question is asked about.
+     * Several questions may point at the same segment (a dialogue followed by two questions), so
+     * the timestamps live on the segment and are edited once. `set null` keeps the question — and
+     * its review history — when a segment is deleted or re-cut.
+     */
+    segment_id: text("segment_id").references((): AnySQLiteColumn => topik_segments.id, { onDelete: "set null" }),
     created_by_profile: text("created_by_profile").references(() => profiles.id, { onDelete: "set null" }),
     created_at: createdAt(),
     updated_at: timestamp("updated_at")
@@ -436,6 +444,58 @@ export const topik_questions = sqliteTable(
     uniqueIndex("topik_questions_section_exam_number_uq").on(t.section, t.exam, t.number),
     index("topik_questions_section_number_idx").on(t.section, t.number),
   ],
+);
+
+/**
+ * One audio file per listening exam (M7.1). The mp3 is never cut: segments are timestamps into
+ * this one object, so re-cutting is a DB edit and the file is uploaded exactly once.
+ */
+export const topik_audio = sqliteTable(
+  "topik_audio",
+  {
+    id: id(),
+    section: text("section", { enum: TOPIK_SECTIONS }).notNull(),
+    /** The exam label its questions carry, e.g. "8DeOfficial-60회". */
+    exam: text("exam").notNull(),
+    /** R2 key, `topik/audio/<sha1>.mp3` (content-addressed, see topikAudioStore.ts). */
+    audio_key: text("audio_key").notNull(),
+    duration_ms: integer("duration_ms").notNull(),
+    /**
+     * false until an adult has checked the segment boundaries. Questions of an unverified audio
+     * never reach practice: a one-segment offset silently shifts every later question onto the
+     * wrong clip, and unlike a missing file it *sounds* perfectly fine, so it would be found only
+     * by noticing that the answers stopped making sense.
+     */
+    verified: integer("verified", { mode: "boolean" }).notNull().default(false),
+    created_at: createdAt(),
+    updated_at: timestamp("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [uniqueIndex("topik_audio_section_exam_uq").on(t.section, t.exam)],
+);
+
+/** One clip of an exam's audio: what a learner hears before answering (M7.1). */
+export const topik_segments = sqliteTable(
+  "topik_segments",
+  {
+    id: id(),
+    audio_id: text("audio_id")
+      .notNull()
+      .references(() => topik_audio.id, { onDelete: "cascade" }),
+    /** 1-based position in the exam, used for ordering and for the review screen's labels. */
+    idx: integer("idx").notNull(),
+    /** Where the speech starts (the preceding silence belongs to the previous segment). */
+    start_ms: integer("start_ms").notNull(),
+    /** Where the speech stops. Practice plays to here plus a short pause, so a 20-second gap in
+     * the real paper is not 20 seconds of dead air. */
+    speech_end_ms: integer("speech_end_ms").notNull(),
+    /** Where the next segment's speech starts — the real exam boundary, kept for the timed mock
+     * test, which must play the paper's own pacing. */
+    end_ms: integer("end_ms").notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [uniqueIndex("topik_segments_audio_idx_uq").on(t.audio_id, t.idx)],
 );
 
 /** One ts-fsrs card per (profile, question); same fields as `cards`, scheduled independently. */

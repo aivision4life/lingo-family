@@ -2,28 +2,32 @@
 // source file's name for the block/number (never the instruction text) and the exam heading for
 // grouping (M6.1). Pure: image references stay as docx relationship ids (`rId9`, …) — resolving
 // them to R2 keys needs the zip's media bytes, done by the caller (scripts/topikImport).
+import type { TopikSection } from "../../shared/enums";
 import { parseTopikDocument } from "./topikParse";
 
-export type TopikFileName = { start: number; end: number; source: string };
+export type TopikFileName = { section: TopikSection; start: number; end: number; source: string };
 
-const FILE_NAME = /^TOPIK_Reading_Cau(\d+)(?:_(\d+))?_(.+)_VERSION\d+$/i;
+const FILE_NAME = /^TOPIK_(Reading|Listening)_Cau(\d+)(?:_(\d+))?_(.+)_VERSION\d+$/i;
 
-/** "TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx" → { start: 1, end: 2, source: "Yonsei" }. */
+/** "TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx" → { section: "reading", start: 1, end: 2, source: "Yonsei" }. */
 export function parseTopikFileName(fileName: string): TopikFileName | null {
   const base = fileName.replace(/\.docx$/i, "");
   const m = FILE_NAME.exec(base);
   if (!m) return null;
-  const start = Number(m[1]);
-  return { start, end: m[2] ? Number(m[2]) : start, source: m[3]! };
+  const start = Number(m[2]);
+  const section = m[1]!.toLowerCase() as TopikSection;
+  return { section, start, end: m[3] ? Number(m[3]) : start, source: m[4]! };
 }
 
 export type DraftOption = { text: string; image_rid: string | null };
 export type DraftQuestion = {
-  section: "reading";
+  section: TopikSection;
   exam: string;
   number: number;
   block: string;
   instruction: string | null;
+  /** Listening (M7.1): shares the previous question's audio clip instead of opening a new one. */
+  same_segment: boolean;
   stem: { text: string | null; image_rid: string | null };
   options: DraftOption[];
   correct_option: number;
@@ -45,6 +49,7 @@ export type DraftQuestion = {
  * "[1~2]..." instruction). A no-op for a properly single-pair file: its own number/block already
  * agree with these constants.
  */
+// Reading only: in the listening paper those same numbers are a completely different task.
 const FIXED_NUMBER_BLOCK: Record<number, string> = { 1: "1~2", 2: "1~2", 3: "3~4", 4: "3~4" };
 const FIXED_NUMBER_INSTRUCTION: Record<number, string> = {
   3: "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.",
@@ -68,7 +73,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
   const warnings: string[] = [];
   const fn = parseTopikFileName(fileName);
   if (!fn) {
-    errors.push(`file name does not match "TOPIK_Reading_Cau<N>[_<M>]_<source>_VERSION<v>.docx"`);
+    errors.push(`file name does not match "TOPIK_(Reading|Listening)_Cau<N>[_<M>]_<source>_VERSION<v>.docx"`);
     return { fileName, block: "", questions: [], errors, warnings };
   }
 
@@ -96,6 +101,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       // "Yonsei-연습1" from another correctly merge into the same label too (both are "practice
       // set 1" from that source).
       const examLabel = item.round ? `${fn.source}-${item.round}` : `${fn.source}-연습${exam.groupIndex}`;
+      const readingFix = fn.section === "reading";
       let warning: string | null = null;
       if (item.labelNumber !== null && item.labelNumber !== number) {
         warning = `label says question ${item.labelNumber}, computed ${number} (computed is used)`;
@@ -106,11 +112,12 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
         continue;
       }
       questions.push({
-        section: "reading",
+        section: fn.section,
         exam: examLabel,
         number,
-        block: FIXED_NUMBER_BLOCK[number] ?? block,
-        instruction: FIXED_NUMBER_INSTRUCTION[number] ?? item.instruction,
+        block: (readingFix ? FIXED_NUMBER_BLOCK[number] : undefined) ?? block,
+        instruction: (readingFix ? FIXED_NUMBER_INSTRUCTION[number] : undefined) ?? item.instruction,
+        same_segment: item.same_segment,
         stem: { text: item.stem_text, image_rid: item.stem_image_rid },
         options: item.options.map((o) => ({ text: o.text, image_rid: o.image_rid })),
         warning,

@@ -90,6 +90,8 @@ export type ParsedItem = {
    */
   round: string | null;
   instruction: string | null;
+  /** Listening (M7.1): the file marked this question as sharing the previous one's audio clip. */
+  same_segment: boolean;
   stem_text: string | null;
   stem_image_rid: string | null;
   options: ParsedOption[];
@@ -122,6 +124,13 @@ export type ParseDocumentResult = {
 };
 
 const ANSWER_LABEL = /^(\d+)\s*\((\d+)\)$/;
+/**
+ * Listening only (M7.1): this question is asked about the *previous* question's audio clip (a
+ * dialogue followed by two questions). Most questions have a clip of their own, so the file marks
+ * the minority — less to type and less to get wrong than numbering every question's segment.
+ * Written with or without Vietnamese diacritics, in any case.
+ */
+const SAME_SEGMENT = /^chung\s*(đoạn|doan)$/i;
 /** "유형1: 문항 1~2" / "문항 9" — the block is always the trailing number(s). */
 const HEADING1_BLOCK = /(\d+)\s*(?:~\s*(\d+))?\s*$/;
 
@@ -250,6 +259,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   // label is looked up by shape anywhere in the body, not by position.
   const paragraphs = body.filter((n) => tagOf(n) === "w:p");
   const answerPara = paragraphs.find((n) => ANSWER_LABEL.test(textOf(n).trim()));
+  const sameSegmentPara = paragraphs.find((n) => SAME_SEGMENT.test(textOf(n).trim()));
   const answerMatch = answerPara ? ANSWER_LABEL.exec(textOf(answerPara).trim()) : null;
   const errors: string[] = [];
   if (!answerMatch) {
@@ -258,8 +268,10 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     errors.push(`answer label not found or malformed (got "${firstText}")`);
   }
   const declared_correct = answerMatch ? Number(answerMatch[2]) : null;
-  /** The label and a repeated instruction line are metadata, never part of the stem or an option. */
-  const isContent = (n: OrderedNode) => n !== answerPara && !(instruction !== null && textOf(n).trim() === instruction);
+  /** The label, the "same clip" marker and a repeated instruction line are metadata, never part of
+   * the stem or an option. */
+  const isContent = (n: OrderedNode) =>
+    n !== answerPara && n !== sameSegmentPara && !(instruction !== null && textOf(n).trim() === instruction);
 
   const table = body.find((n) => tagOf(n) === "w:tbl");
   let parsed: { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] };
@@ -299,6 +311,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     labelNumber,
     round,
     instruction,
+    same_segment: sameSegmentPara !== undefined,
     stem_text: parsed.stem_text || null,
     stem_image_rid: parsed.stem_image_rid,
     options: parsed.options,

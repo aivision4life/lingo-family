@@ -3,15 +3,31 @@ import { buildImportDraft, parseTopikFileName } from "./topikImport";
 
 describe("parseTopikFileName", () => {
   it("parses a range file name", () => {
-    expect(parseTopikFileName("TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx")).toEqual({ start: 1, end: 2, source: "Yonsei" });
+    expect(parseTopikFileName("TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx")).toEqual({ section: "reading", start: 1, end: 2, source: "Yonsei" });
   });
 
   it("parses a single-number file name", () => {
-    expect(parseTopikFileName("TOPIK_Reading_Cau09_8DeOfficial_VERSION1.docx")).toEqual({ start: 9, end: 9, source: "8DeOfficial" });
+    expect(parseTopikFileName("TOPIK_Reading_Cau09_8DeOfficial_VERSION1.docx")).toEqual({
+      section: "reading",
+      start: 9,
+      end: 9,
+      source: "8DeOfficial",
+    });
+  });
+
+  // M7.1: the same convention with "Listening" in place of "Reading".
+  it("parses a listening file name", () => {
+    expect(parseTopikFileName("TOPIK_Listening_Cau01_03_8DeOfficial_VERSION1.docx")).toEqual({
+      section: "listening",
+      start: 1,
+      end: 3,
+      source: "8DeOfficial",
+    });
   });
 
   it("returns null for a name that does not match the convention", () => {
     expect(parseTopikFileName("random.docx")).toBeNull();
+    expect(parseTopikFileName("TOPIK_Writing_Cau01_Yonsei_VERSION1.docx")).toBeNull();
   });
 });
 
@@ -130,6 +146,25 @@ describe("buildImportDraft", () => {
     expect(draft.questions.map((q) => q.exam)).toEqual(["MasterTopik-연습2"]);
   });
 
+  // The 문항 1~4 reading fixes (merged block label + the fixed "밑줄 친 부분" instruction) must not
+  // follow questions 1~4 of the listening paper, where those numbers are a different task.
+  it("never applies the reading-only 1~4 block/instruction fixes to a listening file", () => {
+    const xml = doc(
+      heading("Heading1", "유형1: 문항 1~4") +
+        heading("Heading2", "연습1") +
+        plain("[1~4] 다음을 듣고 알맞은 그림을 고르십시오.") +
+        question("1-3", 2),
+    );
+    const draft = buildImportDraft("TOPIK_Listening_Cau01_04_Yonsei_VERSION1.docx", xml);
+    expect(draft.questions[0]).toMatchObject({
+      section: "listening",
+      // Reading would have forced block "1~2" on question 1 here; listening keeps the file's own.
+      number: 1,
+      block: "1~4",
+      instruction: "[1~4] 다음을 듣고 알맞은 그림을 고르십시오.",
+    });
+  });
+
   it("two different source files never collide even with identical, generic exam group text", () => {
     const xmlA = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));
     const xmlB = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));
@@ -200,7 +235,7 @@ describe("buildImportDraft", () => {
 
   it("rejects a file name that does not follow the naming convention", () => {
     const draft = buildImportDraft("random.docx", doc(""));
-    expect(draft.errors).toEqual(['file name does not match "TOPIK_Reading_Cau<N>[_<M>]_<source>_VERSION<v>.docx"']);
+    expect(draft.errors).toEqual(['file name does not match "TOPIK_(Reading|Listening)_Cau<N>[_<M>]_<source>_VERSION<v>.docx"']);
     expect(draft.questions).toEqual([]);
   });
 });

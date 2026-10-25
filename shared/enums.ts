@@ -49,6 +49,7 @@ export const imageSourceSchema = z.enum(IMAGE_SOURCES);
 export type ImageSource = z.infer<typeof imageSourceSchema>;
 
 /** TOPIK II practice (M6.1): only reading exists so far; listening/writing come later. */
-export const TOPIK_SECTIONS = ["reading"] as const;
+/** TOPIK II sections we practise. Listening (M7.1) shares the question bank and scheduling. */
+export const TOPIK_SECTIONS = ["reading", "listening"] as const;
 export const topikSectionSchema = z.enum(TOPIK_SECTIONS);
 export type TopikSection = z.infer<typeof topikSectionSchema>;
