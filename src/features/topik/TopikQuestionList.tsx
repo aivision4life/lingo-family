@@ -2,11 +2,13 @@ import { Search } from "lucide-react";
 import { useDeferredValue, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
+import { TOPIK_SECTIONS, type TopikSection } from "@shared/enums";
 import { stripUnderline, type TopikQuestion } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDeleteTopikQuestion, useGenerateTopikContent, useTopikFacets, useTopikQuestionContent, useTopikQuestionsPaged, useVerifyTopikBulk } from "./api";
 import { truncate } from "./questionPreview";
+import { formatTimeInput } from "./segmentEdit";
 
 type Filter = "unverified" | "verified" | "all";
 
@@ -17,12 +19,22 @@ type Props = { profileId: string; onAddNew: () => void; onView: (q: TopikQuestio
 export function TopikQuestionList({ profileId, onAddNew, onView, onEdit }: Props) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>("unverified");
+  // Reading and listening are reviewed separately (M7.1): different papers, different exam labels
+  // and blocks, and ~230 rows on one side would bury the other.
+  const [section, setSection] = useState<TopikSection>("reading");
   const [exam, setExam] = useState("");
   const [block, setBlock] = useState("");
   const [query, setQuery] = useState("");
   const q = useDeferredValue(query.trim());
 
   const verified = filter === "all" ? undefined : filter === "verified";
+  const changeSection = (s: TopikSection) => {
+    setSection(s);
+    // An exam/block from the other section would only ever lead to an empty list.
+    setExam("");
+    setBlock("");
+  };
+
   const changeFilter = (f: Filter) => {
     setFilter(f);
     // An exam/block only meaningful in one tab (e.g. a fully-approved exam) must not silently
@@ -31,8 +43,14 @@ export function TopikQuestionList({ profileId, onAddNew, onView, onEdit }: Props
     setBlock("");
   };
 
-  const facets = useTopikFacets(profileId, verified);
-  const questions = useTopikQuestionsPaged(profileId, { verified, exam: exam || undefined, block: block || undefined, q: q || undefined });
+  const facets = useTopikFacets(profileId, section, verified);
+  const questions = useTopikQuestionsPaged(profileId, {
+    section,
+    verified,
+    exam: exam || undefined,
+    block: block || undefined,
+    q: q || undefined,
+  });
   const del = useDeleteTopikQuestion();
   const verifyBulk = useVerifyTopikBulk();
 
@@ -42,6 +60,14 @@ export function TopikQuestionList({ profileId, onAddNew, onView, onEdit }: Props
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        {TOPIK_SECTIONS.map((s) => (
+          <Button key={s} variant={section === s ? "default" : "outline"} size="sm" onClick={() => changeSection(s)}>
+            {t(`topik.section.${s}`)}
+          </Button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {(["unverified", "verified", "all"] as const).map((f) => (
           <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => changeFilter(f)}>
@@ -180,6 +206,15 @@ function QuestionRow({
           {preview}
         </span>
         <span className="text-sm text-muted-foreground">{t("topik.manage.correctAnswer", { n: question.correct_option })}</span>
+        {/* A listening question is useless until a clip is attached, so say so on the row rather
+            than making the adult open it to find out. */}
+        {question.section === "listening" && (
+          <span className={question.audio ? "text-sm text-muted-foreground" : "text-sm text-amber-700 dark:text-amber-500"}>
+            {question.audio
+              ? t("topik.manage.clipAttached", { from: formatTimeInput(question.audio.start_ms), to: formatTimeInput(question.audio.speech_end_ms) })
+              : t("topik.manage.clipMissing")}
+          </span>
+        )}
         <AiStatus question={question} profileId={profileId} />
       </div>
       <div className="flex shrink-0 flex-wrap justify-end gap-2">

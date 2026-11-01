@@ -625,7 +625,9 @@
         "savedN": "Đã lưu câu {{n}}.",
         "duplicate": "Câu này (đề + số câu) đã có, không ghi đè.",
         "generic": "Không lưu được, hãy thử lại."
-      }
+      },
+      "clipAttached": "Đoạn nghe: {{from}} → {{to}}",
+      "clipMissing": "Chưa gắn đoạn nghe"
     },
     "view": {
       "title": "Xem câu hỏi",

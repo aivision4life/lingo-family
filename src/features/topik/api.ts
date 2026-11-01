@@ -29,7 +29,7 @@ const CONTENT_POLL_MS = 3000;
  * loads more as the adult scrolls/taps "Tải thêm" instead of fetching everything at once. */
 const TOPIK_MANAGE_PAGE_SIZE = 30;
 
-export type TopikQuestionFilter = { verified?: boolean; exam?: string; block?: string; q?: string };
+export type TopikQuestionFilter = { section?: TopikSection; verified?: boolean; exam?: string; block?: string; q?: string };
 
 /** `profileId` decides the per-block "not studied yet" count, so it is part of the cache key. */
 export const useTopikBlocks = (profileId: string, section: TopikSection) =>
@@ -85,6 +85,7 @@ export const useTopikQuestionStats = (questionId: string, profileId: string) =>
 
 export function useTopikQuestionsPaged(profileId: string, filter: TopikQuestionFilter) {
   const params = new URLSearchParams({ profile_id: profileId, limit: String(TOPIK_MANAGE_PAGE_SIZE) });
+  if (filter.section) params.set("section", filter.section);
   if (filter.verified !== undefined) params.set("verified", filter.verified ? "1" : "0");
   if (filter.exam) params.set("exam", filter.exam);
   if (filter.block) params.set("block", filter.block);
@@ -105,13 +106,13 @@ export function useTopikQuestionsPaged(profileId: string, filter: TopikQuestionF
   });
 }
 
-export const useTopikFacets = (profileId: string, verified?: boolean) =>
+export const useTopikFacets = (profileId: string, section: TopikSection, verified?: boolean) =>
   useQuery({
-    queryKey: ["topik", "facets", profileId, verified],
+    queryKey: ["topik", "facets", profileId, section, verified],
     queryFn: () =>
       api(
         "GET",
-        `/topik/questions/facets?profile_id=${profileId}${verified === undefined ? "" : `&verified=${verified ? "1" : "0"}`}`,
+        `/topik/questions/facets?profile_id=${profileId}&section=${section}${verified === undefined ? "" : `&verified=${verified ? "1" : "0"}`}`,
         topikFacetsSchema,
       ),
   });

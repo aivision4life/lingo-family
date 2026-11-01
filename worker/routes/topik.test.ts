@@ -771,3 +771,61 @@ describe("listening transcript", () => {
     expect((attempt.body as { transcript: string | null }).transcript).toBeNull();
   });
 });
+
+// M7.1: the review screen reviews one section at a time — ~230 reading rows would bury the
+// listening ones, and their exam labels and blocks have nothing to do with each other.
+describe("review list filtered by section", () => {
+  const setup = async () => {
+    await createQuestion({ number: 1, exam: "Read-연습1" });
+    await createQuestion({ section: "listening", exam: "Listen-35회", number: 1, block: "1~3" });
+    await createQuestion({ section: "listening", exam: "Listen-36회", number: 1, block: "1~3" });
+  };
+  const list = async (section?: string) =>
+    (await t.api("GET", `/topik/questions?profile_id=${adult}${section ? `&section=${section}` : ""}`)).body as {
+      questions: { section: string; exam: string }[];
+      total: number;
+    };
+
+  it("returns only the asked-for section", async () => {
+    await setup();
+    expect((await list("listening")).questions.map((q) => q.exam).sort()).toEqual(["Listen-35회", "Listen-36회"]);
+    expect((await list("reading")).questions.map((q) => q.exam)).toEqual(["Read-연습1"]);
+    expect((await list()).total).toBe(3); // no section: everything, as before
+  });
+
+  it("scopes the exam/block dropdowns to the section as well", async () => {
+    await setup();
+    const facets = async (section: string) =>
+      (await t.api("GET", `/topik/questions/facets?profile_id=${adult}&section=${section}`)).body as { exams: string[]; blocks: string[] };
+    expect((await facets("listening")).exams).toEqual(["Listen-35회", "Listen-36회"]);
+    expect((await facets("reading")).exams).toEqual(["Read-연습1"]);
+  });
+
+  // The row has to say whether a clip is attached, and the "Xem" screen plays it from here.
+  it("carries each listening question's clip so the review screen can play it", async () => {
+    const q = await createQuestion({ section: "listening", exam: "Listen-35회", number: 1, block: "1~3" });
+    const audioId = crypto.randomUUID();
+    const segmentId = crypto.randomUUID();
+    const now = Date.now();
+    await t.env.DB.prepare(
+      `INSERT INTO topik_audio (id, section, exam, audio_key, duration_ms, verified, created_at, updated_at)
+       VALUES (?, 'listening', 'Listen-35회', 'topik/audio/${"c".repeat(40)}.mp3', 600000, 0, ?, ?)`,
+    ).bind(audioId, now, now).run();
+    await t.env.DB.prepare(
+      "INSERT INTO topik_segments (id, audio_id, idx, start_ms, speech_end_ms, end_ms, created_at) VALUES (?, ?, 1, 1000, 20000, 26000, ?)",
+    ).bind(segmentId, audioId, now).run();
+
+    const before = (await t.api("GET", `/topik/questions?profile_id=${adult}&section=listening`)).body as { questions: { audio: unknown }[] };
+    expect(before.questions[0]!.audio).toBeNull();
+
+    await t.api("PATCH", `/topik/questions/${q.id}/segment`, { profile_id: adult, segment_id: segmentId });
+    const after = (await t.api("GET", `/topik/questions?profile_id=${adult}&section=listening`)).body as { questions: { audio: unknown }[] };
+    expect(after.questions[0]!.audio).toEqual({ audio_key: `topik/audio/${"c".repeat(40)}.mp3`, start_ms: 1000, speech_end_ms: 20000, end_ms: 26000 });
+  });
+
+  it("leaves a reading question's clip null", async () => {
+    await createQuestion({ number: 1 });
+    const body = (await t.api("GET", `/topik/questions?profile_id=${adult}&section=reading`)).body as { questions: { audio: unknown }[] };
+    expect(body.questions[0]!.audio).toBeNull();
+  });
+});

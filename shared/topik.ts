@@ -135,6 +135,15 @@ export const topikQuestionUpdateSchema = z.object({ ...commonFields, correct_opt
 export type TopikQuestionUpdate = z.infer<typeof topikQuestionUpdateSchema>;
 
 /** Full question (admin / review view: includes the answer). */
+/** The clip a listening question is asked about, as practice needs it (M7.1). */
+export const topikClipSchema = z.object({
+  audio_key: z.string(),
+  start_ms: z.number().int().nonnegative(),
+  speech_end_ms: z.number().int().nonnegative(),
+  end_ms: z.number().int().nonnegative(),
+});
+export type TopikClip = z.infer<typeof topikClipSchema>;
+
 export const topikQuestionSchema = topikQuestionInputSchema.extend({
   id: z.string(),
   /** false for a freshly imported question until an adult reviews and saves it (M6.1). */
@@ -152,6 +161,12 @@ export const topikQuestionSchema = topikQuestionInputSchema.extend({
    * review screen's per-question status; distinguishes "not generated yet" from "generated empty". */
   vocab_ready: z.boolean(),
   explain_ready: z.boolean(),
+  /**
+   * Listening only (M7.1): the clip this question is asked about, so the review screen can play it
+   * and show at a glance whether one is attached yet. Unlike practice, the review screen is
+   * adult-only and already shows the transcript, so nothing is withheld here.
+   */
+  audio: topikClipSchema.nullable(),
   created_by_profile: z.string().nullable(),
   created_at: z.number(),
   updated_at: z.number(),
@@ -163,6 +178,9 @@ export const topikQuestionListSchema = z.array(topikQuestionSchema);
  * question number, paged (`limit`/`offset`). */
 export const topikQuestionListQuerySchema = z.object({
   profile_id: z.string().min(1),
+  /** Reading and listening are reviewed separately (M7.1): one bank is ~230 rows, the other grows
+   * alongside it, and their exam labels and blocks have nothing to do with each other. */
+  section: topikSectionSchema.optional(),
   verified: z.enum(["0", "1"]).optional(),
   exam: z.string().trim().min(1).optional(),
   block: z.string().trim().min(1).optional(),
@@ -181,14 +199,6 @@ export type TopikQuestionPage = z.infer<typeof topikQuestionPageSchema>;
 export const topikFacetsSchema = z.object({ exams: z.array(z.string()), blocks: z.array(z.string()) });
 export type TopikFacets = z.infer<typeof topikFacetsSchema>;
 
-/** The clip a listening question is asked about, as practice needs it (M7.1). */
-export const topikClipSchema = z.object({
-  audio_key: z.string(),
-  start_ms: z.number().int().nonnegative(),
-  speech_end_ms: z.number().int().nonnegative(),
-  end_ms: z.number().int().nonnegative(),
-});
-export type TopikClip = z.infer<typeof topikClipSchema>;
 
 /**
  * Question as sent for practice: never carries the answer.

@@ -55,7 +55,29 @@ const err = (error: string) => ({ error });
 /** Escapes LIKE wildcards so user input is matched literally (same rule as `worker/routes/words.ts`). */
 const likePattern = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
-const toQuestion = (r: QuestionRow): TopikQuestion => ({
+/**
+ * Clips for a set of questions, in one query. Only the review screen and a practice session ever
+ * need them, and both already have the rows in hand.
+ */
+async function clipsBySegment(db: ReturnType<typeof getDb>, segmentIds: readonly string[]): Promise<Map<string, TopikClip>> {
+  const ids = [...new Set(segmentIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ segment: topik_segments, audio: topik_audio })
+    .from(topik_segments)
+    .innerJoin(topik_audio, eq(topik_audio.id, topik_segments.audio_id))
+    .where(inArray(topik_segments.id, ids));
+  return new Map(
+    rows.map((r) => [
+      r.segment.id,
+      { audio_key: r.audio.audio_key, start_ms: r.segment.start_ms, speech_end_ms: r.segment.speech_end_ms, end_ms: r.segment.end_ms },
+    ]),
+  );
+}
+
+/** `clip` is only filled in where the caller looked it up — a mutation response leaves it null and
+ * the client refetches the list, which does load it. */
+const toQuestion = (r: QuestionRow, clip: TopikClip | null = null): TopikQuestion => ({
   id: r.id,
   section: r.section,
   exam: r.exam,
@@ -75,6 +97,7 @@ const toQuestion = (r: QuestionRow): TopikQuestion => ({
   created_by_profile: r.created_by_profile,
   created_at: r.created_at.getTime(),
   updated_at: r.updated_at.getTime(),
+  audio: clip,
 });
 
 /** The practice view of a question: never carries `correct_option`. */
@@ -184,11 +207,12 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     // (LIKE on the raw columns — options' JSON text still contains each option's own text verbatim,
     // so this also finds a match inside an option) or, when it is all digits, an exact `number`.
     .get("/topik/questions", zv("query", topikQuestionListQuerySchema), async (c) => {
-      const { profile_id, verified, exam, block, q, limit, offset } = c.req.valid("query");
+      const { profile_id, section, verified, exam, block, q, limit, offset } = c.req.valid("query");
       const denied = await requireAdult(c, profile_id);
       if (denied) return denied;
       const db = getDb(c.env);
       const conditions: SQL[] = [];
+      if (section !== undefined) conditions.push(eq(topik_questions.section, section));
       if (verified !== undefined) conditions.push(eq(topik_questions.verified, verified === "1"));
       if (exam) conditions.push(eq(topik_questions.exam, exam));
       if (block) conditions.push(eq(topik_questions.block, block));
@@ -211,23 +235,37 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
           .offset(offset),
         db.select({ n: count() }).from(topik_questions).where(where).get(),
       ]);
-      return c.json({ questions: rows.map(toQuestion), total: totalRow?.n ?? 0 });
+      // The review screen plays a listening question's clip straight from the row.
+      const clips = await clipsBySegment(
+        db,
+        rows.flatMap((r) => (r.segment_id ? [r.segment_id] : [])),
+      );
+      return c.json({ questions: rows.map((r) => toQuestion(r, r.segment_id ? (clips.get(r.segment_id) ?? null) : null)), total: totalRow?.n ?? 0 });
     })
 
     /** Values for the exam/block filter dropdowns, scoped to the same `verified` tab so a choice
      * never leads to an empty list. */
-    .get("/topik/questions/facets", zv("query", z.object({ profile_id: z.string().min(1), verified: z.enum(["0", "1"]).optional() })), async (c) => {
-      const { profile_id, verified } = c.req.valid("query");
+    .get(
+      "/topik/questions/facets",
+      zv("query", z.object({ profile_id: z.string().min(1), section: topikSectionSchema.optional(), verified: z.enum(["0", "1"]).optional() })),
+      async (c) => {
+      const { profile_id, section, verified } = c.req.valid("query");
       const denied = await requireAdult(c, profile_id);
       if (denied) return denied;
       const db = getDb(c.env);
-      const where = verified === undefined ? undefined : eq(topik_questions.verified, verified === "1");
+      // Scoped to the section as well as the tab: a reading exam label in the listening dropdown
+      // would only ever lead to an empty list.
+      const where = and(
+        section === undefined ? undefined : eq(topik_questions.section, section),
+        verified === undefined ? undefined : eq(topik_questions.verified, verified === "1"),
+      );
       const [exams, blocks] = await Promise.all([
         db.selectDistinct({ exam: topik_questions.exam }).from(topik_questions).where(where).orderBy(asc(topik_questions.exam)),
         db.selectDistinct({ block: topik_questions.block }).from(topik_questions).where(where).orderBy(asc(topik_questions.block)),
       ]);
       return c.json({ exams: exams.map((e) => e.exam), blocks: blocks.map((b) => b.block) });
-    })
+      },
+    )
 
     .post("/topik/questions", zv("json", topikQuestionInputSchema.extend({ profile_id: z.string().min(1) })), async (c) => {
       const { profile_id, stem, options, ...rest } = c.req.valid("json");

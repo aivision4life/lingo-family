@@ -625,7 +625,9 @@
         "savedN": "Saved question {{n}}.",
         "duplicate": "This question (exam + number) already exists; not overwritten.",
         "generic": "Could not save, please try again."
-      }
+      },
+      "clipAttached": "Clip: {{from}} → {{to}}",
+      "clipMissing": "No clip attached"
     },
     "view": {
       "title": "View question",

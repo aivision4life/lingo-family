@@ -1,9 +1,12 @@
+import { Pause, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { splitUnderline, TOPIK_OPTION_COUNT, type TopikQuestion } from "@shared/topik";
+import { splitUnderline, TOPIK_OPTION_COUNT, type TopikClip, type TopikQuestion } from "@shared/topik";
 import { Button } from "@/components/ui/button";
+import { playSegment, stopAudio, useAudioPlayer } from "@/features/audio/player";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
 import { keyTermRows } from "./questionPreview";
+import { formatTimeInput, practiceEnd } from "./segmentEdit";
 
 /**
  * Screen (M6.7) — read-only view of one question from the review list, laid out the way practice
@@ -34,6 +37,10 @@ export function TopikQuestionView({ question, onEdit, onBack }: { question: Topi
           <KoreanText text={question.instruction} />
         </p>
       )}
+
+      {/* Listening: the clip is the question. Not auto-played here — this screen is for checking
+          content, and a 2-minute dialogue starting by itself on every row opened is a nuisance. */}
+      {question.audio && <ClipButton clip={question.audio} />}
 
       <div className="flex flex-col gap-2 rounded-lg border p-4">
         {question.stem.image_key && (
@@ -124,5 +131,27 @@ function KoreanText({ text }: { text: string }) {
         ),
       )}
     </span>
+  );
+}
+
+/** Plays one clip on demand, the way practice would (talking plus a short pause). */
+function ClipButton({ clip }: { clip: TopikClip }) {
+  const { t } = useTranslation();
+  const { playingKey } = useAudioPlayer();
+  const playing = playingKey !== null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => (playing ? stopAudio() : playSegment(clip.audio_key, clip.start_ms, practiceEnd(clip)))}
+      >
+        {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
+        {t(playing ? "topik.practice.stopAudio" : "topik.practice.playAudio")}
+      </Button>
+      <span className="text-sm text-muted-foreground">
+        {formatTimeInput(clip.start_ms)} → {formatTimeInput(clip.speech_end_ms)}
+      </span>
+    </div>
   );
 }

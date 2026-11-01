@@ -3,6 +3,7 @@
 //
 //   npm run topik-import                                         dry run (default): parses every file, prints a report
 //   npm run topik-import -- --apply                               backs up production D1, then inserts
+//   npm run topik-import -- --apply --local                       writes to the local dev D1/R2 instead (try a file out)
 //   npm run topik-import -- --apply --force                       also overwrites a question that was already edited/verified
 //   npm run topik-import -- --apply --force --keep-verified       same, but keeps the row's existing `verified` (see below)
 //
@@ -66,6 +67,8 @@ const args = process.argv.slice(3);
 const apply = args.includes("--apply");
 const force = args.includes("--force");
 const keepVerified = args.includes("--keep-verified");
+/** Write to the dev server's own D1/R2 (.wrangler/state) instead of production, to try a file out. */
+const local = args.includes("--local");
 
 function tempConfig() {
   const dir = mkdtempSync(path.join(os.tmpdir(), "lingo-topik-import-"));
@@ -159,7 +162,7 @@ async function main() {
   }
   console.log(
     apply
-      ? `APPLY${force ? " --force" : ""}${keepVerified ? " --keep-verified" : ""}: will write to production`
+      ? `APPLY${force ? " --force" : ""}${keepVerified ? " --keep-verified" : ""}: will write to ${local ? "the LOCAL dev database" : "production"}`
       : "DRY RUN: nothing is written",
   );
 
@@ -208,8 +211,10 @@ async function main() {
     return;
   }
 
-  const configPath = tempConfig();
-  const proxy = await getPlatformProxy({ configPath, remoteBindings: true });
+  // Local runs touch only .wrangler/state, which `npm run dev` serves and no one else shares.
+  const proxy = local
+    ? await getPlatformProxy({ remoteBindings: false })
+    : await getPlatformProxy({ configPath: tempConfig(), remoteBindings: true });
   try {
     const db = proxy.env.DB as unknown as D1Like;
     const bucket = proxy.env.MEDIA as unknown as R2Like;
@@ -241,7 +246,7 @@ async function main() {
       }
     }
 
-    backupProduction();
+    if (!local) backupProduction();
 
     let inserted = 0;
     let skipped = 0;
