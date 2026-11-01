@@ -594,7 +594,8 @@
       "zoomOpen": "Enlarge option {{n}}",
       "zoomClose": "Tap to close",
       "correctOption": "Correct answer",
-      "yourOption": "Your answer"
+      "yourOption": "Your answer",
+      "examQuestion": "{{exam}} · Question {{number}}"
     },
     "manage": {
       "title": "Manage TOPIK questions",

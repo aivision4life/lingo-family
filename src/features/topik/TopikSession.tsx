@@ -88,7 +88,9 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-0.5">
         <p className="text-sm text-muted-foreground">{t("topik.practice.progress", { current: index + 1, total: questions.length })}</p>
-        <p className="text-xs text-muted-foreground">{question.exam}</p>
+        {/* The exam's own question number, not the position in this session: when something in a
+            question looks wrong, that number is what finds it again in the source file. */}
+        <p className="text-xs text-muted-foreground">{t("topik.practice.examQuestion", { exam: question.exam, number: question.number })}</p>
       </div>
       <div className="flex flex-wrap gap-1">
         {questions.map((q, i) => {

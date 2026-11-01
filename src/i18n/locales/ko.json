@@ -594,7 +594,8 @@
       "zoomOpen": "{{n}}번 그림 크게 보기",
       "zoomClose": "눌러서 닫기",
       "correctOption": "정답",
-      "yourOption": "내가 고른 답"
+      "yourOption": "내가 고른 답",
+      "examQuestion": "{{exam}} · {{number}}번"
     },
     "manage": {
       "title": "TOPIK 문제 관리",

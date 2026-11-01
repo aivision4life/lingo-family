@@ -594,7 +594,8 @@
       "zoomOpen": "Xem to ảnh đáp án {{n}}",
       "zoomClose": "Chạm để đóng",
       "correctOption": "Đáp án đúng",
-      "yourOption": "Bạn đã chọn"
+      "yourOption": "Bạn đã chọn",
+      "examQuestion": "{{exam}} · Câu {{number}}"
     },
     "manage": {
       "title": "Quản lý câu hỏi TOPIK",
