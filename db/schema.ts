@@ -21,6 +21,8 @@ import {
   IMAGE_STATUSES,
   LEARN_LANGS,
   TOPIK_SECTIONS,
+  TOPIK_TEST_KINDS,
+  TOPIK_TEST_STATUSES,
   UI_LANGS,
   USAGE_SERVICES,
   type CardType,
@@ -425,6 +427,14 @@ export const topik_questions = sqliteTable(
     key_terms: text("key_terms", { mode: "json" }).$type<string[]>(),
     /** Set together with `explanation_vi`/`key_terms`; null means "not generated yet". */
     explain_checked_at: timestamp("explain_checked_at"),
+    /**
+     * What this question is worth in a mock test (M6.4). TOPIK II listening is 50 questions at 2
+     * points each, but a paper can slip a 3-point question in, so the import reads `각 N점` from
+     * the instruction and an adult can correct it by hand on the review screen when the paper does
+     * not say. 2 is the default rather than 0: a question that scores nothing by accident would be
+     * invisible in a result.
+     */
+    points: integer("points").notNull().default(2),
     /** false until an adult reviews a freshly imported question and saves it. */
     verified: integer("verified", { mode: "boolean" }).notNull().default(false),
     /**
@@ -561,4 +571,70 @@ export const topik_attempts = sqliteTable(
     index("topik_attempts_profile_time_idx").on(t.profile_id, t.answered_at),
     index("topik_attempts_question_idx").on(t.question_id),
   ],
+);
+
+/**
+ * One sitting of a mock test (M6.4).
+ *
+ * Deliberately **not** tied to one exam: `source_exam` is a label, null for a mixed paper, and the
+ * questions live in `topik_test_items`. A later mixed mode draws each position from a different
+ * paper (and from question 21 a whole pair sharing one clip), so a test row that owned an `exam`
+ * would have had to be migrated away the moment that mode arrived.
+ */
+export const topik_tests = sqliteTable(
+  "topik_tests",
+  {
+    id: id(),
+    profile_id: text("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    section: text("section", { enum: TOPIK_SECTIONS }).notNull(),
+    /** "original" = one real paper start to finish; "mixed" = drawn from the bank (stage 2). */
+    kind: text("kind", { enum: TOPIK_TEST_KINDS }).notNull(),
+    /** Only for `kind = "original"`; null for a mixed paper, which has no single source. */
+    source_exam: text("source_exam"),
+    question_count: integer("question_count").notNull(),
+    /** Sum of the items' points as they were at the time: editing a question's points later must
+     * not silently rewrite a result that was already achieved. */
+    total_points: integer("total_points").notNull(),
+    status: text("status", { enum: TOPIK_TEST_STATUSES }).notNull(),
+    started_at: timestamp("started_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finished_at: timestamp("finished_at"),
+    /** Wall-clock time from start to submit, pauses included. */
+    duration_ms: integer("duration_ms"),
+    /** Pausing is allowed and never blocked — but a paused sitting is not exam conditions, so the
+     * result says so instead of pretending otherwise. */
+    pause_count: integer("pause_count").notNull().default(0),
+    paused_ms: integer("paused_ms").notNull().default(0),
+    correct_count: integer("correct_count"),
+    score_points: integer("score_points"),
+    created_at: createdAt(),
+  },
+  (t) => [index("topik_tests_profile_idx").on(t.profile_id, t.section, t.started_at)],
+);
+
+/** One position in a sitting. The snapshot columns keep an old result readable after the question
+ * bank moves on — or after the question itself is deleted, which only nulls `question_id`. */
+export const topik_test_items = sqliteTable(
+  "topik_test_items",
+  {
+    id: id(),
+    test_id: text("test_id")
+      .notNull()
+      .references(() => topik_tests.id, { onDelete: "cascade" }),
+    /** 1-based position in the paper. */
+    position: integer("position").notNull(),
+    question_id: text("question_id").references(() => topik_questions.id, { onDelete: "set null" }),
+    /** The question's own number and worth, as they were when the test was created. */
+    number: integer("number").notNull(),
+    points: integer("points").notNull(),
+    /** The clip this position is asked about; from question 21 two positions share one. */
+    segment_id: text("segment_id").references(() => topik_segments.id, { onDelete: "set null" }),
+    selected_option: integer("selected_option"),
+    is_correct: integer("is_correct", { mode: "boolean" }),
+    answered_at: timestamp("answered_at"),
+  },
+  (t) => [uniqueIndex("topik_test_items_test_position_uq").on(t.test_id, t.position)],
 );

@@ -646,7 +646,8 @@
         "saveAndNext": "Lưu và thêm câu tiếp",
         "savedN": "Đã lưu câu {{n}}.",
         "duplicate": "Câu này (đề + số câu) đã có, không ghi đè.",
-        "generic": "Không lưu được, hãy thử lại."
+        "generic": "Không lưu được, hãy thử lại.",
+        "points": "Điểm"
       },
       "clipAttached": "Đoạn nghe: {{from}} → {{to}}",
       "clipMissing": "Chưa gắn đoạn nghe"
@@ -718,6 +719,44 @@
       "reading": "Đọc",
       "listening": "Nghe"
     },
-    "blockWaiting": "{{count}} câu đang chờ ôn lại · câu gần nhất {{when}}"
+    "blockWaiting": "{{count}} câu đang chờ ôn lại · câu gần nhất {{when}}",
+    "test": {
+      "title": "Thi thử",
+      "intro": "Làm trọn một đề như thi thật: băng chạy liên tục, không nghe lại, không tua.",
+      "noPapers": "Chưa có đề nào duyệt xong cả câu hỏi lẫn mốc đoạn.",
+      "readyCount": "{{count}} câu sẵn sàng",
+      "lengthN": "{{count}} câu",
+      "lengthFull": "Cả đề ({{count}} câu)",
+      "tooFewQuestions": "đề này mới có {{count}} câu",
+      "notContiguous": "số câu của đề còn thiếu chỗ",
+      "neverTaken": "Chưa thi lần nào",
+      "history": "Đã thi {{count}} lần: {{scores}}",
+      "startFailed": "Không mở được bài thi. Thử lại.",
+      "empty": "Đề này không có câu nào.",
+      "sittingTitle": "{{exam}}",
+      "resultTitle": "Kết quả thi thử",
+      "atQuestion": "Câu {{number}} / {{total}}",
+      "timeLeft": "còn {{time}}",
+      "answeredCount": "Đã trả lời {{answered}}/{{total}}",
+      "followTape": "Theo băng",
+      "pause": "Tạm dừng",
+      "resume": "Tiếp tục",
+      "pausedNote": "Đã tạm dừng {{count}} lần",
+      "exit": "Thoát",
+      "exitTitle": "Huỷ bài thi?",
+      "exitBody": "Thoát giữa chừng sẽ huỷ bài, không lưu điểm và không tính vào lịch ôn.",
+      "exitStay": "Ở lại làm tiếp",
+      "exitLeave": "Huỷ bài",
+      "scoreRaw": "{{score}}/{{total}} điểm",
+      "scoreOutOf100": "{{score}}/100 điểm",
+      "correctCount": "Đúng {{correct}}/{{total}} câu",
+      "tookTime": "Thời gian làm bài {{time}}",
+      "pausedSummary": "Có tạm dừng {{count}} lần, tổng {{minutes}} phút — không tính là điều kiện thi thật.",
+      "itemNumber": "Câu {{number}}",
+      "itemAnswers": "bạn chọn {{chosen}} · đúng {{correct}}",
+      "listenAgain": "Nghe lại đoạn này",
+      "backToPicker": "Về danh sách đề",
+      "abandonedNote": "Bài thi này đã bị huỷ hoặc không mở được."
+    }
   }
 }

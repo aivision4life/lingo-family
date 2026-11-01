@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   topikAttemptResultSchema,
@@ -16,7 +17,12 @@ import {
   type TopikQuestionInput,
   type TopikQuestionUpdate,
   type TopikSegmentUpdate,
+  topikTestOptionListSchema,
+  topikTestResultSchema,
+  topikTestRunSchema,
   type TopikSessionMode,
+  type TopikTestCreate,
+  type TopikTestFinish,
   type TopikVerifyBulkRequest,
 } from "@shared/topik";
 import type { TopikSection } from "@shared/enums";
@@ -195,3 +201,56 @@ export const useVerifyTopikAudio = () =>
   useAudioMutation(({ id, profile_id, verified }: { id: string; profile_id: string; verified: boolean }) =>
     api("PATCH", `/topik/audio/${id}`, null, { verified, profile_id }),
   );
+
+// --- Mock test (M6.4) ---------------------------------------------------------------------------
+
+export const useTopikTestOptions = (profileId: string, section: TopikSection) =>
+  useQuery({
+    queryKey: ["topik", "tests", "options", profileId, section],
+    queryFn: () => api("GET", `/topik/tests/options?profile_id=${profileId}&section=${section}`, topikTestOptionListSchema),
+    enabled: profileId !== "",
+  });
+
+export const useCreateTopikTest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TopikTestCreate) => api("POST", "/topik/tests", topikTestRunSchema, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["topik", "tests"] }),
+  });
+};
+
+/** A running sitting, or a finished one's result — the server decides which shape by its status. */
+export const useTopikTest = (testId: string, profileId: string) =>
+  useQuery({
+    queryKey: ["topik", "tests", testId, profileId],
+    queryFn: () => api("GET", `/topik/tests/${testId}?profile_id=${profileId}`, topikTestRunSchema.or(topikTestResultSchema)),
+    enabled: testId !== "" && profileId !== "",
+  });
+
+/**
+ * Saves one answer. Deliberately **not** wired to any loading state: the tape does not stop for
+ * the network, so a failure here is swallowed by the caller and replayed at `finish`.
+ */
+export const useSaveTopikTestAnswer = () =>
+  useMutation({
+    mutationFn: ({ testId, position, ...body }: { testId: string; position: number; profile_id: string; selected_option: number }) =>
+      api("PUT", `/topik/tests/${testId}/items/${position}`, z.object({ position: z.number(), selected_option: z.number() }), body),
+  });
+
+export const useFinishTopikTest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ testId, ...body }: TopikTestFinish & { testId: string }) =>
+      api("POST", `/topik/tests/${testId}/finish`, topikTestResultSchema, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["topik"] }),
+  });
+};
+
+export const useAbandonTopikTest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ testId, profile_id }: { testId: string; profile_id: string }) =>
+      api("POST", `/topik/tests/${testId}/abandon`, z.object({ id: z.string(), status: z.string() }), { profile_id }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["topik", "tests"] }),
+  });
+};

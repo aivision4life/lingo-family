@@ -52,4 +52,12 @@ export type ImageSource = z.infer<typeof imageSourceSchema>;
 /** TOPIK II sections we practise. Listening (M7.1) shares the question bank and scheduling. */
 export const TOPIK_SECTIONS = ["reading", "listening"] as const;
 export const topikSectionSchema = z.enum(TOPIK_SECTIONS);
+
+/** Mock test (M6.4): one real paper, or — from stage 2 — positions drawn from the whole bank. */
+export const TOPIK_TEST_KINDS = ["original", "mixed"] as const;
+export const topikTestKindSchema = z.enum(TOPIK_TEST_KINDS);
+
+/** "abandoned" = left before the end: no score, no attempts, no effect on the FSRS schedule. */
+export const TOPIK_TEST_STATUSES = ["running", "finished", "abandoned"] as const;
+export const topikTestStatusSchema = z.enum(TOPIK_TEST_STATUSES);
 export type TopikSection = z.infer<typeof topikSectionSchema>;

@@ -646,7 +646,8 @@
         "saveAndNext": "Save and add next",
         "savedN": "Saved question {{n}}.",
         "duplicate": "This question (exam + number) already exists; not overwritten.",
-        "generic": "Could not save, please try again."
+        "generic": "Could not save, please try again.",
+        "points": "Points"
       },
       "clipAttached": "Clip: {{from}} → {{to}}",
       "clipMissing": "No clip attached"
@@ -718,6 +719,44 @@
       "reading": "Reading",
       "listening": "Listening"
     },
-    "blockWaiting": "{{count}} waiting to come back · the first one {{when}}"
+    "blockWaiting": "{{count}} waiting to come back · the first one {{when}}",
+    "test": {
+      "title": "Mock test",
+      "intro": "Sit a whole paper as in the real exam: the tape runs straight through, no replay, no seeking.",
+      "noPapers": "No paper has both its questions and its clips approved yet.",
+      "readyCount": "{{count}} question(s) ready",
+      "lengthN": "{{count}} questions",
+      "lengthFull": "Whole paper ({{count}} questions)",
+      "tooFewQuestions": "this paper only has {{count}} questions so far",
+      "notContiguous": "this paper's numbering has a gap",
+      "neverTaken": "Not taken yet",
+      "history": "Taken {{count}} time(s): {{scores}}",
+      "startFailed": "Could not start the test. Try again.",
+      "empty": "This paper has no questions.",
+      "sittingTitle": "{{exam}}",
+      "resultTitle": "Mock test result",
+      "atQuestion": "Question {{number}} of {{total}}",
+      "timeLeft": "{{time}} left",
+      "answeredCount": "Answered {{answered}}/{{total}}",
+      "followTape": "Back to the tape",
+      "pause": "Pause",
+      "resume": "Resume",
+      "pausedNote": "Paused {{count}} time(s)",
+      "exit": "Leave",
+      "exitTitle": "Cancel this test?",
+      "exitBody": "Leaving part way cancels the test: no score is kept and the review schedule is untouched.",
+      "exitStay": "Keep going",
+      "exitLeave": "Cancel it",
+      "scoreRaw": "{{score}}/{{total}} points",
+      "scoreOutOf100": "{{score}}/100 points",
+      "correctCount": "{{correct}} of {{total}} correct",
+      "tookTime": "Took {{time}}",
+      "pausedSummary": "Paused {{count}} time(s) for {{minutes}} minutes in total — not exam conditions.",
+      "itemNumber": "Question {{number}}",
+      "itemAnswers": "you chose {{chosen}} · correct {{correct}}",
+      "listenAgain": "Listen to this clip again",
+      "backToPicker": "Back to the papers",
+      "abandonedNote": "This sitting was cancelled, or cannot be opened."
+    }
   }
 }

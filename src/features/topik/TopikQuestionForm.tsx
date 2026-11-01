@@ -159,6 +159,20 @@ export function TopikQuestionForm({ profileId, initial, submitting, serverError,
           <Input id="tq-block" value={values.block} onChange={(e) => set("block", e.target.value)} />
         </FormField>
       </div>
+      <FormField id="tq-points" label={t("topik.manage.form.points")}>
+        {/* Filled from the instruction's "각 N점" on import; typed by hand for a paper that slips
+            in a 3-point question without saying so (M6.4). */}
+        <Input
+          id="tq-points"
+          type="number"
+          min={1}
+          max={10}
+          inputMode="numeric"
+          className="w-24"
+          value={values.points}
+          onChange={(e) => set("points", e.target.value)}
+        />
+      </FormField>
       <FormField id="tq-instruction" label={t("topik.manage.form.instruction")}>
         <Input id="tq-instruction" value={values.instruction} onChange={(e) => set("instruction", e.target.value)} />
       </FormField>

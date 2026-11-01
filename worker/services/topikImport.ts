@@ -3,6 +3,7 @@
 // grouping (M6.1). Pure: image references stay as docx relationship ids (`rId9`, …) — resolving
 // them to R2 keys needs the zip's media bytes, done by the caller (scripts/topikImport).
 import type { TopikSection } from "../../shared/enums";
+import { DEFAULT_QUESTION_POINTS, pointsFromInstruction } from "../../shared/topik";
 import { parseTopikDocument } from "./topikParse";
 
 export type TopikFileName = { section: TopikSection; start: number; end: number; source: string };
@@ -26,6 +27,8 @@ export type DraftQuestion = {
   number: number;
   block: string;
   instruction: string | null;
+  /** From the instruction's own "각 N점" (M6.4); the default when the paper does not say. */
+  points: number;
   /** Listening (M7.1): shares the previous question's audio clip instead of opening a new one. */
   same_segment: boolean;
   stem: { text: string | null; image_rid: string | null };
@@ -115,6 +118,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       // answer label on a listening question, where the label is what counts).
       notes.push(...item.warnings);
       const warning = notes.length > 0 ? notes.join("; ") : null;
+      const instruction = (readingFix ? FIXED_NUMBER_INSTRUCTION[number] : undefined) ?? item.instruction;
       for (const note of notes) warnings.push(`${examLabel} #${number}: ${note}`);
       if (item.errors.length > 0) {
         errors.push(`${examLabel} #${number}: ${item.errors.join("; ")}`);
@@ -125,7 +129,8 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
         exam: examLabel,
         number,
         block: (readingFix ? FIXED_NUMBER_BLOCK[number] : undefined) ?? block,
-        instruction: (readingFix ? FIXED_NUMBER_INSTRUCTION[number] : undefined) ?? item.instruction,
+        instruction,
+        points: pointsFromInstruction(instruction) ?? DEFAULT_QUESTION_POINTS,
         same_segment: item.same_segment,
         stem: { text: item.stem_text, image_rid: item.stem_image_rid },
         options: item.options.map((o) => ({ text: o.text, image_rid: o.image_rid })),

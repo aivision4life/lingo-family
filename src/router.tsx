@@ -12,6 +12,8 @@ import { ReviewPage } from "@/pages/ReviewPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { DecksPage, NotFoundPage, StatsPage } from "@/pages/SimplePages";
 import { TopikBlockPickerPage } from "@/pages/TopikBlockPickerPage";
+import { TopikTestPage } from "./pages/TopikTestPage";
+import { TopikTestPickerPage } from "./pages/TopikTestPickerPage";
 import { TopikManagePage } from "@/pages/TopikManagePage";
 import { TopikPracticePage } from "@/pages/TopikPracticePage";
 import { WordDetailPage } from "@/pages/WordDetailPage";
@@ -33,6 +35,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "review", element: <ReviewPage /> }, // 3
           { path: "topik/practice", element: <TopikPracticePage /> },
+          // A sitting owns the screen the way review does: no nav to wander off into mid-tape.
+          { path: "topik/tests/:id", element: <TopikTestPage /> },
         ],
       },
       {
@@ -48,6 +52,7 @@ export const router = createBrowserRouter([
           { path: "decks", element: <DecksPage /> }, // 9
           { path: "topik", element: <TopikBlockPickerPage /> },
           { path: "topik/manage", element: <TopikManagePage /> },
+          { path: "topik/tests", element: <TopikTestPickerPage /> },
           { path: "settings", element: <SettingsPage /> }, // 10
           { path: "stats", element: <StatsPage /> }, // 11
           { path: "*", element: <NotFoundPage /> },

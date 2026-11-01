@@ -34,6 +34,7 @@ const question = (over: Partial<DraftQuestion> = {}): DraftQuestion => ({
   exam: "Test-연습1",
   number: 1,
   block: "1",
+  points: 2,
   instruction: null,
   same_segment: false,
   stem: { text: "stem", image_rid: null },

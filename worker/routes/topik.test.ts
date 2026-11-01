@@ -32,6 +32,7 @@ const input = (over: Partial<TopikQuestionInput> = {}): TopikQuestionInput => ({
   number: 1,
   block: "1~2",
   instruction: "가장 알맞은 것을 고르십시오.",
+  points: 2,
   stem: { text: "아침에 (   ) 전화를 드렸다.", image_key: null },
   options: [
     { text: "일어나서", image_key: null },

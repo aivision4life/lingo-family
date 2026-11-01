@@ -13,7 +13,7 @@ import { Hono, type Context } from "hono";
 import { State } from "ts-fsrs";
 import { topikSectionSchema } from "../../shared/enums";
 import { z } from "zod";
-import { applyReview, emptyCardFields, type CardFields } from "../../shared/scheduling";
+import { applyReview, emptyCardFields } from "../../shared/scheduling";
 import {
   TOPIK_ERRORS,
   TOPIK_IMAGE_MAX_BYTES,
@@ -38,6 +38,7 @@ import { topik_attempts, topik_audio, topik_cards, topik_questions, topik_segmen
 import { getDb, type AppEnv } from "../env";
 import { requireAdult } from "../lib/access";
 import { runInBackground } from "../lib/background";
+import { toCardFields } from "../services/topikCards";
 import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
 import { recordUsage } from "../lib/quota";
 import { zv } from "../lib/validate";
@@ -84,6 +85,7 @@ const toQuestion = (r: QuestionRow, clip: TopikClip | null = null): TopikQuestio
   number: r.number,
   block: r.block,
   instruction: r.instruction,
+  points: r.points,
   stem: { text: r.stem_text, image_key: r.stem_image_key },
   options: r.options,
   correct_option: r.correct_option,
@@ -116,6 +118,7 @@ const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): Topi
     number: r.number,
     block: r.block,
     instruction: r.instruction,
+    points: r.points,
     stem: { text: hideTranscript ? null : r.stem_text, image_key: r.stem_image_key },
     options: r.options,
     vocab: hideTranscript ? [] : (r.vocab ?? []),
@@ -123,19 +126,6 @@ const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): Topi
     audio: clip,
   };
 };
-
-const toCardFields = (r: typeof topik_cards.$inferSelect): CardFields => ({
-  due: r.due,
-  stability: r.stability,
-  difficulty: r.difficulty,
-  elapsed_days: r.elapsed_days,
-  scheduled_days: r.scheduled_days,
-  learning_steps: r.learning_steps,
-  reps: r.reps,
-  lapses: r.lapses,
-  state: r.state,
-  last_review: r.last_review,
-});
 
 export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
   /**

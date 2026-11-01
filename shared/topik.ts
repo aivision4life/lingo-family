@@ -1,7 +1,7 @@
 // TOPIK II practice (SPEC F12, M6.1; per-question vocabulary M6.2): question bank, import,
 // practice sessions and the "tap a word" vocabulary AI adds to each question.
 import { z } from "zod";
-import { topikSectionSchema } from "./enums";
+import { topikSectionSchema, topikTestKindSchema, topikTestStatusSchema } from "./enums";
 import { posSchema } from "./word";
 
 export const TOPIK_OPTION_COUNT = 4;
@@ -120,6 +120,9 @@ const commonFields = {
   instruction: z.string().trim().nullable(),
   stem: topikContentSchema,
   options: topikOptionsSchema,
+  /** What this question is worth in a mock test (M6.4): read from the instruction's "각 N점" on
+   * import, and correctable by hand on the review screen for a paper that does not say. */
+  points: z.number().int().positive().max(10),
 };
 
 /** A question as entered/edited by an adult (manual form, import, PATCH body). */
@@ -331,6 +334,27 @@ export const topikBlockSchema = z.object({
 export type TopikBlock = z.infer<typeof topikBlockSchema>;
 export const topikBlockListSchema = z.array(topikBlockSchema);
 
+/**
+ * What one question is worth, read from its own instruction: a TOPIK paper writes "(각 2점)" —
+ * "2 points each" — in the instruction that covers a block of questions (M6.4).
+ *
+ * Returns null when the instruction does not say, and the caller keeps the default of 2: TOPIK II
+ * listening is 50 questions at 2 points for 100, so 2 is the right guess, while 0 would make a
+ * question silently worth nothing in a result. An adult can always correct it on the review
+ * screen, which is the only way a paper that slips in a 3-point question without saying so can be
+ * scored right.
+ */
+export function pointsFromInstruction(instruction: string | null): number | null {
+  if (!instruction) return null;
+  const m = /각\s*(\d+)\s*점/.exec(instruction);
+  if (!m) return null;
+  const points = Number(m[1]);
+  return Number.isInteger(points) && points > 0 && points <= 10 ? points : null;
+}
+
+/** The default when nothing says otherwise — see `pointsFromInstruction`. */
+export const DEFAULT_QUESTION_POINTS = 2;
+
 export const TOPIK_SESSION_SIZE = 10;
 
 /**
@@ -412,4 +436,145 @@ export const topikImageUploadResponseSchema = z.object({ image_key: z.string() }
 export const TOPIK_ERRORS = {
   /** (section, exam, number) already exists; import without --force skips it instead of erroring. */
   duplicate: "topik_duplicate",
+  /** A paper with a hole in its numbering cannot be sat: see `isContiguousFromOne`. */
+  notContiguous: "topik_test_not_contiguous",
+  /** Asked for more questions than the paper has ready. */
+  tooShort: "topik_test_too_short",
+  /** Answering or finishing a test that is already finished or abandoned. */
+  notRunning: "topik_test_not_running",
+  /** Reading a cancelled sitting: it has no result, and must not leak the answers. */
+  abandoned: "topik_test_abandoned",
 } as const;
+
+// --- Mock test (M6.4) -------------------------------------------------------------------------
+
+/** How many questions one sitting covers. "full" = every question the paper has ready. */
+export const TOPIK_TEST_LENGTHS = [20, 30] as const;
+export const topikTestLengthSchema = z.union([z.literal(20), z.literal(30), z.literal("full")]);
+export type TopikTestLength = z.infer<typeof topikTestLengthSchema>;
+
+/** One length offered for a paper, with the reason when it cannot be taken. */
+export const topikTestLengthOptionSchema = z.object({
+  length: topikTestLengthSchema,
+  available: z.boolean(),
+  /** How many questions this length would actually cover (so "full" can say "12 câu"). */
+  questions: z.number().int().nonnegative(),
+});
+
+/** A finished sitting, as the picker lists it: "đã thi 2 lần: 32/50, 38/50". */
+export const topikTestHistoryEntrySchema = z.object({
+  id: z.string(),
+  score_points: z.number().int(),
+  total_points: z.number().int(),
+  question_count: z.number().int(),
+  correct_count: z.number().int(),
+  finished_at: z.number().int(),
+});
+
+export const topikTestOptionSchema = z.object({
+  exam: z.string(),
+  /** Verified questions that have a clip whose audio is approved — what a test can actually use. */
+  ready_questions: z.number().int().nonnegative(),
+  /** True only when those questions run 1, 2, 3, … with no hole: a paper missing question 7
+   * cannot be sat as "questions 1-20" without quietly being a different test. */
+  contiguous: z.boolean(),
+  lengths: z.array(topikTestLengthOptionSchema),
+  history: z.array(topikTestHistoryEntrySchema),
+});
+export const topikTestOptionListSchema = z.array(topikTestOptionSchema);
+export type TopikTestOption = z.infer<typeof topikTestOptionSchema>;
+
+export type TopikTestCreate = z.infer<typeof topikTestCreateSchema>;
+export const topikTestCreateSchema = z.object({
+  profile_id: z.string().min(1),
+  section: topikSectionSchema,
+  exam: z.string().min(1),
+  length: topikTestLengthSchema,
+});
+
+/**
+ * One position of a running test. No `correct_option`, and for listening no transcript either —
+ * same rule as the practice session: the answer must not be in the payload during the exam.
+ */
+export const topikTestQuestionSchema = z.object({
+  position: z.number().int().positive(),
+  question_id: z.string(),
+  number: z.number().int().positive(),
+  points: z.number().int().positive(),
+  instruction: z.string().nullable(),
+  stem: topikSentContentSchema,
+  options: topikOptionsSchema,
+  selected_option: topikCorrectOptionSchema.nullable(),
+  /** Where this position's clip sits in the exam's mp3, so the screen can follow the tape. */
+  clip: topikClipSchema.nullable(),
+});
+
+/**
+ * Everything a sitting needs to run. The audio is **one span** of one file — the approval rules
+ * guarantee an exam's clips are contiguous (no gaps, no overlaps), so the tape simply plays from
+ * the first clip's start to the last clip's end, silences and all, exactly as the real exam paces
+ * it. A mixed paper (stage 2) will instead carry several spans.
+ */
+export const topikTestRunSchema = z.object({
+  id: z.string(),
+  section: topikSectionSchema,
+  kind: topikTestKindSchema,
+  source_exam: z.string().nullable(),
+  status: topikTestStatusSchema,
+  question_count: z.number().int(),
+  total_points: z.number().int(),
+  started_at: z.number().int(),
+  audio: z
+    .object({ audio_key: z.string(), start_ms: z.number().int(), end_ms: z.number().int() })
+    .nullable(),
+  questions: z.array(topikTestQuestionSchema),
+});
+export type TopikTestRun = z.infer<typeof topikTestRunSchema>;
+
+export const topikTestAnswerSchema = z.object({
+  profile_id: z.string().min(1),
+  selected_option: topikCorrectOptionSchema,
+});
+
+export type TopikTestFinish = z.infer<typeof topikTestFinishSchema>;
+export const topikTestFinishSchema = z.object({
+  profile_id: z.string().min(1),
+  duration_ms: z.number().int().nonnegative(),
+  pause_count: z.number().int().nonnegative(),
+  paused_ms: z.number().int().nonnegative(),
+  /** Answers that never reached the server while the tape was running (a phone on a bad
+   * connection queues them); applied before grading so a lost request cannot cost a mark. */
+  answers: z.array(z.object({ position: z.number().int().positive(), selected_option: topikCorrectOptionSchema })).optional(),
+});
+
+/** One position in a finished result: the answer is out in the open now. */
+export const topikTestResultItemSchema = z.object({
+  position: z.number().int().positive(),
+  question_id: z.string().nullable(),
+  number: z.number().int(),
+  points: z.number().int(),
+  selected_option: topikCorrectOptionSchema.nullable(),
+  correct_option: topikCorrectOptionSchema,
+  is_correct: z.boolean(),
+  /** For the per-question review inside the result: listen again, read, see the explanation. */
+  clip: topikClipSchema.nullable(),
+  transcript: z.string().nullable(),
+});
+
+export const topikTestResultSchema = z.object({
+  id: z.string(),
+  section: topikSectionSchema,
+  kind: topikTestKindSchema,
+  source_exam: z.string().nullable(),
+  status: topikTestStatusSchema,
+  question_count: z.number().int(),
+  correct_count: z.number().int(),
+  score_points: z.number().int(),
+  total_points: z.number().int(),
+  duration_ms: z.number().int().nullable(),
+  pause_count: z.number().int(),
+  paused_ms: z.number().int(),
+  finished_at: z.number().int().nullable(),
+  items: z.array(topikTestResultItemSchema),
+});
+export type TopikTestResult = z.infer<typeof topikTestResultSchema>;

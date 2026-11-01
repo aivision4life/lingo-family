@@ -11,6 +11,7 @@ import { phraseRoutes } from "./routes/phrases";
 import { profileRoutes } from "./routes/profiles";
 import { reviewRoutes } from "./routes/review";
 import { topikRoutes } from "./routes/topik";
+import { topikTestRoutes } from "./routes/topikTests";
 import { defaultImageAi, wordRoutes, type MakeImageAi, type MakeLlm, type MakeTts } from "./routes/words";
 import { createLlmClient } from "./services/llm";
 import { createTtsClient } from "./services/tts";
@@ -49,6 +50,7 @@ export function createApp({
   app.route("/enrich", customEnrichRoutes(deps));
   app.route("/", exampleRoutes(deps));
   app.route("/", topikRoutes(deps));
+  app.route("/", topikTestRoutes());
 
   app.notFound((c) => c.json({ error: "not_found" }, 404));
   return app;

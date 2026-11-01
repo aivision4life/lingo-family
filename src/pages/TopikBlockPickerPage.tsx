@@ -31,6 +31,11 @@ export function TopikBlockPickerPage() {
 
   return (
     <PageShell title={t("topik.title")}>
+      {/* Sitting a whole paper is a different exercise from block practice, so it gets its own
+          entry rather than another length option inside the picker (M6.4). */}
+      <LinkButton to="/topik/tests" variant="outline">
+        {t("topik.test.title")}
+      </LinkButton>
       {canManageProfiles(profile) && (
         <LinkButton to="/topik/manage" variant="outline">
           {t("topik.manage.title")}

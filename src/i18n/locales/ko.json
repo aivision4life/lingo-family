@@ -646,7 +646,8 @@
         "saveAndNext": "저장하고 다음 문제 추가",
         "savedN": "{{n}}번 문제를 저장했습니다.",
         "duplicate": "이 문제(시험 + 번호)는 이미 있습니다. 덮어쓰지 않았습니다.",
-        "generic": "저장하지 못했습니다. 다시 시도하세요."
+        "generic": "저장하지 못했습니다. 다시 시도하세요.",
+        "points": "배점"
       },
       "clipAttached": "구간: {{from}} → {{to}}",
       "clipMissing": "구간 미연결"
@@ -718,6 +719,44 @@
       "reading": "읽기",
       "listening": "듣기"
     },
-    "blockWaiting": "{{count}}문항 복습 대기 · 가장 빠른 문항 {{when}}"
+    "blockWaiting": "{{count}}문항 복습 대기 · 가장 빠른 문항 {{when}}",
+    "test": {
+      "title": "모의고사",
+      "intro": "실제 시험처럼 한 세트를 끝까지: 음원은 계속 재생되고 다시 듣기도 되감기도 없습니다.",
+      "noPapers": "문항과 구간이 모두 승인된 시험이 아직 없습니다.",
+      "readyCount": "{{count}}문항 준비됨",
+      "lengthN": "{{count}}문항",
+      "lengthFull": "전체 ({{count}}문항)",
+      "tooFewQuestions": "이 시험은 아직 {{count}}문항뿐입니다",
+      "notContiguous": "문항 번호에 빠진 곳이 있습니다",
+      "neverTaken": "아직 응시 기록 없음",
+      "history": "{{count}}회 응시: {{scores}}",
+      "startFailed": "시험을 시작하지 못했습니다. 다시 시도하세요.",
+      "empty": "이 시험에는 문항이 없습니다.",
+      "sittingTitle": "{{exam}}",
+      "resultTitle": "모의고사 결과",
+      "atQuestion": "{{number}}번 / {{total}}",
+      "timeLeft": "{{time}} 남음",
+      "answeredCount": "{{answered}}/{{total}} 답함",
+      "followTape": "음원 위치로",
+      "pause": "일시정지",
+      "resume": "계속",
+      "pausedNote": "{{count}}회 일시정지",
+      "exit": "나가기",
+      "exitTitle": "시험을 취소할까요?",
+      "exitBody": "도중에 나가면 시험이 취소되고 점수도 복습 일정도 남지 않습니다.",
+      "exitStay": "계속 풀기",
+      "exitLeave": "취소하기",
+      "scoreRaw": "{{score}}/{{total}}점",
+      "scoreOutOf100": "{{score}}/100점",
+      "correctCount": "{{total}}문항 중 {{correct}}문항 정답",
+      "tookTime": "소요 시간 {{time}}",
+      "pausedSummary": "{{count}}회 일시정지, 총 {{minutes}}분 — 실제 시험 조건은 아닙니다.",
+      "itemNumber": "{{number}}번",
+      "itemAnswers": "선택 {{chosen}} · 정답 {{correct}}",
+      "listenAgain": "이 구간 다시 듣기",
+      "backToPicker": "시험 목록으로",
+      "abandonedNote": "이 시험은 취소되었거나 열 수 없습니다."
+    }
   }
 }
