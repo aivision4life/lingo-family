@@ -578,3 +578,33 @@ Free-tier limits change, so check the providers' current pricing pages before re
 - **Việc cần vá sau (M2.10):** `PATCH /api/profiles/:id` and `DELETE /api/profiles/:id` have no server-side permission check at all (no `profile_id` of the caller, no `requireAdult`) — only the client hides the editor from kid profiles (`canManageProfiles`). The new `POST`/`DELETE /api/profiles/:id/avatar-photo` routes added `requireAdult` (M2.10); the older profile edit/delete routes should get the same check later.
 - **Việc cần vá sau (TOPIK, 2026-10-18):** còn 1 câu `topik_questions.explanation_vi` là tiếng Việt không dấu (sinh trước khi `checkVietnameseDiacritics` tồn tại); 2 câu kia đã sinh lại xong. `ai_cache` của nó đã bị xoá nên lần chạy tới chắc chắn gọi Gemini mới. Khi hạn mức Gemini còn chỗ, chạy: `npm run topik-explain -- --apply --force --ids 34abc7b0-7959-49b5-a4f8-9496722ceef2` (8DeOfficial-60회 #13), rồi `npm run scan-llm-content` để xác nhận sạch.
 - **Việc cần vá sau (TOPIK import, 2026-10-18):** 2 file `Cau05_08` (MasterTopik, Yonsei) đánh dấu đáp án đúng bằng **chữ in đậm** chứ không gạch chân, nên cả 60 câu đều lỗi `expected exactly one underlined option, found 0`. Quy ước của parser là gạch chân (in đậm chỉ là phụ, và chính đề bài cũng hay in đậm nên không thể dùng làm dấu hiệu) → sửa ở file input, không sửa parser.
+
+## 11. Lessons learned (sự cố production)
+
+### M7.2 — Hai bản React trong một bundle vì thư mục viết sai hoa/thường (Windows, 2026-11-01)
+
+**Triệu chứng:** deploy xong, production màn trắng, console báo `Uncaught TypeError: Cannot read properties of null (reading 'useSyncExternalStore')`. Vẫn lỗi trong cửa sổ ẩn danh và sau khi mọi service worker đã bị xoá đăng ký, nên **không phải cache**. `npm run preview` ở máy chạy tốt với cùng commit.
+
+**Nguyên nhân:** Windows mở file không phân biệt hoa/thường, nên `cd d:\dev\lingo-family` vẫn vào được thư mục thật là `D:\DEV\lingo-family`. Nhưng Vite đặt id module theo **chuỗi đường dẫn**: `root` giữ đúng cách viết bạn gõ (`d:\dev\...`), còn resolver đi qua `realpath` thì Windows trả về tên thật (`D:\DEV\...`). Cùng một file vào đồ thị dưới **hai id**, và mọi thứ chạm tới được từ cả hai phía bị nhân đôi — trong đó có `node_modules/react/index.js`. Hai thực thể React trong một file: một bản shim `use-sync-external-store` chạy trước khi bản React của nó kịp khởi tạo, nên `require("react")` trả về giá trị chưa gán → đúng câu lỗi trên. Chỉ hỏng trên production vì các bản build ở máy tình cờ chạy từ thư mục viết đúng.
+
+**Dấu hiệu nhận biết (số đo thật của lần này):**
+
+| | bundle | module client | i18n `resources` |
+|---|---|---|---|
+| Lành | **886 KB** | **2438** | 1 bản |
+| Hỏng | **1,05 MB** | **4478** | 2 bản (hai thực thể i18next, mỗi cái tự `init()`) |
+
+Số module là dấu hiệu đáng tin nhất (1,84×); dung lượng chỉ phình 1,19× vì tên biến đã rút gọn và nhiều chuỗi dùng chung, nên **đừng** chỉ nhìn KB.
+
+**Cách chẩn đoán đã dùng — làm lại y như vậy cho mọi ca "local chạy, production hỏng":**
+
+1. Tải đúng file JS production về (DevTools → Network → chuột phải bundle → Save, hoặc copy URL rồi tải), đặt tạm ở gốc dự án.
+2. `npm run build` rồi **so byte** với file vừa tải. Chuỗi `__BUILD_ID__` luôn khác nhau, nên che nó đi trước khi so (`re.sub` mẫu `` `<sha> <ngày> <giờ>Z` ``) — nếu sau khi che mà **giống hệt** thì production đúng là chạy bundle đó, và mọi giả thuyết về cache/CDN/Access bị loại ngay.
+3. Khác nhau thì đo cấu trúc chứ không đọc mã rút gọn: số dòng, độ dài từng dòng (`awk '{print NR, length($0)}'`), số ký tự non-ASCII, số lần xuất hiện của một chuỗi UI đặc trưng (ví dụ `Ai đang học`). Thấy mọi chuỗi xuất hiện **đúng hai lần** là biết đồ thị bị nhân đôi.
+4. Xác nhận bằng số module: `npx vite build` in `✓ N modules transformed` cho environment `client`.
+5. Chỉ tên được cặp id trùng bằng một plugin `moduleParsed` gom `info.id` rồi nhóm theo `id.toLowerCase()` — chính là `scripts/viteGuards/buildIntegrity.ts#findDuplicateModules`, giờ chạy thường trực trong mọi build.
+6. Dựng lại sự cố để chắc chắn: chạy cùng lệnh build từ thư mục viết khác casing (`cd /d/dev/...` thay vì `/d/DEV/...`).
+
+**Đã sửa:** `vite.config.ts` chốt `root` (và cả ba alias `@`, `@shared`, `@db`) vào `realpathSync.native(import.meta.dirname)`, nên hai cách viết hội tụ về một chuỗi; build từ `d:\dev\...` và `D:\DEV\...` giờ ra **cùng một hash**. `buildIntegrity()` làm **fail build** nếu có file nào lọt vào dưới nhiều hơn một id, hoặc đồ thị client vượt `CLIENT_MODULE_CEILING`, hoặc bundle vượt `CLIENT_BYTES_CEILING` — vì kiểu lỗi này âm thầm theo nghĩa xấu nhất: build xanh, test xanh, preview ở máy chạy tốt, chỉ sập trên máy thật.
+
+**Bài học đi kèm:** giả thuyết đầu tiên của tôi (service worker cũ kẹt ở `waiting` phục vụ shell cũ) **sai**, dù nó giải thích được triệu chứng một cách hợp lý và đã có thật một lỗi lifecycle trong `src/sw.ts` (sửa ở `dd1f51f`, vẫn đáng giữ). Phép thử đáng làm **trước tiên** là so byte bundle production với bản build local — nó phân định ngay giữa "sai cái được phục vụ" và "sai cái được build", thay vì suy luận từ triệu chứng.

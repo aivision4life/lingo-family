@@ -1,10 +1,12 @@
 import { execSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { buildIntegrity } from "./scripts/viteGuards/buildIntegrity";
 
 // `npm run dev` removes the Workers AI binding: it is a remote binding, which needs a preview
 // session on lingo.ai4life.workers.dev (behind Cloudflare Access → cloudflared login) and costs
@@ -31,9 +33,22 @@ function buildId() {
   }
 }
 
+/**
+ * The project's real path on disk, whatever casing the shell's working directory happens to use.
+ *
+ * Windows opens files case-insensitively, so `cd d:\dev\lingo-family` works — but Vite then keeps
+ * that spelling for `root` while its resolver's realpath returns `D:\DEV\lingo-family`, and the same
+ * file enters the graph twice under two ids. That shipped a bundle with two copies of React and a
+ * white screen on production only (M7.2). Pinning `root` to the real path makes both spellings agree;
+ * `buildIntegrity()` fails the build if a duplicate ever appears anyway.
+ */
+const projectRoot = realpathSync.native(import.meta.dirname);
+
 export default defineConfig(({ command, mode }) => ({
+  root: projectRoot,
   define: { __BUILD_ID__: JSON.stringify(buildId()) },
   plugins: [
+    buildIntegrity(),
     react(),
     tailwindcss(),
     cloudflare(
@@ -89,9 +104,9 @@ export default defineConfig(({ command, mode }) => ({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@db": path.resolve(import.meta.dirname, "db"),
+      "@": path.resolve(projectRoot, "src"),
+      "@shared": path.resolve(projectRoot, "shared"),
+      "@db": path.resolve(projectRoot, "db"),
     },
   },
 }));
