@@ -683,6 +683,23 @@
         "noQuestion": "No question is linked to this clip.",
         "overlapsNext": "This clip overlaps the next one.",
         "gapToNext": "There is a gap between this clip and the next."
+      },
+      "table": {
+        "caption": "Every clip of this paper",
+        "idx": "Clip",
+        "length": "Length",
+        "pause": "Pause"
+      },
+      "metrics": "Length {{length}} · pause {{pause}}",
+      "clock": "{{at}} / {{total}}",
+      "playHead": "First {{seconds}}s",
+      "playTail": "Last {{seconds}}s",
+      "playTailHint": "Plays the {{seconds}} seconds right before the talking ends, where a cut is audible.",
+      "warningOn": "Clip {{numbers}}: {{reason}}",
+      "warning": {
+        "shortPause": "less than 3 seconds of silence — no time to choose an answer",
+        "shortClip": "much shorter than the other clips; one question may have been split in two",
+        "shortLastClip": "the last clip is much shorter — likely the closing announcement, not a question"
       }
     },
     "section": {

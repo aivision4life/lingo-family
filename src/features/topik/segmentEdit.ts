@@ -63,3 +63,117 @@ export const canApprove = (segments: readonly TopikSegment[], durationMs: number
  */
 export const PRACTICE_TAIL_MS = 5_000;
 export const practiceEnd = (s: Pick<TopikSegment, "speech_end_ms" | "end_ms">) => Math.min(s.speech_end_ms + PRACTICE_TAIL_MS, s.end_ms);
+
+/** `m:ss.s` — one decimal, which is as precise as a boundary can be judged by ear. */
+export function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 100) * 100);
+  const minutes = Math.floor(total / 60000);
+  const seconds = Math.floor((total % 60000) / 1000);
+  return `${minutes}:${String(seconds).padStart(2, "0")}.${Math.floor((total % 1000) / 100)}`;
+}
+
+/** The numbers the review table shows for one clip, all derived — nothing is stored twice. */
+export type SegmentMetrics = {
+  /** How long the clip runs in total. */
+  lengthMs: number;
+  /** The silence left for choosing an answer: from the end of the talking to the end of the clip. */
+  pauseMs: number;
+};
+
+export const metricsOf = (s: Pick<TopikSegment, "start_ms" | "speech_end_ms" | "end_ms">): SegmentMetrics => ({
+  lengthMs: Math.max(0, s.end_ms - s.start_ms),
+  pauseMs: Math.max(0, s.end_ms - s.speech_end_ms),
+});
+
+/**
+ * A real TOPIK II listening paper leaves this much silence after each question for choosing an
+ * answer. Less than that and the clip was almost certainly cut before the paper's own pause ended.
+ */
+export const SHORT_PAUSE_MS = 3_000;
+/** A clip this much shorter than its neighbours is suspicious rather than merely short. */
+export const SHORT_CLIP_RATIO = 0.5;
+/** Below this many clips a median says nothing, so length is not judged at all. */
+export const MIN_SEGMENTS_FOR_MEDIAN = 3;
+/**
+ * A clip's length is compared against the median of this many clips around it, not against the
+ * whole paper's.
+ *
+ * A real TOPIK II listening paper is not uniform: questions 1-20 are single short exchanges (~30-70
+ * s) while 21-36 are dialogues and lectures (~2.5-3.5 min, two questions per clip). One median over
+ * all of them lands between the two groups, which gets it exactly backwards — on the real 35회 paper
+ * it flagged a perfectly normal 28-second question 5, and a 70-second clip in the lecture section,
+ * which really would be half a question, would have passed. Comparing with the neighbours follows
+ * whichever section a clip is in without needing to know the paper's structure.
+ */
+export const LOCAL_WINDOW = 9;
+
+/**
+ * Typed so the i18n key `topik.audio.warning.<code>` can be checked at compile time.
+ *
+ *  - `shortPause`: no time to answer — the clip probably ends inside the paper's pause;
+ *  - `shortClip`: far shorter than the other clips of the same paper, so ffmpeg most likely split
+ *    one question in two at a pause inside the dialogue;
+ *  - `shortLastClip`: the same, but it is the last clip — usually the closing announcement
+ *    ("시험이 끝났습니다"), which is not a question at all and should be deleted rather than fixed.
+ */
+export type SegmentWarningCode = "shortPause" | "shortClip" | "shortLastClip";
+export type SegmentWarning = { segmentId: string; code: SegmentWarningCode };
+
+/** The middle value of a sorted copy; the average would be dragged by the very outliers we hunt. */
+export function medianOf(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * Everything that merely *looks* wrong about a set of clips — unlike `segmentProblems`, none of
+ * these blocks approval. They exist so 36 clips can be checked by eye instead of by listening to
+ * each one: the three shapes below are what a mis-split paper actually looks like in the numbers.
+ */
+export function segmentWarnings(segments: readonly TopikSegment[]): SegmentWarning[] {
+  const ordered = [...segments].sort((a, b) => a.idx - b.idx);
+  const lengths = ordered.map((s) => metricsOf(s).lengthMs);
+  const half = Math.floor(LOCAL_WINDOW / 2);
+
+  const warnings: SegmentWarning[] = [];
+  for (const [i, s] of ordered.entries()) {
+    const { lengthMs, pauseMs } = metricsOf(s);
+    if (pauseMs < SHORT_PAUSE_MS) warnings.push({ segmentId: s.id, code: "shortPause" });
+
+    const neighbours = lengths.slice(Math.max(0, i - half), i + half + 1);
+    const median = medianOf(neighbours);
+    if (neighbours.length < MIN_SEGMENTS_FOR_MEDIAN || median <= 0) continue;
+    if (lengthMs >= median * SHORT_CLIP_RATIO) continue;
+    // One code, not both: the last clip being short has its own, likelier explanation.
+    warnings.push({ segmentId: s.id, code: i === ordered.length - 1 ? "shortLastClip" : "shortClip" });
+  }
+  return warnings;
+}
+
+/** How much of a clip to play for each of the two quick checks (M7.2). */
+export const PREVIEW_HEAD_MS = 5_000;
+export const PREVIEW_TAIL_MS = 10_000;
+
+/** The first seconds: does the clip start on the question's own opening, or mid-sentence? */
+export const headPreview = (s: Pick<TopikSegment, "start_ms" | "end_ms">) => ({
+  from: s.start_ms,
+  to: Math.min(s.start_ms + PREVIEW_HEAD_MS, s.end_ms),
+});
+
+/**
+ * The last seconds *of the talking*, not of the clip: a correct clip ends with a long designed
+ * silence, so playing its final seconds would prove nothing. What can go wrong is a cut through the
+ * last sentence, and that is heard right before `speech_end_ms`.
+ */
+export const tailPreview = (s: Pick<TopikSegment, "start_ms" | "speech_end_ms">) => ({
+  from: Math.max(s.start_ms, s.speech_end_ms - PREVIEW_TAIL_MS),
+  to: s.speech_end_ms,
+});
+
+/** Where the playing head is inside a clip, as 0…1 for the progress bar. */
+export function clipProgress(positionMs: number, startMs: number, endMs: number): number {
+  if (endMs <= startMs) return 0;
+  return Math.min(1, Math.max(0, (positionMs - startMs) / (endMs - startMs)));
+}

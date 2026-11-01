@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { stopAudio } from "@/features/audio/player";
 import { formatTimeInput } from "./segmentEdit";
 import { useTopikAudio, useUpdateTopikSegment, useVerifyTopikAudio } from "./api";
-import { canApprove, segmentProblems } from "./segmentEdit";
+import { canApprove, segmentProblems, segmentWarnings } from "./segmentEdit";
 import { TopikSegmentRow } from "./TopikSegmentRow";
+import { TopikSegmentTable } from "./TopikSegmentTable";
 
 /**
  * Screen (M7.1) — review one listening paper's clip boundaries before its questions may be
@@ -28,6 +29,8 @@ export function TopikAudioEditor({ audioId, profileId, onBack }: { audioId: stri
   const { segments, duration_ms, verified, exam, audio_key, unassigned_questions } = audio.data;
   const problems = segmentProblems(segments, duration_ms);
   const problemsOf = (id: string) => problems.filter((p) => p.segmentId === id);
+  const warnings = segmentWarnings(segments);
+  const warningsOf = (id: string) => warnings.filter((w) => w.segmentId === id);
   const ready = canApprove(segments, duration_ms) && unassigned_questions === 0;
 
   const back = () => {
@@ -68,6 +71,8 @@ export function TopikAudioEditor({ audioId, profileId, onBack }: { audioId: stri
         </p>
       </div>
 
+      <TopikSegmentTable segments={segments} problems={problems} warnings={warnings} />
+
       <ul className="flex flex-col gap-3">
         {segments.map((segment) => (
           <TopikSegmentRow
@@ -75,6 +80,7 @@ export function TopikAudioEditor({ audioId, profileId, onBack }: { audioId: stri
             segment={segment}
             audioKey={audio_key}
             problems={problemsOf(segment.id)}
+            warnings={warningsOf(segment.id)}
             saving={updateSegment.isPending}
             onChange={(patch) => updateSegment.mutate({ id: segment.id, profile_id: profileId, patch })}
           />

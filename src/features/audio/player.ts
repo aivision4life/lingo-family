@@ -16,9 +16,15 @@ function readRate(): PlaybackRate {
   }
 }
 
-type State = { rate: PlaybackRate; playingKey: string | null };
+/**
+ * The clip currently playing through `playSegment`, with where the playing head is (M7.2): the
+ * segment editor shows a clock and a progress bar, and a clip of a 30-minute exam has no useful
+ * position of its own — only its offset inside the clip matters.
+ */
+export type PlayingClip = { key: string; startMs: number; endMs: number; positionMs: number };
+type State = { rate: PlaybackRate; playingKey: string | null; clip: PlayingClip | null };
 
-let state: State = { rate: readRate(), playingKey: null };
+let state: State = { rate: readRate(), playingKey: null, clip: null };
 let audio: HTMLAudioElement | null = null;
 const listeners = new Set<() => void>();
 const endedListeners = new Set<() => void>();
@@ -40,10 +46,10 @@ function ensureAudio(): HTMLAudioElement {
   if (!audio) {
     audio = new Audio();
     audio.addEventListener("ended", () => {
-      setState({ playingKey: null });
+      setState({ playingKey: null, clip: null });
       endedListeners.forEach((l) => l());
     });
-    audio.addEventListener("pause", () => setState({ playingKey: null }));
+    audio.addEventListener("pause", () => setState({ playingKey: null, clip: null }));
   }
   return audio;
 }
@@ -55,7 +61,7 @@ export function playAudio(key: string) {
   // Loading a new source resets playbackRate to defaultPlaybackRate, so set both.
   audio!.defaultPlaybackRate = state.rate;
   audio!.playbackRate = state.rate;
-  setState({ playingKey: key });
+  setState({ playingKey: key, clip: null });
   audio!.play().catch(() => setState({ playingKey: null }));
 }
 
@@ -78,7 +84,10 @@ export function playSegment(key: string, startMs: number, endMs: number) {
     el.play().catch(() => setState({ playingKey: null }));
   };
   const watch = () => {
-    if (el.currentTime < stopAt) return;
+    if (el.currentTime < stopAt) {
+      setState({ clip: { key, startMs, endMs, positionMs: el.currentTime * 1000 } });
+      return;
+    }
     el.pause();
     el.removeEventListener("timeupdate", watch);
     endedListeners.forEach((l) => l());
@@ -88,7 +97,7 @@ export function playSegment(key: string, startMs: number, endMs: number) {
   el.removeEventListener("timeupdate", watch);
   el.defaultPlaybackRate = state.rate;
   el.playbackRate = state.rate;
-  setState({ playingKey: key });
+  setState({ playingKey: key, clip: { key, startMs, endMs, positionMs: startMs } });
   el.addEventListener("timeupdate", watch);
   // A fresh source has no duration yet, so seeking has to wait for the metadata.
   if (el.src.endsWith(url)) begin();

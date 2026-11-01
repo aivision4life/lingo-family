@@ -683,6 +683,23 @@
         "noQuestion": "Đoạn này chưa gán câu nào.",
         "overlapsNext": "Đoạn này chồng lên đoạn sau.",
         "gapToNext": "Có khoảng trống giữa đoạn này và đoạn sau."
+      },
+      "table": {
+        "caption": "Danh sách các đoạn của đề này",
+        "idx": "Đoạn",
+        "length": "Độ dài",
+        "pause": "Lặng cuối"
+      },
+      "metrics": "Dài {{length}} · lặng cuối {{pause}}",
+      "clock": "{{at}} / {{total}}",
+      "playHead": "{{seconds}} giây đầu",
+      "playTail": "{{seconds}} giây cuối",
+      "playTailHint": "Phát {{seconds}} giây ngay trước mốc hết tiếng, nơi dễ bị cắt ngang câu.",
+      "warningOn": "Đoạn {{numbers}}: {{reason}}",
+      "warning": {
+        "shortPause": "khoảng lặng cuối dưới 3 giây, không đủ thời gian chọn đáp án",
+        "shortClip": "ngắn bất thường so với các đoạn khác, có thể một câu bị cắt làm hai",
+        "shortLastClip": "đoạn cuối ngắn hẳn, có thể là lời kết thúc bài thi chứ không phải câu hỏi"
       }
     },
     "section": {

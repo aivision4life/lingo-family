@@ -683,6 +683,23 @@
         "noQuestion": "이 구간에 연결된 문항이 없습니다.",
         "overlapsNext": "다음 구간과 겹칩니다.",
         "gapToNext": "다음 구간과 사이에 빈 곳이 있습니다."
+      },
+      "table": {
+        "caption": "이 시험의 구간 목록",
+        "idx": "구간",
+        "length": "길이",
+        "pause": "끝 정적"
+      },
+      "metrics": "길이 {{length}} · 끝 정적 {{pause}}",
+      "clock": "{{at}} / {{total}}",
+      "playHead": "앞 {{seconds}}초",
+      "playTail": "뒤 {{seconds}}초",
+      "playTailHint": "말이 끝나는 지점 바로 앞 {{seconds}}초를 재생합니다.",
+      "warningOn": "구간 {{numbers}}: {{reason}}",
+      "warning": {
+        "shortPause": "끝 정적이 3초 미만이라 답을 고를 시간이 없음",
+        "shortClip": "다른 구간보다 비정상적으로 짧음 — 한 문항이 둘로 잘렸을 수 있음",
+        "shortLastClip": "마지막 구간이 유독 짧음 — 문항이 아니라 시험 종료 안내일 수 있음"
       }
     },
     "section": {
