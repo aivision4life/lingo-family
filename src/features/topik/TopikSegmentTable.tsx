@@ -87,7 +87,9 @@ export function TopikSegmentTable({
       </div>
       {warnings.length > 0 && (
         <ul className="flex flex-col gap-1 text-xs text-amber-700 dark:text-amber-500">
-          {(["shortPause", "shortClip", "shortLastClip"] as const)
+          {/* Ordered by how much they need acting on; "no question yet" is last because on a paper
+              still being typed up it is the normal state of most clips. */}
+          {(["shortPause", "shortClip", "shortLastClip", "noQuestion"] as const)
             .filter((code) => warnings.some((w) => w.code === code))
             .map((code) => (
               <li key={code}>

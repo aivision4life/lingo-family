@@ -657,14 +657,14 @@
       "edit": "구간 수정",
       "listLine": "{{segments}}개 구간 · {{questions}}문항 · {{duration}}",
       "summary": "{{count}}개 구간 · 전체 {{duration}}",
-      "unassigned": "구간이 없는 문항 {{count}}개",
+      "unassigned": "{{count}}개 문항에 구간이 없어 연습에 나오지 않습니다",
       "approved": "음성 확인 완료",
       "notApproved": "음성 미확인",
       "approve": "음성 확인 완료로 표시",
       "unapprove": "확인 취소",
       "approvedHint": "이 시험의 문항이 연습에 사용됩니다.",
-      "readyHint": "몇 구간 들어 보고 확인을 눌러 주세요. 확인 전에는 이 시험의 문항이 연습에 나오지 않습니다.",
-      "blockedHint": "시간 오류가 있거나 구간이 없는 문항이 남아 있습니다. 고친 뒤에 확인할 수 있습니다.",
+      "readyHint": "몇 구간을 들어 보고 승인하세요. 승인은 현재 구간 시각이 맞다는 뜻입니다 — 일부만 채운 시험도 연결된 문항만으로 연습할 수 있습니다.",
+      "blockedHint": "구간 시각에 오류가 있어 승인할 수 없습니다. 문항이 없는 구간은 승인을 막지 않습니다.",
       "segmentN": "{{n}}번 구간",
       "questionsOn": "{{numbers}}번 문항",
       "noQuestion": "연결된 문항 없음",
@@ -680,7 +680,6 @@
         "startsAfterEnd": "시작이 종료보다 뒤일 수 없습니다.",
         "speechOutside": "말 끝은 구간 안에 있어야 합니다.",
         "pastFile": "구간이 파일 길이를 넘습니다.",
-        "noQuestion": "이 구간에 연결된 문항이 없습니다.",
         "overlapsNext": "다음 구간과 겹칩니다.",
         "gapToNext": "다음 구간과 사이에 빈 곳이 있습니다."
       },
@@ -699,7 +698,8 @@
       "warning": {
         "shortPause": "끝 정적이 3초 미만이라 답을 고를 시간이 없음",
         "shortClip": "다른 구간보다 비정상적으로 짧음 — 한 문항이 둘로 잘렸을 수 있음",
-        "shortLastClip": "마지막 구간이 유독 짧음 — 문항이 아니라 시험 종료 안내일 수 있음"
+        "shortLastClip": "마지막 구간이 유독 짧음 — 문항이 아니라 시험 종료 안내일 수 있음",
+        "noQuestion": "연결된 문항이 없어 연습에 나오지 않음"
       }
     },
     "section": {

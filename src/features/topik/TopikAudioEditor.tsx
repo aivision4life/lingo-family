@@ -31,7 +31,9 @@ export function TopikAudioEditor({ audioId, profileId, onBack }: { audioId: stri
   const problemsOf = (id: string) => problems.filter((p) => p.segmentId === id);
   const warnings = segmentWarnings(segments);
   const warningsOf = (id: string) => warnings.filter((w) => w.segmentId === id);
-  const ready = canApprove(segments, duration_ms) && unassigned_questions === 0;
+  // Approval says "these timestamps are right", nothing about the paper being finished: a paper
+  // covered only up to question 12 must be practisable for those 12 while the rest are typed up.
+  const ready = canApprove(segments, duration_ms);
 
   const back = () => {
     stopAudio();

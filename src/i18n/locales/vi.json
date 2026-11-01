@@ -657,14 +657,14 @@
       "edit": "Sửa mốc",
       "listLine": "{{segments}} đoạn · {{questions}} câu · {{duration}}",
       "summary": "{{count}} đoạn · tổng {{duration}}",
-      "unassigned": "{{count}} câu chưa gán đoạn",
+      "unassigned": "{{count}} câu chưa gán đoạn — những câu đó chưa vào luyện tập được",
       "approved": "Đã duyệt phần âm thanh",
       "notApproved": "Chưa duyệt phần âm thanh",
       "approve": "Duyệt phần âm thanh",
       "unapprove": "Bỏ duyệt",
       "approvedHint": "Các câu của đề này đã được dùng khi luyện tập.",
-      "readyHint": "Nghe thử vài đoạn rồi bấm duyệt. Trước khi duyệt, không câu nào của đề vào buổi luyện.",
-      "blockedHint": "Còn lỗi mốc thời gian hoặc còn câu chưa gán đoạn — sửa xong mới duyệt được.",
+      "readyHint": "Nghe thử vài đoạn rồi bấm duyệt. Duyệt nghĩa là các mốc thời gian hiện có đã đúng — đề phủ một phần vẫn luyện được, chỉ luyện những câu đã gán đoạn.",
+      "blockedHint": "Còn lỗi mốc thời gian — sửa xong mới duyệt được. Đoạn chưa gán câu không chặn duyệt.",
       "segmentN": "Đoạn {{n}}",
       "questionsOn": "Câu {{numbers}}",
       "noQuestion": "Chưa gán câu nào",
@@ -680,7 +680,6 @@
         "startsAfterEnd": "Điểm bắt đầu không được sau điểm kết thúc.",
         "speechOutside": "Mốc hết tiếng phải nằm trong đoạn.",
         "pastFile": "Đoạn vượt quá độ dài file.",
-        "noQuestion": "Đoạn này chưa gán câu nào.",
         "overlapsNext": "Đoạn này chồng lên đoạn sau.",
         "gapToNext": "Có khoảng trống giữa đoạn này và đoạn sau."
       },
@@ -699,7 +698,8 @@
       "warning": {
         "shortPause": "khoảng lặng cuối dưới 3 giây, không đủ thời gian chọn đáp án",
         "shortClip": "ngắn bất thường so với các đoạn khác, có thể một câu bị cắt làm hai",
-        "shortLastClip": "đoạn cuối ngắn hẳn, có thể là lời kết thúc bài thi chứ không phải câu hỏi"
+        "shortLastClip": "đoạn cuối ngắn hẳn, có thể là lời kết thúc bài thi chứ không phải câu hỏi",
+        "noQuestion": "chưa gán câu nào, sẽ không vào luyện tập cho tới khi có câu"
       }
     },
     "section": {

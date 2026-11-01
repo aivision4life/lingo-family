@@ -71,13 +71,24 @@ describe("segmentProblems", () => {
     });
   });
 
-  it("catches a clip past the end of the file and one with no question", () => {
+  it("catches a clip past the end of the file", () => {
     expect(segmentProblems([seg({ id: "x", idx: 1, end_ms: 50_000 })], 40_000)).toContainEqual({ segmentId: "x", message: "pastFile" });
-    expect(segmentProblems([seg({ id: "x", idx: 1, questions: [] })], 40_000)).toContainEqual({ segmentId: "x", message: "noQuestion" });
+    // A clip with no question is a warning, not a problem: see the dedicated test below.
+    expect(segmentProblems([seg({ id: "x", idx: 1, questions: [] })], 40_000)).toEqual([]);
   });
 
   it("never approves an exam with no clips at all", () => {
     expect(canApprove([], 40_000)).toBe(false);
+  });
+
+  it("approves a paper whose later clips have no question yet", () => {
+    // The real case: questions are typed up to number 12 while ffmpeg found all 36 clips. Approving
+    // says the timestamps are right, not that the paper is finished, so those 12 can be practised.
+    const covered = seg({ id: "a", idx: 1, start_ms: 0, speech_end_ms: 10_000, end_ms: 20_000, questions: [1] });
+    const empty = seg({ id: "b", idx: 2, start_ms: 20_000, speech_end_ms: 30_000, end_ms: 40_000, questions: [] });
+    expect(segmentProblems([covered, empty], 40_000)).toEqual([]);
+    expect(canApprove([covered, empty], 40_000)).toBe(true);
+    expect(segmentWarnings([covered, empty])).toContainEqual({ segmentId: "b", code: "noQuestion" });
   });
 });
 

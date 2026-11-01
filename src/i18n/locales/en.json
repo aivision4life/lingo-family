@@ -657,14 +657,14 @@
       "edit": "Edit clips",
       "listLine": "{{segments}} clips · {{questions}} questions · {{duration}}",
       "summary": "{{count}} clips · {{duration}} total",
-      "unassigned": "{{count}} question(s) with no clip",
+      "unassigned": "{{count}} question(s) have no clip, so they cannot be practised yet",
       "approved": "Audio approved",
       "notApproved": "Audio not approved",
       "approve": "Approve audio",
       "unapprove": "Un-approve",
       "approvedHint": "This paper's questions are used in practice.",
-      "readyHint": "Listen to a few clips, then approve. Until you do, none of this paper's questions appear in practice.",
-      "blockedHint": "There are still boundary problems or questions with no clip — fix those first.",
+      "readyHint": "Listen to a few clips, then approve. Approving means the timestamps that exist are right — a partly covered paper is still practisable, using the questions that have a clip.",
+      "blockedHint": "A timestamp is still wrong — fix it before approving. A clip with no question does not block approval.",
       "segmentN": "Clip {{n}}",
       "questionsOn": "Questions {{numbers}}",
       "noQuestion": "No question linked",
@@ -680,7 +680,6 @@
         "startsAfterEnd": "The start cannot be after the end.",
         "speechOutside": "The speech end must be inside the clip.",
         "pastFile": "The clip runs past the end of the file.",
-        "noQuestion": "No question is linked to this clip.",
         "overlapsNext": "This clip overlaps the next one.",
         "gapToNext": "There is a gap between this clip and the next."
       },
@@ -699,7 +698,8 @@
       "warning": {
         "shortPause": "less than 3 seconds of silence — no time to choose an answer",
         "shortClip": "much shorter than the other clips; one question may have been split in two",
-        "shortLastClip": "the last clip is much shorter — likely the closing announcement, not a question"
+        "shortLastClip": "the last clip is much shorter — likely the closing announcement, not a question",
+        "noQuestion": "no question attached yet, so it will not appear in practice"
       }
     },
     "section": {

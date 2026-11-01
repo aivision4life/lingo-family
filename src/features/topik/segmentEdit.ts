@@ -23,7 +23,7 @@ export function formatTimeInput(ms: number): string {
 }
 
 /** Typed so the i18n key `topik.audio.problem.<code>` can be checked at compile time. */
-export type SegmentProblemCode = "startsAfterEnd" | "speechOutside" | "pastFile" | "noQuestion" | "overlapsNext" | "gapToNext";
+export type SegmentProblemCode = "startsAfterEnd" | "speechOutside" | "pastFile" | "overlapsNext" | "gapToNext";
 export type SegmentProblem = { segmentId: string; message: SegmentProblemCode };
 
 /**
@@ -33,6 +33,11 @@ export type SegmentProblem = { segmentId: string; message: SegmentProblemCode };
  * a gap between two clips, still plays audio that sounds perfectly fine — what goes wrong is that
  * the learner hears the wrong part of the paper, which only shows up as answers that stop making
  * sense. The review screen refuses approval while any of them stands.
+ *
+ * A clip with no question attached is deliberately *not* here: approving a paper means "these
+ * timestamps are right", not "this paper is complete". A paper whose questions have only been typed
+ * up as far as number 12 still has 36 clips, and must be usable for practising those 12 — the
+ * session query already picks only questions that have a clip, so the rest simply wait.
  */
 export function segmentProblems(segments: readonly TopikSegment[], durationMs: number): SegmentProblem[] {
   const problems: SegmentProblem[] = [];
@@ -43,7 +48,6 @@ export function segmentProblems(segments: readonly TopikSegment[], durationMs: n
     if (s.start_ms >= s.end_ms) at("startsAfterEnd");
     if (s.speech_end_ms < s.start_ms || s.speech_end_ms > s.end_ms) at("speechOutside");
     if (s.end_ms > durationMs) at("pastFile");
-    if (s.questions.length === 0) at("noQuestion");
 
     const next = ordered[i + 1];
     if (next && s.end_ms > next.start_ms) at("overlapsNext");
@@ -114,9 +118,11 @@ export const LOCAL_WINDOW = 9;
  *  - `shortClip`: far shorter than the other clips of the same paper, so ffmpeg most likely split
  *    one question in two at a pause inside the dialogue;
  *  - `shortLastClip`: the same, but it is the last clip — usually the closing announcement
- *    ("시험이 끝났습니다"), which is not a question at all and should be deleted rather than fixed.
+ *    ("시험이 끝났습니다"), which is not a question at all and should be deleted rather than fixed;
+ *  - `noQuestion`: nothing is asked about this clip yet, which is normal while a paper's questions
+ *    are still being typed up — information, never a reason to hold up the whole paper.
  */
-export type SegmentWarningCode = "shortPause" | "shortClip" | "shortLastClip";
+export type SegmentWarningCode = "shortPause" | "shortClip" | "shortLastClip" | "noQuestion";
 export type SegmentWarning = { segmentId: string; code: SegmentWarningCode };
 
 /** The middle value of a sorted copy; the average would be dragged by the very outliers we hunt. */
@@ -140,6 +146,7 @@ export function segmentWarnings(segments: readonly TopikSegment[]): SegmentWarni
   const warnings: SegmentWarning[] = [];
   for (const [i, s] of ordered.entries()) {
     const { lengthMs, pauseMs } = metricsOf(s);
+    if (s.questions.length === 0) warnings.push({ segmentId: s.id, code: "noQuestion" });
     if (pauseMs < SHORT_PAUSE_MS) warnings.push({ segmentId: s.id, code: "shortPause" });
 
     const neighbours = lengths.slice(Math.max(0, i - half), i + half + 1);
