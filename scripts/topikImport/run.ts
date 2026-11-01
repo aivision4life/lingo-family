@@ -6,6 +6,16 @@
 //   npm run topik-import -- --apply --local                       writes to the local dev D1/R2 instead (try a file out)
 //   npm run topik-import -- --apply --force                       also overwrites a question that was already edited/verified
 //   npm run topik-import -- --apply --force --keep-verified       same, but keeps the row's existing `verified` (see below)
+//   npm run topik-import -- --section listening                   only the listening files; --section reading for the others
+//   npm run topik-import -- --source Yonsei                       only files whose name's <source> is Yonsei
+//
+// `--section` / `--source` filter by **file name** and apply identically to the dry run and to
+// `--apply`, so the printed report always describes exactly the set that would be written. Because
+// `--force` UPDATEs every existing question it parsed, `--force` with no `--section` is refused
+// before the backup and before any write: it names how many existing questions each section would
+// lose its `verified` flag on, and asks for either `--section` or an explicit `--all-sections`.
+// Without this guard, re-importing one re-cut listening file would also quietly un-approve every
+// reviewed reading question in data/topik/.
 //
 // A question with a parse error (mismatched or malformed answer, wrong option count) is never
 // imported. A question that already exists (same section+exam+number) is skipped unless --force,
@@ -33,10 +43,22 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { getPlatformProxy } from "wrangler";
+import type { TopikSection } from "../../shared/enums";
 import { stripUnderline, type TopikOptions } from "../../shared/topik";
 import { imageInfo } from "../../worker/lib/imageInfo";
 import { buildImportDraft, type DraftQuestion } from "../../worker/services/topikImport";
-import { checkImageBytes, checkQuestionImages, imageRefsOf, verifiedAfterOverwrite, type MediaByRid } from "./plan";
+import {
+  checkImageBytes,
+  checkQuestionImages,
+  fileMatchesFilter,
+  filterLabel,
+  forceScopeProblem,
+  imageRefsOf,
+  parseSectionFlag,
+  verifiedAfterOverwrite,
+  type ImportFilter,
+  type MediaByRid,
+} from "./plan";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
 type D1Like = { prepare(sql: string): Stmt };
@@ -69,6 +91,20 @@ const force = args.includes("--force");
 const keepVerified = args.includes("--keep-verified");
 /** Write to the dev server's own D1/R2 (.wrangler/state) instead of production, to try a file out. */
 const local = args.includes("--local");
+/** Confirms that a `--force` run really is meant to overwrite questions in every section. */
+const allSections = args.includes("--all-sections");
+
+function flag(name: string): string | undefined {
+  const i = args.indexOf(name);
+  return i === -1 ? undefined : args[i + 1];
+}
+
+const sectionFlag = parseSectionFlag(flag("--section"));
+if (!sectionFlag.ok) {
+  console.error(sectionFlag.reason);
+  process.exit(1);
+}
+const filter: ImportFilter = { section: sectionFlag.section, source: flag("--source") ?? null };
 
 function tempConfig() {
   const dir = mkdtempSync(path.join(os.tmpdir(), "lingo-topik-import-"));
@@ -104,6 +140,11 @@ type ParsedFile = {
   /** rId → media bytes + content type, for `--apply` only. */
   mediaByRid: MediaByRid;
 };
+
+/** The production/local row a draft would replace, as read once before any write. */
+type ExistingRow = { id: string; verified: number; stem_text: string | null };
+/** One draft question paired with the row it matches (null = it will be inserted). */
+type ImportRow = { f: ParsedFile; q: DraftQuestion; existing: ExistingRow | null };
 
 async function parseFile(filePath: string, fileName: string): Promise<ParsedFile> {
   const zip = await JSZip.loadAsync(await readFile(filePath));
@@ -155,9 +196,16 @@ async function main() {
   // "~$name.docx" is Word's own lock file for a document that is currently open — it is not a zip
   // at all, so including it crashed the whole run with an opaque JSZip "is this a zip file?" error
   // just because the file happened to be open while importing.
-  const fileNames = (await readdir(DATA_DIR)).filter((f) => f.toLowerCase().endsWith(".docx") && !f.startsWith("~$"));
-  if (fileNames.length === 0) {
+  const allFiles = (await readdir(DATA_DIR)).filter((f) => f.toLowerCase().endsWith(".docx") && !f.startsWith("~$"));
+  if (allFiles.length === 0) {
     console.log(`No .docx files in ${DATA_DIR}.`);
+    return;
+  }
+  // The same file-name filter decides the dry run and the apply, so the report always describes
+  // exactly the set that would be written.
+  const fileNames = allFiles.filter((f) => fileMatchesFilter(f, filter));
+  if (fileNames.length === 0) {
+    console.log(`No .docx file in ${DATA_DIR} matches ${filterLabel(filter)} (${allFiles.length} file(s) skipped).`);
     return;
   }
   console.log(
@@ -165,6 +213,10 @@ async function main() {
       ? `APPLY${force ? " --force" : ""}${keepVerified ? " --keep-verified" : ""}: will write to ${local ? "the LOCAL dev database" : "production"}`
       : "DRY RUN: nothing is written",
   );
+  console.log(`Scope: ${filterLabel(filter)} — ${fileNames.length} of ${allFiles.length} file(s) in ${DATA_DIR}`);
+  if (force && filter.section === null && !allSections) {
+    console.log("NOTE: --force with no --section; an apply will be blocked unless you add --section or --all-sections.");
+  }
 
   const parsed: ParsedFile[] = [];
   for (const fileName of fileNames) {
@@ -199,7 +251,7 @@ async function main() {
     totalWithImage += withImage.length;
     totalImageRefs += withImage.reduce((n, q) => n + imageRefsOf(q).length, 0);
   }
-  console.log(`\nTotal: ${totalOk} question(s) ready to import, ${totalErrors} error(s) (not imported).`);
+  console.log(`\nTotal (${filterLabel(filter)}): ${totalOk} question(s) ready to import, ${totalErrors} error(s) (not imported).`);
   console.log(`${totalWithImage} question(s) have at least one image (${totalImageRefs} image reference(s) will be uploaded to R2).`);
 
   if (!apply) {
@@ -219,24 +271,42 @@ async function main() {
     const db = proxy.env.DB as unknown as D1Like;
     const bucket = proxy.env.MEDIA as unknown as R2Like;
 
+    // One read-only pass first: which drafts already exist. It feeds the --force scope guard (which
+    // must run before the backup and before any write) and is then reused by both the stem safety
+    // net and the write loop, instead of looking the same rows up three times.
+    const rows: ImportRow[] = [];
+    for (const f of parsed) {
+      for (const q of f.questions) {
+        const existing = await db
+          .prepare("SELECT id, verified, stem_text FROM topik_questions WHERE section = ?1 AND exam = ?2 AND number = ?3")
+          .bind(q.section, q.exam, q.number)
+          .first<ExistingRow>();
+        rows.push({ f, q, existing });
+      }
+    }
+
+    const existingBySection: Partial<Record<TopikSection, number>> = {};
+    for (const r of rows) {
+      if (r.existing) existingBySection[r.q.section] = (existingBySection[r.q.section] ?? 0) + 1;
+    }
+    const scopeProblem = forceScopeProblem({ force, section: filter.section, allSections, existingBySection });
+    if (scopeProblem) {
+      console.error(`\nNothing was written.\n${scopeProblem}`);
+      return;
+    }
+
     if (force) {
       const problems: string[] = [];
-      for (const f of parsed) {
-        for (const q of f.questions) {
-          const existing = await db
-            .prepare("SELECT stem_text FROM topik_questions WHERE section = ?1 AND exam = ?2 AND number = ?3")
-            .bind(q.section, q.exam, q.number)
-            .first<{ stem_text: string | null }>();
-          if (!existing) continue;
-          const newHasUnderline = q.stem.text?.includes("<u>") ?? false;
-          const oldHasUnderline = existing.stem_text?.includes("<u>") ?? false;
-          if (!newHasUnderline || oldHasUnderline) continue; // not "adding formatting" for the first time
-          const stripped = q.stem.text ? stripUnderline(q.stem.text) : null;
-          if (stripped !== existing.stem_text) {
-            problems.push(
-              `${q.exam} #${q.number}:\n    production stem_text: ${JSON.stringify(existing.stem_text)}\n    new, <u> stripped    : ${JSON.stringify(stripped)}`,
-            );
-          }
+      for (const { q, existing } of rows) {
+        if (!existing) continue;
+        const newHasUnderline = q.stem.text?.includes("<u>") ?? false;
+        const oldHasUnderline = existing.stem_text?.includes("<u>") ?? false;
+        if (!newHasUnderline || oldHasUnderline) continue; // not "adding formatting" for the first time
+        const stripped = q.stem.text ? stripUnderline(q.stem.text) : null;
+        if (stripped !== existing.stem_text) {
+          problems.push(
+            `${q.exam} #${q.number}:\n    production stem_text: ${JSON.stringify(existing.stem_text)}\n    new, <u> stripped    : ${JSON.stringify(stripped)}`,
+          );
         }
       }
       if (problems.length > 0) {
@@ -251,45 +321,39 @@ async function main() {
     let inserted = 0;
     let skipped = 0;
     let overwritten = 0;
-    for (const f of parsed) {
-      for (const q of f.questions) {
-        const existing = await db
-          .prepare("SELECT id, verified FROM topik_questions WHERE section = ?1 AND exam = ?2 AND number = ?3")
-          .bind(q.section, q.exam, q.number)
-          .first<{ id: string; verified: number }>();
-        if (existing && !force) {
-          skipped++;
-          continue;
-        }
-        const options = await resolveOptions(bucket, q, f.mediaByRid);
-        const stemImageKey = await resolveImage(bucket, q.stem.image_rid, f.mediaByRid);
-        // checkQuestionImages() already verified every image reference resolves and validates;
-        // a null key here would mean that guarantee broke between the check and now — stop loudly
-        // instead of silently writing the row without its image.
-        if (q.stem.image_rid && !stemImageKey) throw new Error(`${q.exam} #${q.number}: stem image unexpectedly failed to upload`);
-        const missingOption = options.findIndex((o, i) => q.options[i]!.image_rid && !o.image_key);
-        if (missingOption !== -1) throw new Error(`${q.exam} #${q.number}: option ${missingOption + 1} image unexpectedly failed to upload`);
-        const optionsJson = JSON.stringify(options);
+    for (const { f, q, existing } of rows) {
+      if (existing && !force) {
+        skipped++;
+        continue;
+      }
+      const options = await resolveOptions(bucket, q, f.mediaByRid);
+      const stemImageKey = await resolveImage(bucket, q.stem.image_rid, f.mediaByRid);
+      // checkQuestionImages() already verified every image reference resolves and validates;
+      // a null key here would mean that guarantee broke between the check and now — stop loudly
+      // instead of silently writing the row without its image.
+      if (q.stem.image_rid && !stemImageKey) throw new Error(`${q.exam} #${q.number}: stem image unexpectedly failed to upload`);
+      const missingOption = options.findIndex((o, i) => q.options[i]!.image_rid && !o.image_key);
+      if (missingOption !== -1) throw new Error(`${q.exam} #${q.number}: option ${missingOption + 1} image unexpectedly failed to upload`);
+      const optionsJson = JSON.stringify(options);
 
-        if (existing) {
-          const verified = verifiedAfterOverwrite(existing.verified === 1, keepVerified);
-          await db
-            .prepare(
-              `UPDATE topik_questions SET block=?1, instruction=?2, stem_text=?3, stem_image_key=?4, options=?5, correct_option=?6, warning=?7, verified=?8, updated_at=?9 WHERE id=?10`,
-            )
-            .bind(q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, verified ? 1 : 0, Date.now(), existing.id)
-            .run();
-          overwritten++;
-        } else {
-          await db
-            .prepare(
-              `INSERT INTO topik_questions (id, section, exam, number, block, instruction, stem_text, stem_image_key, options, correct_option, warning, verified, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12, ?12)`,
-            )
-            .bind(crypto.randomUUID(), q.section, q.exam, q.number, q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, Date.now())
-            .run();
-          inserted++;
-        }
+      if (existing) {
+        const verified = verifiedAfterOverwrite(existing.verified === 1, keepVerified);
+        await db
+          .prepare(
+            `UPDATE topik_questions SET block=?1, instruction=?2, stem_text=?3, stem_image_key=?4, options=?5, correct_option=?6, warning=?7, verified=?8, updated_at=?9 WHERE id=?10`,
+          )
+          .bind(q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, verified ? 1 : 0, Date.now(), existing.id)
+          .run();
+        overwritten++;
+      } else {
+        await db
+          .prepare(
+            `INSERT INTO topik_questions (id, section, exam, number, block, instruction, stem_text, stem_image_key, options, correct_option, warning, verified, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12, ?12)`,
+          )
+          .bind(crypto.randomUUID(), q.section, q.exam, q.number, q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, Date.now())
+          .run();
+        inserted++;
       }
     }
     console.log(`\nInserted ${inserted}, skipped ${skipped} (already existed, not --force)${force ? `, overwrote ${overwritten}` : ""}.`);

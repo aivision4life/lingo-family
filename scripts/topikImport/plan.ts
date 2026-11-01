@@ -1,8 +1,9 @@
 // Pure parts of the TOPIK import (M6.1): no R2/D1/file access here, so these are easy to unit test.
+import { TOPIK_SECTIONS, type TopikSection } from "../../shared/enums";
 import { IMAGE_UPLOAD_TYPES } from "../../shared/image";
 import { TOPIK_IMAGE_MAX_BYTES, TOPIK_IMAGE_MAX_SIDE } from "../../shared/topik";
 import { imageInfo } from "../../worker/lib/imageInfo";
-import type { DraftQuestion } from "../../worker/services/topikImport";
+import { parseTopikFileName, type DraftQuestion } from "../../worker/services/topikImport";
 
 export type MediaByRid = Map<string, { bytes: Uint8Array; contentType: string }>;
 
@@ -60,4 +61,64 @@ export function checkQuestionImages(q: DraftQuestion, mediaByRid: MediaByRid): s
  */
 export function verifiedAfterOverwrite(existingVerified: boolean, keepVerified: boolean): boolean {
   return keepVerified ? existingVerified : false;
+}
+
+/** Which source files a run is limited to; `null` means "no limit on this axis". */
+export type ImportFilter = { section: TopikSection | null; source: string | null };
+
+/** `--section` validation: an unknown value is an error, never a silent "no filter". */
+export function parseSectionFlag(value: string | undefined): { ok: true; section: TopikSection | null } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, section: null };
+  const section = value.trim().toLowerCase();
+  if (!(TOPIK_SECTIONS as readonly string[]).includes(section)) {
+    return { ok: false, reason: `--section must be one of ${TOPIK_SECTIONS.join("|")} (got "${value}")` };
+  }
+  return { ok: true, section: section as TopikSection };
+}
+
+/**
+ * Whether one `.docx` is in scope, decided from its *file name* alone (so it applies identically to
+ * the dry run and to `--apply`). A file name this project cannot parse always passes: it must still
+ * reach `buildImportDraft`, which reports it as an error — dropping it here would hide a typo'd
+ * file name behind "0 files matched".
+ */
+export function fileMatchesFilter(fileName: string, filter: ImportFilter): boolean {
+  const fn = parseTopikFileName(fileName);
+  if (!fn) return true;
+  if (filter.section && fn.section !== filter.section) return false;
+  if (filter.source && fn.source.toLowerCase() !== filter.source.toLowerCase()) return false;
+  return true;
+}
+
+/** Human-readable scope for the report's header and totals line. */
+export function filterLabel(filter: ImportFilter): string {
+  const parts: string[] = [];
+  parts.push(filter.section ? `section=${filter.section}` : "section=ALL");
+  if (filter.source) parts.push(`source=${filter.source}`);
+  return parts.join(", ");
+}
+
+/**
+ * Guard against the one irreversible mistake this script can make: `--force` with no `--section`
+ * UPDATEs every existing question it parsed, across both sections, and (without `--keep-verified`)
+ * resets their `verified` — silently un-approving reviewed questions in a section the run was never
+ * meant to touch. Returns the abort message, or null when the run may proceed: a section was named,
+ * `--all-sections` says every section is deliberate, or nothing existing would be overwritten at
+ * all. The caller must call this *before* the backup and before any write.
+ */
+export function forceScopeProblem(args: {
+  force: boolean;
+  section: TopikSection | null;
+  allSections: boolean;
+  existingBySection: Partial<Record<TopikSection, number>>;
+}): string | null {
+  if (!args.force || args.section !== null || args.allSections) return null;
+  const counts = TOPIK_SECTIONS.map((s) => [s, args.existingBySection[s] ?? 0] as const).filter(([, n]) => n > 0);
+  const total = counts.reduce((n, [, c]) => n + c, 0);
+  if (total === 0) return null;
+  const breakdown = counts.map(([s, n]) => `${s} ${n}`).join(", ");
+  return (
+    `--force without --section would overwrite ${total} existing question(s): ${breakdown}.\n` +
+    `Add --section ${TOPIK_SECTIONS.join("|")} to limit the run, or --all-sections to confirm every section on purpose.`
+  );
 }

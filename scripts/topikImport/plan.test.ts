@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 import { TOPIK_IMAGE_MAX_BYTES } from "../../shared/topik";
 import type { DraftQuestion } from "../../worker/services/topikImport";
 import { FAKE_WEBP } from "../../worker/test/fakeUpload";
-import { checkImageBytes, checkQuestionImages, imageRefsOf, verifiedAfterOverwrite, type MediaByRid } from "./plan";
+import {
+  checkImageBytes,
+  checkQuestionImages,
+  fileMatchesFilter,
+  filterLabel,
+  forceScopeProblem,
+  imageRefsOf,
+  parseSectionFlag,
+  verifiedAfterOverwrite,
+  type ImportFilter,
+  type MediaByRid,
+} from "./plan";
 
 /** `FAKE_WEBP` with its width set to 2000px — over TOPIK's own 1600px limit. */
 function oversizedForTopik(): Uint8Array {
@@ -115,5 +126,101 @@ describe("verifiedAfterOverwrite", () => {
   it("--keep-verified keeps whatever the row already had", () => {
     expect(verifiedAfterOverwrite(true, true)).toBe(true);
     expect(verifiedAfterOverwrite(false, true)).toBe(false);
+  });
+});
+
+describe("parseSectionFlag", () => {
+  it("no flag means no section filter", () => {
+    expect(parseSectionFlag(undefined)).toEqual({ ok: true, section: null });
+  });
+
+  it("accepts either section, case-insensitively", () => {
+    expect(parseSectionFlag("listening")).toEqual({ ok: true, section: "listening" });
+    expect(parseSectionFlag(" Reading ")).toEqual({ ok: true, section: "reading" });
+  });
+
+  it("rejects an unknown value instead of silently importing everything", () => {
+    const r = parseSectionFlag("listen");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain("reading|listening");
+  });
+
+  it("rejects an empty value (--section with nothing after it)", () => {
+    expect(parseSectionFlag("").ok).toBe(false);
+  });
+});
+
+describe("fileMatchesFilter", () => {
+  const reading = "TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx";
+  const listening = "TOPIK_Listening_Cau04_08_OfficialTest_VERSION1.docx";
+
+  it("no filter keeps every file", () => {
+    const none: ImportFilter = { section: null, source: null };
+    expect(fileMatchesFilter(reading, none)).toBe(true);
+    expect(fileMatchesFilter(listening, none)).toBe(true);
+  });
+
+  it("--section keeps only that section", () => {
+    const filter: ImportFilter = { section: "listening", source: null };
+    expect(fileMatchesFilter(listening, filter)).toBe(true);
+    expect(fileMatchesFilter(reading, filter)).toBe(false);
+  });
+
+  it("--source matches the file name's source, case-insensitively", () => {
+    expect(fileMatchesFilter(reading, { section: null, source: "yonsei" })).toBe(true);
+    expect(fileMatchesFilter(listening, { section: null, source: "yonsei" })).toBe(false);
+  });
+
+  it("both filters must match", () => {
+    expect(fileMatchesFilter(listening, { section: "listening", source: "OfficialTest" })).toBe(true);
+    expect(fileMatchesFilter(listening, { section: "reading", source: "OfficialTest" })).toBe(false);
+  });
+
+  it("keeps a file name it cannot parse, so buildImportDraft still reports it", () => {
+    expect(fileMatchesFilter("notes.docx", { section: "listening", source: null })).toBe(true);
+  });
+});
+
+describe("forceScopeProblem", () => {
+  const existingBySection = { reading: 229, listening: 24 };
+
+  it("refuses --force with no --section, naming the count per section", () => {
+    const msg = forceScopeProblem({ force: true, section: null, allSections: false, existingBySection });
+    expect(msg).toContain("253 existing question(s)");
+    expect(msg).toContain("reading 229");
+    expect(msg).toContain("listening 24");
+    expect(msg).toContain("--all-sections");
+  });
+
+  it("allows --force once a section is named", () => {
+    expect(forceScopeProblem({ force: true, section: "listening", allSections: false, existingBySection })).toBeNull();
+  });
+
+  it("allows --force with an explicit --all-sections", () => {
+    expect(forceScopeProblem({ force: true, section: null, allSections: true, existingBySection })).toBeNull();
+  });
+
+  it("does not block a run without --force (nothing gets overwritten)", () => {
+    expect(forceScopeProblem({ force: false, section: null, allSections: false, existingBySection })).toBeNull();
+  });
+
+  it("does not block when nothing existing would be overwritten", () => {
+    expect(forceScopeProblem({ force: true, section: null, allSections: false, existingBySection: {} })).toBeNull();
+    expect(forceScopeProblem({ force: true, section: null, allSections: false, existingBySection: { reading: 0 } })).toBeNull();
+  });
+
+  it("leaves out a section that has nothing to overwrite", () => {
+    const msg = forceScopeProblem({ force: true, section: null, allSections: false, existingBySection: { listening: 24 } });
+    expect(msg).toContain("question(s): listening 24.");
+  });
+});
+
+describe("filterLabel", () => {
+  it("says ALL when no section is given", () => {
+    expect(filterLabel({ section: null, source: null })).toBe("section=ALL");
+  });
+
+  it("names both axes when both are set", () => {
+    expect(filterLabel({ section: "listening", source: "OfficialTest" })).toBe("section=listening, source=OfficialTest");
   });
 });
