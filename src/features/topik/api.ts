@@ -16,6 +16,7 @@ import {
   type TopikQuestionInput,
   type TopikQuestionUpdate,
   type TopikSegmentUpdate,
+  type TopikSessionMode,
   type TopikVerifyBulkRequest,
 } from "@shared/topik";
 import type { TopikSection } from "@shared/enums";
@@ -39,17 +40,24 @@ export const useTopikBlocks = (profileId: string, section: TopikSection) =>
     enabled: profileId !== "",
   });
 
-export const useTopikSession = (profileId: string, section: TopikSection, from: number, to: number) =>
+export const useTopikSession = (profileId: string, section: TopikSection, from: number, to: number, mode: TopikSessionMode = "due") =>
   useQuery({
-    queryKey: ["topik", "session", profileId, section, from, to],
-    queryFn: () => api("GET", `/topik/session?profile_id=${profileId}&section=${section}&from=${from}&to=${to}`, topikSessionResponseSchema),
+    queryKey: ["topik", "session", profileId, section, from, to, mode],
+    queryFn: () =>
+      api("GET", `/topik/session?profile_id=${profileId}&section=${section}&from=${from}&to=${to}&mode=${mode}`, topikSessionResponseSchema),
     enabled: from > 0 && to > 0,
   });
 
 export const useSubmitTopikAttempt = () =>
   useMutation({
-    mutationFn: (body: { profile_id: string; question_id: string; selected_option: number; duration_ms: number }) =>
-      api("POST", "/topik/attempts", topikAttemptResultSchema, body),
+    mutationFn: (body: {
+      profile_id: string;
+      question_id: string;
+      selected_option: number;
+      duration_ms: number;
+      /** false in a practise-anyway session: recorded, but the FSRS schedule is left alone. */
+      schedule?: boolean;
+    }) => api("POST", "/topik/attempts", topikAttemptResultSchema, body),
   });
 
 /** Polls one question's current vocab/explanation (M6.4-ish): used while a practice session's

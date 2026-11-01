@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useBlocker, useSearchParams } from "react-router";
 import type { TopikSection } from "@shared/enums";
+import type { TopikSessionMode } from "@shared/topik";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,7 +33,10 @@ export function TopikPracticePage() {
   const to = Number(params.get("to"));
   // Reading unless the link says otherwise, so an old bookmark keeps working.
   const section: TopikSection = params.get("section") === "listening" ? "listening" : "reading";
-  const session = useTopikSession(profile?.id ?? "", section, from, to);
+  // "all" is only ever reached by tapping "practise anyway" on the empty screen, so it lives in
+  // the URL: going back lands on the normal, scheduled session rather than silently repeating it.
+  const mode: TopikSessionMode = params.get("mode") === "all" ? "all" : "due";
+  const session = useTopikSession(profile?.id ?? "", section, from, to, mode);
 
   return (
     <MarkedWordsProvider>
@@ -46,9 +50,9 @@ export function TopikPracticePage() {
         ) : session.isError ? (
           <p className="text-destructive">{t("common.loadError")}</p>
         ) : session.data.questions.length === 0 ? (
-          <NothingDue profileId={profile.id} section={section} from={from} to={to} />
+          <NothingDue profileId={profile.id} section={section} from={from} to={to} mode={mode} />
         ) : (
-          <TopikSession key={session.dataUpdatedAt} profileId={profile.id} questions={session.data.questions} />
+          <TopikSession key={session.dataUpdatedAt} profileId={profile.id} questions={session.data.questions} mode={mode} />
         )}
       </section>
     </MarkedWordsProvider>
@@ -63,7 +67,19 @@ export function TopikPracticePage() {
  * interval, so this says how many and when the first one is back — the same numbers the picker
  * shows, from the same endpoint, so the two screens can never disagree.
  */
-function NothingDue({ profileId, section, from, to }: { profileId: string; section: TopikSection; from: number; to: number }) {
+function NothingDue({
+  profileId,
+  section,
+  from,
+  to,
+  mode,
+}: {
+  profileId: string;
+  section: TopikSection;
+  from: number;
+  to: number;
+  mode: TopikSessionMode;
+}) {
   const { t, i18n } = useTranslation();
   const blocks = useTopikBlocks(profileId, section);
   // A block's own range is what the link was built from, so an exact match is the normal case; a
@@ -83,6 +99,14 @@ function NothingDue({ profileId, section, from, to }: { profileId: string; secti
           {t("topik.practice.nothingDueDetail", { count: later, when: formatDueFromNow(nextDueAt, i18n.language) })}
         </p>
       )}
+      {/* Offered only when there is actually something waiting, and never from inside a
+          practise-anyway session that itself came back empty. */}
+      {later > 0 && mode === "due" && (
+        <LinkButton to={`/topik/practice?section=${section}&from=${from}&to=${to}&mode=all`} variant="outline">
+          {t("topik.practice.practiseAnyway")}
+        </LinkButton>
+      )}
+      <p className="max-w-sm text-xs text-muted-foreground">{later > 0 && mode === "due" ? t("topik.practice.practiseAnywayHint") : null}</p>
     </div>
   );
 }

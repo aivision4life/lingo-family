@@ -546,6 +546,14 @@ export const topik_attempts = sqliteTable(
     number: integer("number").notNull(),
     selected_option: integer("selected_option").notNull(),
     is_correct: integer("is_correct", { mode: "boolean" }).notNull(),
+    /**
+     * Whether this answer moved the FSRS schedule (M7.2). False for a "practise anyway" session,
+     * which is deliberately outside the schedule. Kept per attempt rather than inferred later:
+     * "this question keeps catching me out" means something different when the misses happened in
+     * extra practice than when they happened on a review that was actually due, and a column added
+     * afterwards could never recover the distinction for rows already written.
+     */
+    scheduled: integer("scheduled", { mode: "boolean" }).notNull().default(true),
     duration_ms: integer("duration_ms"),
     answered_at: createdAt(),
   },

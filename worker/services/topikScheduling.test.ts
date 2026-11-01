@@ -36,7 +36,28 @@ describe("buildTopikSession", () => {
 
   it("caps at the given limit", () => {
     const cands = Array.from({ length: 15 }, (_, i) => ({ question_id: `q${i}`, card: null }));
-    expect(buildTopikSession(cands, NOW, 10)).toHaveLength(10);
+    expect(buildTopikSession(cands, NOW, "due", 10)).toHaveLength(10);
+  });
+
+  // M7.2: "practise anyway". The schedule is ignored for picking, but the tiers stay the same so
+  // the questions that need work still come first.
+  it("mode 'all' adds the not-yet-due questions as a last tier, soonest first", () => {
+    const cands = [
+      { question_id: "later", card: dueAt(new Date("2026-11-20T00:00:00Z")) },
+      { question_id: "sooner", card: dueAt(FUTURE) },
+      { question_id: "new", card: null },
+      { question_id: "overdue", card: dueAt(PAST) },
+    ];
+    expect(buildTopikSession(cands, NOW)).toEqual(["new", "overdue"]);
+    expect(buildTopikSession(cands, NOW, "all")).toEqual(["new", "overdue", "sooner", "later"]);
+  });
+
+  it("mode 'all' changes nothing when everything is already due or new", () => {
+    const cands = [
+      { question_id: "new", card: null },
+      { question_id: "overdue", card: dueAt(PAST) },
+    ];
+    expect(buildTopikSession(cands, NOW, "all")).toEqual(buildTopikSession(cands, NOW));
   });
 
   it("a real FSRS lapse (graduates, then one 'Again') produces a candidate that lands in the wrong-tier next time it's due", () => {

@@ -1,0 +1,1 @@
+ALTER TABLE `topik_attempts` ADD `scheduled` integer DEFAULT true NOT NULL;

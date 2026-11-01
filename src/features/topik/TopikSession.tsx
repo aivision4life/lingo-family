@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion, type TopikVocabEntry } from "@shared/topik";
+import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion, type TopikSessionMode, type TopikVocabEntry } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,16 @@ import { segmentTextWithUnderline } from "./vocabSegments";
 /** Outside the component so `react-hooks/purity` does not flag the `Date.now()` call itself. */
 const elapsedSince = (start: number) => Date.now() - start;
 
-export function TopikSession({ profileId, questions }: { profileId: string; questions: TopikPracticeQuestion[] }) {
+export function TopikSession({
+  profileId,
+  questions,
+  mode = "due",
+}: {
+  profileId: string;
+  questions: TopikPracticeQuestion[];
+  /** "all" = practising ahead of the schedule: answers are recorded but change no due dates. */
+  mode?: TopikSessionMode;
+}) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [index, setIndex] = useState(0);
@@ -66,7 +75,13 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
   const choose = (option: number) => {
     if (selectedOption !== null) return;
     submit.mutate(
-      { profile_id: profileId, question_id: question.id, selected_option: option, duration_ms: elapsedSince(startedAt.current) },
+      {
+        profile_id: profileId,
+        question_id: question.id,
+        selected_option: option,
+        duration_ms: elapsedSince(startedAt.current),
+        schedule: mode === "due",
+      },
       {
         onSuccess: (result) => {
           setStates((s) => recordAnswer(s, question.id, option, result));
@@ -86,6 +101,13 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Always visible, not a one-off toast: every answer in this session is deliberately outside
+          the schedule, and that has to stay obvious while answering, not just when it started. */}
+      {mode === "all" && (
+        <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm dark:bg-amber-950/40">
+          {t("topik.practice.extraBanner")}
+        </p>
+      )}
       <div className="flex flex-col gap-0.5">
         <p className="text-sm text-muted-foreground">{t("topik.practice.progress", { current: index + 1, total: questions.length })}</p>
         {/* The exam's own question number, not the position in this session: when something in a

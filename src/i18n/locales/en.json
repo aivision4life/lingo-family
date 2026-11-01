@@ -596,7 +596,10 @@
       "correctOption": "Correct answer",
       "yourOption": "Your answer",
       "examQuestion": "{{exam}} · Question {{number}}",
-      "nothingDueDetail": "{{count}} question(s) here have been answered and are not due again yet. The first one comes back {{when}}."
+      "nothingDueDetail": "{{count}} question(s) here have been answered and are not due again yet. The first one comes back {{when}}.",
+      "extraBanner": "Extra practice — this session does not change the review schedule.",
+      "practiseAnyway": "Practise anyway",
+      "practiseAnywayHint": "Your answers are still recorded, but the review schedule stays as it is."
     },
     "manage": {
       "title": "Manage TOPIK questions",

@@ -308,8 +308,13 @@ export const topikBlockSchema = z.object({
   to: z.number().int(),
   /** How many verified questions exist in this range (may cover more than one `block` label). */
   count: z.number().int().nonnegative(),
-  /** Of those, how many the profile has never answered once (M6.9). A question skipped during a
-   * session writes no attempt, so it stays counted here until it is actually answered. */
+  /**
+   * Of those, how many are new to the profile (M6.9): no `topik_cards` row, which is exactly what
+   * a session treats as a never-attempted question. Counted from cards rather than from attempts
+   * (M7.2) so this number can never disagree with what a real review hands out — a "practise
+   * anyway" answer writes an attempt but no card, and must not quietly turn a new question into a
+   * seen one. A question skipped during a session writes neither, so it stays counted here.
+   */
   unseen: z.number().int().nonnegative(),
   /** Of those, how many the profile already knows: the question's card reached ts-fsrs `Review`
    * (M6.11) — the same "already knows it" rule the vocabulary key-terms use. */
@@ -328,6 +333,14 @@ export const topikBlockListSchema = z.array(topikBlockSchema);
 
 export const TOPIK_SESSION_SIZE = 10;
 
+/**
+ * `due` (the default) serves what FSRS says is ready: questions never answered, plus cards that
+ * have come due. `all` ignores the schedule and serves the block's questions anyway — practising
+ * ahead of time on purpose, which `POST /topik/attempts` then records with `schedule: false`.
+ */
+export const topikSessionModeSchema = z.enum(["due", "all"]);
+export type TopikSessionMode = z.infer<typeof topikSessionModeSchema>;
+
 export const topikSessionRequestSchema = z
   .object({
     profile_id: z.string().min(1),
@@ -335,6 +348,7 @@ export const topikSessionRequestSchema = z
     // Query-string values, so coerce (always strings on the wire).
     from: z.coerce.number().int().positive(),
     to: z.coerce.number().int().positive(),
+    mode: topikSessionModeSchema.default("due"),
   })
   .refine((r) => r.to >= r.from, { message: "topik_range_invalid", path: ["to"] });
 export type TopikSessionRequest = z.infer<typeof topikSessionRequestSchema>;
@@ -346,6 +360,13 @@ export const topikAttemptRequestSchema = z.object({
   selected_option: topikCorrectOptionSchema,
   /** Time from first seeing the question to choosing an answer. */
   duration_ms: z.number().int().nonnegative().nullable().optional(),
+  /**
+   * Whether this answer may move the FSRS schedule (M7.2). A "practise anyway" session sends
+   * false: the attempt is recorded (it happened, and the history should say so, flagged
+   * `scheduled = 0`) but no card is created or updated, so a question practised ahead of time is
+   * still new — or still due when it was due — for the next real review.
+   */
+  schedule: z.boolean().optional(),
 });
 export type TopikAttemptRequest = z.infer<typeof topikAttemptRequestSchema>;
 

@@ -596,7 +596,10 @@
       "correctOption": "정답",
       "yourOption": "내가 고른 답",
       "examQuestion": "{{exam}} · {{number}}번",
-      "nothingDueDetail": "이 블록의 {{count}}문항은 이미 풀었고 아직 복습 시점이 아닙니다. 가장 빠른 문항은 {{when}}입니다."
+      "nothingDueDetail": "이 블록의 {{count}}문항은 이미 풀었고 아직 복습 시점이 아닙니다. 가장 빠른 문항은 {{when}}입니다.",
+      "extraBanner": "추가 연습 — 이번 회차는 복습 일정에 반영되지 않습니다.",
+      "practiseAnyway": "복습 시점이 아니어도 연습하기",
+      "practiseAnywayHint": "답은 기록되지만 복습 일정은 그대로 유지됩니다."
     },
     "manage": {
       "title": "TOPIK 문제 관리",

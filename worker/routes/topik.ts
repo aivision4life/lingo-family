@@ -454,23 +454,23 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     // the field) instead of getting a 400 on the screen's only request.
     .get("/topik/blocks", zv("query", z.object({ section: topikSectionSchema, profile_id: z.string().optional() })), async (c) => {
       const { section, profile_id } = c.req.valid("query");
-      // One aggregate for the whole screen, never one query per block. Two left joins against
-      // this profile's own rows: "unseen" = no attempt ever (skipping writes no attempt, so a
-      // skipped question stays unseen), "mastered" = its card reached ts-fsrs Review, the same
-      // definition the vocabulary side uses for "already knows it".
+      // One aggregate for the whole screen, never one query per block, against this profile's own
+      // cards: "unseen" = no card yet, which is precisely what a session treats as a new question;
+      // "mastered" = its card reached ts-fsrs Review, the same definition the vocabulary side uses
+      // for "already knows it". Counting unseen from attempts instead (M6.9 through M7.2) made the
+      // picker and a real review disagree about the same question, because a "practise anyway"
+      // answer writes an attempt but deliberately no card.
       // "Due" is decided here, with the same clock the session uses, so the picker can never
       // promise questions that `buildTopikSession` would then leave out (M7.2).
       const nowMs = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url).getTime();
       const rows = await c.env.DB.prepare(
         `SELECT q.block, min(q.number) AS "from", max(q.number) AS "to", count(*) AS count,
-                sum(CASE WHEN a.question_id IS NULL THEN 1 ELSE 0 END) AS unseen,
+                sum(CASE WHEN c.id IS NULL THEN 1 ELSE 0 END) AS unseen,
                 sum(CASE WHEN c.state = ?3 THEN 1 ELSE 0 END) AS mastered,
                 sum(CASE WHEN c.id IS NOT NULL AND c.due <= ?4 THEN 1 ELSE 0 END) AS due,
                 sum(CASE WHEN c.id IS NOT NULL AND c.due > ?4 THEN 1 ELSE 0 END) AS later,
                 min(CASE WHEN c.id IS NOT NULL AND c.due > ?4 THEN c.due END) AS next_due_at
          FROM topik_questions q
-         LEFT JOIN (SELECT DISTINCT question_id FROM topik_attempts WHERE profile_id = ?2) a
-           ON a.question_id = q.id
          LEFT JOIN topik_cards c ON c.question_id = q.id AND c.profile_id = ?2
          WHERE q.section = ?1 AND q.verified = 1
            -- Listening counts only what practice can actually serve (M7.1): a block promising
@@ -495,7 +495,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     })
 
     .get("/topik/session", zv("query", topikSessionRequestSchema), async (c) => {
-      const { profile_id, section, from, to } = c.req.valid("query");
+      const { profile_id, section, from, to, mode } = c.req.valid("query");
       const db = getDb(c.env);
       // A listening question is only usable once it has a clip AND an adult has approved that
       // exam's boundaries (M7.1): a one-clip offset plays perfectly normal audio, so a wrong
@@ -529,7 +529,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const cardByQuestion = new Map(cardRows.map((r) => [r.question_id, toCardFields(r)]));
       const candidates: TopikCandidate[] = questions.map((q) => ({ question_id: q.id, card: cardByQuestion.get(q.id) ?? null }));
 
-      const sessionIds = buildTopikSession(candidates, resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url));
+      const sessionIds = buildTopikSession(candidates, resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url), mode);
       const byId = new Map(questions.map((q) => [q.id, q]));
 
       // One query for every clip this session needs; a question with no clip never got here (the
@@ -636,7 +636,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     )
 
     .post("/topik/attempts", zv("json", topikAttemptRequestSchema), async (c) => {
-      const { profile_id, question_id, selected_option, duration_ms } = c.req.valid("json");
+      const { profile_id, question_id, selected_option, duration_ms, schedule = true } = c.req.valid("json");
       const db = getDb(c.env);
       const question = await db.select().from(topik_questions).where(eq(topik_questions.id, question_id)).get();
       if (!question) return c.json(err("not_found"), 404);
@@ -647,14 +647,19 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         .from(topik_cards)
         .where(and(eq(topik_cards.profile_id, profile_id), eq(topik_cards.question_id, question_id)))
         .get();
-      const fields = existingCard ? toCardFields(existingCard) : emptyCardFields(now);
       const is_correct = selected_option === question.correct_option;
-      const { card } = applyReview(fields, is_correct ? 3 : 1, now);
 
-      if (existingCard) {
-        await db.update(topik_cards).set({ ...card, updated_at: now }).where(eq(topik_cards.id, existingCard.id));
-      } else {
-        await db.insert(topik_cards).values({ profile_id, question_id, ...card });
+      // `schedule: false` is a "practise anyway" answer (M7.2): it happened, so it is recorded,
+      // but it must leave the schedule exactly as it was — no card created for a question that is
+      // still new, no due date moved on one that was already waiting.
+      if (schedule) {
+        const fields = existingCard ? toCardFields(existingCard) : emptyCardFields(now);
+        const { card } = applyReview(fields, is_correct ? 3 : 1, now);
+        if (existingCard) {
+          await db.update(topik_cards).set({ ...card, updated_at: now }).where(eq(topik_cards.id, existingCard.id));
+        } else {
+          await db.insert(topik_cards).values({ profile_id, question_id, ...card });
+        }
       }
       await db.insert(topik_attempts).values({
         profile_id,
@@ -664,6 +669,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         number: question.number,
         selected_option,
         is_correct,
+        scheduled: schedule,
         duration_ms: duration_ms ?? null,
       });
       // Only revealed now (the answer is already known at this point) — never in GET /topik/session.

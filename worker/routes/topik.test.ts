@@ -264,6 +264,83 @@ describe("blocks + practice session", () => {
     expect(after.questions.map((q) => q.id)).toEqual([q1.id]);
   });
 
+  // M7.2: "practise anyway". Two promises are tested together here because breaking either one
+  // makes the numbers lie: the attempt is kept (flagged), and nothing about the schedule moves.
+  it("records a practise-anyway answer without creating or moving a card", async () => {
+    const fresh = await createQuestion({ number: 1 });
+    const answered = await createQuestion({ number: 2, exam: "Test/연습2" });
+    const cardsFor = async (questionId: string) =>
+      (
+        await t.env.DB.prepare("SELECT due, state, reps FROM topik_cards WHERE profile_id = ? AND question_id = ?")
+          .bind(adult, questionId)
+          .all<{ due: number; state: number; reps: number }>()
+      ).results;
+
+    // A normal answer on the second question: it gets a card, as always.
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: answered.id, selected_option: 3, duration_ms: 1000 });
+    const before = (await cardsFor(answered.id))[0]!;
+
+    // Now practise both ahead of schedule.
+    for (const q of [fresh, answered]) {
+      await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500, schedule: false });
+    }
+
+    // The question that had no card still has none: a real review must still see it as new.
+    expect(await cardsFor(fresh.id)).toEqual([]);
+    // The one that had a card is untouched — same due date, same state, same count of reviews.
+    expect((await cardsFor(answered.id))[0]).toEqual(before);
+
+    // Both answers are in the history, flagged as outside the schedule.
+    const attempts = (
+      await t.env.DB.prepare("SELECT question_id, scheduled FROM topik_attempts WHERE profile_id = ? ORDER BY created_at")
+        .bind(adult)
+        .all<{ question_id: string; scheduled: number }>()
+    ).results;
+    expect(attempts).toEqual([
+      { question_id: answered.id, scheduled: 1 },
+      { question_id: fresh.id, scheduled: 0 },
+      { question_id: answered.id, scheduled: 0 },
+    ]);
+  });
+
+  it("counts a question as unseen until it has a card, so extra practice never moves the number", async () => {
+    const q = await createQuestion({ number: 1 });
+    await createQuestion({ number: 2, exam: "Test/연습2" });
+    const unseenNow = async () =>
+      ((await t.api("GET", `/topik/blocks?section=reading&profile_id=${adult}`)).body as { unseen: number }[])[0]!.unseen;
+
+    expect(await unseenNow()).toBe(2);
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500, schedule: false });
+    // The attempt exists, but no card does — and "unseen" follows the cards, so it must not move.
+    expect(await unseenNow()).toBe(2);
+    // The next real session still hands the question out as a new one.
+    const session = (await t.api("GET", `/topik/session?section=reading&from=1&to=2&profile_id=${adult}`)).body as { questions: { id: string }[] };
+    expect(session.questions.map((x) => x.id)).toContain(q.id);
+
+    // A scheduled answer is what makes it seen.
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500 });
+    expect(await unseenNow()).toBe(1);
+  });
+
+  it("mode=all serves a block whose questions are all waiting, and leaves them waiting", async () => {
+    const q = await createQuestion({ number: 1 });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 3, duration_ms: 1000 });
+    const dueBefore = (
+      await t.env.DB.prepare("SELECT due FROM topik_cards WHERE profile_id = ? AND question_id = ?").bind(adult, q.id).all<{ due: number }>()
+    ).results[0]!.due;
+
+    const ask = async (mode: string) =>
+      ((await t.api("GET", `/topik/session?section=reading&from=1&to=1&profile_id=${adult}&mode=${mode}`)).body as { questions: unknown[] }).questions;
+    expect(await ask("due")).toEqual([]);
+    expect(await ask("all")).toHaveLength(1);
+
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500, schedule: false });
+    const dueAfter = (
+      await t.env.DB.prepare("SELECT due FROM topik_cards WHERE profile_id = ? AND question_id = ?").bind(adult, q.id).all<{ due: number }>()
+    ).results[0]!.due;
+    expect(dueAfter).toBe(dueBefore);
+  });
+
   it("does not count an unverified question, answered or not", async () => {
     await createQuestion({ number: 1 });
     const hidden = await createQuestion({ number: 2, exam: "Test/연습2" });
