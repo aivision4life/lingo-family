@@ -1,19 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { blockProgress, blockTotals } from "./blockProgress";
 
+const total = (count: number, unseen: number, mastered: number, due = 0, later = 0, next_due_at: number | null = null) => ({
+  count,
+  unseen,
+  mastered,
+  due,
+  later,
+  next_due_at,
+});
+
 describe("blockTotals", () => {
   it("adds up every block's totals", () => {
-    expect(
-      blockTotals([
-        { count: 46, unseen: 22, mastered: 12 },
-        { count: 10, unseen: 0, mastered: 10 },
-        { count: 4, unseen: 4, mastered: 0 },
-      ]),
-    ).toEqual({ count: 60, unseen: 26, mastered: 22 });
+    expect(blockTotals([total(46, 22, 12), total(10, 0, 10), total(4, 4, 0)])).toEqual(total(60, 26, 22));
+  });
+
+  it("adds up the waiting counts too", () => {
+    expect(blockTotals([total(6, 0, 1, 0, 5, 1_000), total(5, 5, 0)])).toEqual(total(11, 5, 1, 0, 5, 1_000));
+  });
+
+  it("reports the soonest next due time across blocks, ignoring blocks with none", () => {
+    expect(blockTotals([total(3, 0, 0, 0, 3, 9_000), total(3, 0, 0, 0, 3, 4_000), total(2, 2, 0)]).next_due_at).toBe(4_000);
+  });
+
+  it("has no next due time when nothing is waiting", () => {
+    expect(blockTotals([total(3, 3, 0), total(2, 2, 0)]).next_due_at).toBeNull();
   });
 
   it("is zero for an empty list (no blocks yet)", () => {
-    expect(blockTotals([])).toEqual({ count: 0, unseen: 0, mastered: 0 });
+    expect(blockTotals([])).toEqual(total(0, 0, 0));
   });
 });
 

@@ -458,10 +458,16 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       // this profile's own rows: "unseen" = no attempt ever (skipping writes no attempt, so a
       // skipped question stays unseen), "mastered" = its card reached ts-fsrs Review, the same
       // definition the vocabulary side uses for "already knows it".
+      // "Due" is decided here, with the same clock the session uses, so the picker can never
+      // promise questions that `buildTopikSession` would then leave out (M7.2).
+      const nowMs = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url).getTime();
       const rows = await c.env.DB.prepare(
         `SELECT q.block, min(q.number) AS "from", max(q.number) AS "to", count(*) AS count,
                 sum(CASE WHEN a.question_id IS NULL THEN 1 ELSE 0 END) AS unseen,
-                sum(CASE WHEN c.state = ?3 THEN 1 ELSE 0 END) AS mastered
+                sum(CASE WHEN c.state = ?3 THEN 1 ELSE 0 END) AS mastered,
+                sum(CASE WHEN c.id IS NOT NULL AND c.due <= ?4 THEN 1 ELSE 0 END) AS due,
+                sum(CASE WHEN c.id IS NOT NULL AND c.due > ?4 THEN 1 ELSE 0 END) AS later,
+                min(CASE WHEN c.id IS NOT NULL AND c.due > ?4 THEN c.due END) AS next_due_at
          FROM topik_questions q
          LEFT JOIN (SELECT DISTINCT question_id FROM topik_attempts WHERE profile_id = ?2) a
            ON a.question_id = q.id
@@ -473,8 +479,18 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
              AND EXISTS (SELECT 1 FROM topik_audio au WHERE au.section = q.section AND au.exam = q.exam AND au.verified = 1)))
          GROUP BY q.block ORDER BY min(q.number)`,
       )
-        .bind(section, profile_id ?? "", State.Review)
-        .all<{ block: string; from: number; to: number; count: number; unseen: number; mastered: number }>();
+        .bind(section, profile_id ?? "", State.Review, nowMs)
+        .all<{
+          block: string;
+          from: number;
+          to: number;
+          count: number;
+          unseen: number;
+          mastered: number;
+          due: number;
+          later: number;
+          next_due_at: number | null;
+        }>();
       return c.json(rows.results.map((r) => ({ section, ...r })));
     })
 

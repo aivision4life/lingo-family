@@ -595,7 +595,8 @@
       "zoomClose": "Chạm để đóng",
       "correctOption": "Đáp án đúng",
       "yourOption": "Bạn đã chọn",
-      "examQuestion": "{{exam}} · Câu {{number}}"
+      "examQuestion": "{{exam}} · Câu {{number}}",
+      "nothingDueDetail": "{{count}} câu trong khối này đã làm rồi và chưa tới hạn ôn lại. Câu gần nhất đến hạn {{when}}."
     },
     "manage": {
       "title": "Quản lý câu hỏi TOPIK",
@@ -713,6 +714,7 @@
     "section": {
       "reading": "Đọc",
       "listening": "Nghe"
-    }
+    },
+    "blockWaiting": "{{count}} câu đang chờ ôn lại · câu gần nhất {{when}}"
   }
 }

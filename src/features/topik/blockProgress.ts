@@ -2,15 +2,26 @@
 import type { TopikBlock } from "@shared/topik";
 
 type Counts = Pick<TopikBlock, "count" | "unseen" | "mastered">;
+/** The totals row needs the waiting numbers too, so it can explain an empty whole section. */
+type Totals = Counts & Pick<TopikBlock, "due" | "later" | "next_due_at">;
 
 /**
  * Sums every block for the total row. Blocks never share a question (the server groups by the
  * stored `block` field), so a plain sum is the real total.
  */
-export function blockTotals(blocks: readonly Counts[]): Counts {
-  return blocks.reduce(
-    (total, b) => ({ count: total.count + b.count, unseen: total.unseen + b.unseen, mastered: total.mastered + b.mastered }),
-    { count: 0, unseen: 0, mastered: 0 },
+export function blockTotals(blocks: readonly Totals[]): Totals {
+  return blocks.reduce<Totals>(
+    (total, b) => ({
+      count: total.count + b.count,
+      unseen: total.unseen + b.unseen,
+      mastered: total.mastered + b.mastered,
+      due: total.due + b.due,
+      later: total.later + b.later,
+      // The soonest of them: that is when this section has something to offer again.
+      next_due_at:
+        b.next_due_at === null ? total.next_due_at : total.next_due_at === null ? b.next_due_at : Math.min(total.next_due_at, b.next_due_at),
+    }),
+    { count: 0, unseen: 0, mastered: 0, due: 0, later: 0, next_due_at: null },
   );
 }
 

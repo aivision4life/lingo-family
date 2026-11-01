@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { LinkButton } from "@/components/LinkButton";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
-import { useTopikSession } from "@/features/topik/api";
+import { useTopikBlocks, useTopikSession } from "@/features/topik/api";
+import { formatDueFromNow } from "@/features/topik/dueIn";
 import { useMarkedWords } from "@/features/topik/markedWords";
 import { MarkedWordsProvider } from "@/features/topik/MarkedWordsProvider";
 import { TopikSession } from "@/features/topik/TopikSession";
@@ -45,12 +46,44 @@ export function TopikPracticePage() {
         ) : session.isError ? (
           <p className="text-destructive">{t("common.loadError")}</p>
         ) : session.data.questions.length === 0 ? (
-          <p className="py-10 text-center text-lg">{t("topik.practice.nothingToday")}</p>
+          <NothingDue profileId={profile.id} section={section} from={from} to={to} />
         ) : (
           <TopikSession key={session.dataUpdatedAt} profileId={profile.id} questions={session.data.questions} />
         )}
       </section>
     </MarkedWordsProvider>
+  );
+}
+
+/**
+ * Why this block has nothing to serve (M7.2).
+ *
+ * "Không có câu nào để luyện" on a block the picker shows work left in reads as a bug. Almost
+ * always the real reason is that every question in it has been answered and is waiting out its
+ * interval, so this says how many and when the first one is back — the same numbers the picker
+ * shows, from the same endpoint, so the two screens can never disagree.
+ */
+function NothingDue({ profileId, section, from, to }: { profileId: string; section: TopikSection; from: number; to: number }) {
+  const { t, i18n } = useTranslation();
+  const blocks = useTopikBlocks(profileId, section);
+  // A block's own range is what the link was built from, so an exact match is the normal case; a
+  // hand-edited range that spans several blocks falls back to everything it covers.
+  const covered = (blocks.data ?? []).filter((b) => b.from >= from && b.to <= to);
+  const later = covered.reduce((n, b) => n + b.later, 0);
+  const nextDueAt = covered.reduce<number | null>(
+    (soonest, b) => (b.next_due_at === null ? soonest : soonest === null ? b.next_due_at : Math.min(soonest, b.next_due_at)),
+    null,
+  );
+
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-center">
+      <p className="text-lg">{t("topik.practice.nothingToday")}</p>
+      {later > 0 && nextDueAt !== null && (
+        <p className="text-sm text-muted-foreground">
+          {t("topik.practice.nothingDueDetail", { count: later, when: formatDueFromNow(nextDueAt, i18n.language) })}
+        </p>
+      )}
+    </div>
   );
 }
 

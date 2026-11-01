@@ -314,6 +314,14 @@ export const topikBlockSchema = z.object({
   /** Of those, how many the profile already knows: the question's card reached ts-fsrs `Review`
    * (M6.11) — the same "already knows it" rule the vocabulary key-terms use. */
   mastered: z.number().int().nonnegative(),
+  /** Answered before and due again now, so a session would include them (M7.2). */
+  due: z.number().int().nonnegative(),
+  /** Answered before and *not* due yet: a session deliberately leaves these out, which is why a
+   * block can show work remaining and still open an empty session. Spelling the number out is the
+   * whole point — "thuộc 1/6 · chưa làm 0" with an empty session reads as a bug otherwise. */
+  later: z.number().int().nonnegative(),
+  /** When the first of those `later` questions comes due (epoch ms); null when none are waiting. */
+  next_due_at: z.number().int().nullable(),
 });
 export type TopikBlock = z.infer<typeof topikBlockSchema>;
 export const topikBlockListSchema = z.array(topikBlockSchema);

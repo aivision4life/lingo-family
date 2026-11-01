@@ -177,7 +177,9 @@ describe("blocks + practice session", () => {
     await t.env.DB.prepare("UPDATE topik_questions SET verified = 0 WHERE id = ?").bind((unverified.body as { id: string }).id).run();
 
     const blocks = (await t.api("GET", "/topik/blocks?section=reading")).body as { block: string; from: number; to: number; count: number }[];
-    expect(blocks).toEqual([{ section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0 }]);
+    expect(blocks).toEqual([
+      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0, due: 0, later: 0, next_due_at: null },
+    ]);
   });
 
   // M6.9: the block picker shows "not studied / total" per profile, from this one query.
@@ -189,8 +191,8 @@ describe("blocks + practice session", () => {
     const blocksFor = async (profileId: string) =>
       (await t.api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`)).body as { block: string; count: number; unseen: number }[];
     expect(await blocksFor(adult)).toEqual([
-      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0 },
-      { section: "reading", block: "9", from: 9, to: 9, count: 1, unseen: 1, mastered: 0 },
+      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0, due: 0, later: 0, next_due_at: null },
+      { section: "reading", block: "9", from: 9, to: 9, count: 1, unseen: 1, mastered: 0, due: 0, later: 0, next_due_at: null },
     ]);
 
     await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 1, duration_ms: 1000 });
@@ -222,6 +224,44 @@ describe("blocks + practice session", () => {
     expect(await blocksFor(adult)).toMatchObject([{ count: 2, unseen: 1, mastered: 1 }]);
     // Another profile has its own cards, so its own count.
     expect(await blocksFor(kid)).toMatchObject([{ count: 2, unseen: 2, mastered: 0 }]);
+  });
+
+  // M7.2: the picker promised work while the session came back empty, which read as a bug. The
+  // two now answer from the same clock: due/later/next_due_at say what a session would serve.
+  it("separates questions due now from questions waiting out their interval", async () => {
+    const q1 = await createQuestion({ number: 1 });
+    const q2 = await createQuestion({ number: 2, exam: "Test/연습2" });
+    const blocksFor = async () =>
+      ((await t.api("GET", `/topik/blocks?section=reading&profile_id=${adult}`)).body as {
+        count: number;
+        unseen: number;
+        due: number;
+        later: number;
+        next_due_at: number | null;
+      }[])[0]!;
+
+    // Nothing answered: both are "unseen", which a session serves, and nothing is waiting.
+    expect(await blocksFor()).toMatchObject({ count: 2, unseen: 2, due: 0, later: 0, next_due_at: null });
+
+    // Answer both. A fresh learning card is due minutes from now, so neither is due again yet.
+    for (const q of [q1, q2]) {
+      await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 3, duration_ms: 1000 });
+    }
+    const waiting = await blocksFor();
+    expect(waiting).toMatchObject({ count: 2, unseen: 0, due: 0, later: 2 });
+    expect(waiting.next_due_at).toBeGreaterThan(Date.now());
+
+    // ...and this is exactly when a session is empty: the screen can now say why.
+    const session = (await t.api("GET", `/topik/session?section=reading&from=1&to=2&profile_id=${adult}`)).body as { questions: unknown[] };
+    expect(session.questions).toEqual([]);
+
+    // Once one of them comes due again, it is counted as due, not waiting.
+    await t.env.DB.prepare("UPDATE topik_cards SET due = ? WHERE profile_id = ? AND question_id = ?")
+      .bind(Date.now() - 60_000, adult, q1.id)
+      .run();
+    expect(await blocksFor()).toMatchObject({ count: 2, unseen: 0, due: 1, later: 1 });
+    const after = (await t.api("GET", `/topik/session?section=reading&from=1&to=2&profile_id=${adult}`)).body as { questions: { id: string }[] };
+    expect(after.questions.map((q) => q.id)).toEqual([q1.id]);
   });
 
   it("does not count an unverified question, answered or not", async () => {

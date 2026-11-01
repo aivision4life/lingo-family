@@ -595,7 +595,8 @@
       "zoomClose": "눌러서 닫기",
       "correctOption": "정답",
       "yourOption": "내가 고른 답",
-      "examQuestion": "{{exam}} · {{number}}번"
+      "examQuestion": "{{exam}} · {{number}}번",
+      "nothingDueDetail": "이 블록의 {{count}}문항은 이미 풀었고 아직 복습 시점이 아닙니다. 가장 빠른 문항은 {{when}}입니다."
     },
     "manage": {
       "title": "TOPIK 문제 관리",
@@ -713,6 +714,7 @@
     "section": {
       "reading": "읽기",
       "listening": "듣기"
-    }
+    },
+    "blockWaiting": "{{count}}문항 복습 대기 · 가장 빠른 문항 {{when}}"
   }
 }

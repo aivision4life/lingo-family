@@ -9,6 +9,7 @@ import { PageShell } from "@/components/PageShell";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useTopikBlocks } from "@/features/topik/api";
 import { blockProgress, blockTotals } from "@/features/topik/blockProgress";
+import { formatDueFromNow } from "@/features/topik/dueIn";
 import { cn } from "@/lib/utils";
 
 /** Screen (M6.1) — `/topik`: pick a question-number block to practice. */
@@ -91,10 +92,21 @@ function BlockList({ blocks, section }: { blocks: TopikBlock[]; section: TopikSe
  * from. The counts are always spelled out, zeros included: "thuộc 0/7" is exactly the fact that
  * mislabelled block was hiding.
  */
-function BlockRow({ label, block, bold = false }: { label: string; block: Pick<TopikBlock, "count" | "unseen" | "mastered">; bold?: boolean }) {
-  const { t } = useTranslation();
+function BlockRow({
+  label,
+  block,
+  bold = false,
+}: {
+  label: string;
+  block: Pick<TopikBlock, "count" | "unseen" | "mastered" | "due" | "later" | "next_due_at">;
+  bold?: boolean;
+}) {
+  const { t, i18n } = useTranslation();
   const { masteredPercent, learningPercent, status } = blockProgress(block);
   const done = status === "done";
+  // Why a block with work left can still open an empty session: everything in it has been answered
+  // and is waiting out its interval. Without this line the screen looks broken (M7.2).
+  const waiting = block.later > 0 && block.next_due_at !== null;
 
   return (
     <div className="flex w-full flex-col gap-1.5">
@@ -114,6 +126,11 @@ function BlockRow({ label, block, bold = false }: { label: string; block: Pick<T
           </span>
         )}
       </div>
+      {waiting && (
+        <p className="text-xs text-muted-foreground">
+          {t("topik.blockWaiting", { count: block.later, when: formatDueFromNow(block.next_due_at!, i18n.language) })}
+        </p>
+      )}
       <div
         // Not bg-muted (the usual track): it is the same token value as the secondary button these
         // rows sit on, so the unfinished part would be invisible exactly where it matters most.
