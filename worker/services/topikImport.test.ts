@@ -165,6 +165,32 @@ describe("buildImportDraft", () => {
     });
   });
 
+  // M7.1: the listening files keep Heading3 as a plain question number and put the real round in
+  // the group's own Heading2, which the parser used not to look at — every question then fell back
+  // to the 연습N group counter and no mp3 could ever match it.
+  it("takes the real round from the group heading when the question label does not name one", () => {
+    const xml = doc(heading("Heading1", "문항 1~3") + heading("Heading2", "35회") + question("1", 2) + heading("Heading2", "36회") + question("1", 3));
+    const draft = buildImportDraft("TOPIK_Listening_Cau01_03_OfficialTest_VERSION1.docx", xml);
+    expect(draft.questions.map((q) => q.exam)).toEqual(["OfficialTest-35회", "OfficialTest-36회"]);
+  });
+
+  it("reads the round out of a heading that also carries the 연습N text", () => {
+    const xml = doc(heading("Heading1", "문항 1~2") + heading("Heading2", "연습1 (35회)") + question("1", 1));
+    expect(buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-35회");
+  });
+
+  // One Heading2 group can hold items from several real rounds (Cau09/Cau10), so the item's own
+  // label has to stay in charge where it names one.
+  it("lets the question's own round override the group's", () => {
+    const xml = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1 (35회)") + question("1-1 (41회)", 1));
+    expect(buildImportDraft("TOPIK_Reading_Cau01_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-41회");
+  });
+
+  it("still falls back to 연습N when no heading names a round at all", () => {
+    const xml = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));
+    expect(buildImportDraft("TOPIK_Reading_Cau01_Yonsei_VERSION1.docx", xml).questions[0]!.exam).toBe("Yonsei-연습1");
+  });
+
   it("two different source files never collide even with identical, generic exam group text", () => {
     const xmlA = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));
     const xmlB = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));

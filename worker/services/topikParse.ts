@@ -113,7 +113,17 @@ export type ParsedItem = {
  * still consume its index, or fixing that group's input file tomorrow would renumber every later
  * group and orphan the rows already imported under the old labels.
  */
-export type ParsedExam = { exam: string; groupIndex: number; items: ParsedItem[] };
+export type ParsedExam = {
+  exam: string;
+  groupIndex: number;
+  /**
+   * The real exam round named by the group's own Heading2 ("35회", "연습1 (35회)"), if any.
+   * Used when an item's own Heading3 label does not name one — the listening files put the round
+   * here and keep Heading3 as a plain question number, which is the tidier convention.
+   */
+  round: string | null;
+  items: ParsedItem[];
+};
 
 export type ParseDocumentResult = {
   /** [start, end] parsed from the Heading1 text, when found (cross-check only; the caller trusts the file name). */
@@ -131,6 +141,8 @@ const ANSWER_LABEL = /^(\d+)\s*\((\d+)\)$/;
  * Written with or without Vietnamese diacritics, in any case.
  */
 const SAME_SEGMENT = /^chung\s*(đoạn|doan)$/i;
+/** A real exam round anywhere in a heading: "35회", "(35회)", "연습1 (35회)". */
+const ROUND_IN_TEXT = /(\d+회)/;
 /** "유형1: 문항 1~2" / "문항 9" — the block is always the trailing number(s). */
 const HEADING1_BLOCK = /(\d+)\s*(?:~\s*(\d+))?\s*$/;
 
@@ -251,7 +263,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   const labelMatch = /-\s*(\d+)/.exec(labelText);
   const labelNumber = labelMatch ? Number(labelMatch[1]) : null;
   // "1-9 (36회)" → "36회" (which real exam administration this item is from, if the label says).
-  const roundMatch = /\((\d+회)\)/.exec(labelText);
+  const roundMatch = ROUND_IN_TEXT.exec(labelText);
   const round = roundMatch ? roundMatch[1]! : null;
 
   // The answer label ("4(4)") is usually the first paragraph under the question's Heading3, but some
@@ -362,7 +374,7 @@ export function parseTopikDocument(documentXml: string): ParseDocumentResult {
     }
     if (style === "Heading2") {
       // groupIndex is assigned after the walk, once we know which groups hold questions.
-      currentExam = { exam: text, groupIndex: 0, items: [] };
+      currentExam = { exam: text, groupIndex: 0, round: ROUND_IN_TEXT.exec(text)?.[1] ?? null, items: [] };
       exams.push(currentExam);
       currentInstruction = null;
       sawHeading2InCurrentExam = true;

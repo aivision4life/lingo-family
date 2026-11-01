@@ -100,7 +100,12 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       // because the counter restarts at 1 in every file, "Yonsei-연습1" from one file and
       // "Yonsei-연습1" from another correctly merge into the same label too (both are "practice
       // set 1" from that source).
-      const examLabel = item.round ? `${fn.source}-${item.round}` : `${fn.source}-연습${exam.groupIndex}`;
+      // The item's own label wins over the group's: one Heading2 group can hold items from several
+      // different real rounds (Cau09/Cau10), which is why the item-level round exists at all. The
+      // group's heading is the fallback, and the listening files use it exclusively — the round
+      // sits in Heading2 and Heading3 stays a plain question number.
+      const round = item.round ?? exam.round;
+      const examLabel = round ? `${fn.source}-${round}` : `${fn.source}-연습${exam.groupIndex}`;
       const readingFix = fn.section === "reading";
       let warning: string | null = null;
       if (item.labelNumber !== null && item.labelNumber !== number) {
