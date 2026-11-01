@@ -406,7 +406,7 @@ describe("parseTopikDocument", () => {
     it("refuses the question when the label is missing, rather than guessing an answer", () => {
       const parsed = item(pictureTable(["rId1", "rId2", "rId3", "rId4"]));
       expect(parsed.declared_correct).toBeNull();
-      expect(parsed.errors.join(" ")).toContain("needs an answer label");
+      expect(parsed.errors.join(" ")).toContain("no answer label");
     });
 
     it("refuses an answer outside 1-4", () => {
@@ -426,6 +426,60 @@ describe("parseTopikDocument", () => {
     it("still rejects a picture question that does not have exactly four options", () => {
       const three = `<w:tbl><w:tr>${cell("지문")}</w:tr><w:tr>${cell("", false, "rId1")}${cell("", false, "rId2")}${cell("", false, "rId3")}</w:tr></w:tbl>`;
       expect(item(answer(2) + three).errors.join(" ")).toContain("expected 4 options, found 3");
+    });
+  });
+
+  // M7.1: in a listening paper the N(N) label is the answer, full stop. Those files are typed up
+  // from a PDF and the underline bleeds across options constantly; treating it as authoritative
+  // rejected more good questions than it caught bad ones. Reading is untouched.
+  describe("listening answers come from the label, not the underline", () => {
+    const listening = (body: string) =>
+      parseTopikDocument(
+        doc(heading("Heading1", "문항 4~8") + heading("Heading2", "35회") + heading("Heading3", "4") + body),
+        "listening",
+      ).exams[0]!.items[0]!;
+    const reading = (body: string) =>
+      parseTopikDocument(doc(heading("Heading1", "문항 1~2") + heading("Heading2", "연습1") + heading("Heading3", "1-1") + body)).exams[0]!.items[0]!;
+    const opts: [string, string, string, string] = ["가", "나", "다", "라"];
+
+    it("accepts a question with no underline at all", () => {
+      const parsed = listening(answer(2) + table("지문", opts, 0));
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.warnings).toEqual([]);
+      expect(parsed.declared_correct).toBe(2);
+    });
+
+    it("accepts several underlined options without a word, since that is formatting bleed", () => {
+      const bleed = `<w:tbl><w:tr>${cell("지문")}</w:tr><w:tr>${cell("가", true)}${cell("나", true)}</w:tr><w:tr>${cell("다", true)}${cell("라", true)}</w:tr></w:tbl>`;
+      const parsed = listening(answer(3) + bleed);
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.warnings).toEqual([]);
+      expect(parsed.declared_correct).toBe(3);
+    });
+
+    // One underline that disagrees is a real contradiction: imported, but worth a look.
+    it("warns — without rejecting — when the single underline disagrees with the label", () => {
+      const parsed = listening(answer(2) + table("지문", opts, 4));
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.warnings.join(" ")).toContain("option 4 is the underlined one");
+      expect(parsed.declared_correct).toBe(2);
+    });
+
+    it("says nothing when the single underline agrees", () => {
+      expect(listening(answer(2) + table("지문", opts, 2)).warnings).toEqual([]);
+    });
+
+    it("still rejects a missing label, an answer outside 1-4, and the wrong option count", () => {
+      expect(listening(table("지문", opts, 0)).errors.join(" ")).toContain("no answer label");
+      expect(listening(plain("5(5)") + table("지문", opts, 0)).errors.join(" ")).toContain("not between 1 and 4");
+      const three = `<w:tbl><w:tr>${cell("지문")}</w:tr><w:tr>${cell("가")}${cell("나")}</w:tr><w:tr>${cell("다")}</w:tr></w:tbl>`;
+      expect(listening(answer(2) + three).errors.join(" ")).toContain("expected 4 options, found 3");
+    });
+
+    // The reading rules must not move: there the underline is the answer and the label checks it.
+    it("leaves reading alone: no underline is still an error there", () => {
+      expect(reading(answer(2) + table("지문", opts, 0)).errors.join(" ")).toContain("expected exactly one underlined option");
+      expect(reading(answer(2) + table("지문", opts, 4)).errors.join(" ")).toContain("but option 4 is underlined");
     });
   });
 

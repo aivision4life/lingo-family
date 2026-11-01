@@ -191,6 +191,18 @@ describe("buildImportDraft", () => {
     expect(buildImportDraft("TOPIK_Reading_Cau01_Yonsei_VERSION1.docx", xml).questions[0]!.exam).toBe("Yonsei-연습1");
   });
 
+  // M7.1: a listening question whose underline disagrees with the label is imported, with the
+  // disagreement carried on the row so the review screen surfaces it first.
+  it("carries a listening underline disagreement through as a warning, not an error", () => {
+    const xml = doc(heading("Heading1", "문항 4~8") + heading("Heading2", "35회") + heading("Heading3", "4") + answer(2) + table("지문", ["가", "나", "다", "라"], 4));
+    const draft = buildImportDraft("TOPIK_Listening_Cau04_08_OfficialTest_VERSION1.docx", xml);
+    expect(draft.errors).toEqual([]);
+    expect(draft.questions).toHaveLength(1);
+    expect(draft.questions[0]!.correct_option).toBe(2);
+    expect(draft.questions[0]!.warning).toContain("option 4 is the underlined one");
+    expect(draft.warnings.join(" ")).toContain("OfficialTest-35회 #4");
+  });
+
   it("two different source files never collide even with identical, generic exam group text", () => {
     const xmlA = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));
     const xmlB = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + question("1-1", 1));

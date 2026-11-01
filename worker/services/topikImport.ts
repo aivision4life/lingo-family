@@ -79,7 +79,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
 
   const blockSize = fn.end - fn.start + 1;
   const block = fn.start === fn.end ? String(fn.start) : `${fn.start}~${fn.end}`;
-  const parsed = parseTopikDocument(documentXml);
+  const parsed = parseTopikDocument(documentXml, fn.section);
   warnings.push(...parsed.warnings);
   if (parsed.headingBlock && (parsed.headingBlock.start !== fn.start || parsed.headingBlock.end !== fn.end)) {
     warnings.push(
@@ -107,11 +107,15 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       const round = item.round ?? exam.round;
       const examLabel = round ? `${fn.source}-${round}` : `${fn.source}-연습${exam.groupIndex}`;
       const readingFix = fn.section === "reading";
-      let warning: string | null = null;
+      const notes: string[] = [];
       if (item.labelNumber !== null && item.labelNumber !== number) {
-        warning = `label says question ${item.labelNumber}, computed ${number} (computed is used)`;
-        warnings.push(`${examLabel} position ${item.position}: ${warning}`);
+        notes.push(`label says question ${item.labelNumber}, computed ${number} (computed is used)`);
       }
+      // Imported, but surfaced first in the review screen (e.g. the underline disagrees with the
+      // answer label on a listening question, where the label is what counts).
+      notes.push(...item.warnings);
+      const warning = notes.length > 0 ? notes.join("; ") : null;
+      for (const note of notes) warnings.push(`${examLabel} #${number}: ${note}`);
       if (item.errors.length > 0) {
         errors.push(`${examLabel} #${number}: ${item.errors.join("; ")}`);
         continue;

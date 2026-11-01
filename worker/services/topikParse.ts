@@ -13,6 +13,7 @@
 //     - or: an optional stem image (drawing), then exactly 4 "ListParagraph" options
 //   The one option whose runs are underlined is the model's own answer; it must agree with Y.
 import { XMLParser } from "fast-xml-parser";
+import type { TopikSection } from "../../shared/enums";
 import { TOPIK_OPTION_COUNT } from "../../shared/topik";
 
 // --- Generic helpers for fast-xml-parser's `preserveOrder: true` shape ---------------------------
@@ -98,6 +99,8 @@ export type ParsedItem = {
   /** The 1-based option the answer label declares correct (null when the label itself is malformed). */
   declared_correct: number | null;
   errors: string[];
+  /** Worth a human's eye but not a reason to reject the question (e.g. the underline disagrees). */
+  warnings: string[];
 };
 
 /**
@@ -258,7 +261,7 @@ function parseListShape(paras: OrderedNode[]): { stem_text: string; stem_image_r
 }
 
 /** Parses one question item starting right after its Heading3 label, consuming until the next heading. */
-function parseItem(position: number, labelText: string, body: OrderedNode[], instruction: string | null): ParsedItem {
+function parseItem(position: number, labelText: string, body: OrderedNode[], instruction: string | null, section: TopikSection): ParsedItem {
   // "1-1", "1-9 (36회)", "1-10(36회)" — the number right after the (first) dash.
   const labelMatch = /-\s*(\d+)/.exec(labelText);
   const labelNumber = labelMatch ? Number(labelMatch[1]) : null;
@@ -274,6 +277,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   const sameSegmentPara = paragraphs.find((n) => SAME_SEGMENT.test(textOf(n).trim()));
   const answerMatch = answerPara ? ANSWER_LABEL.exec(textOf(answerPara).trim()) : null;
   const errors: string[] = [];
+  const warnings: string[] = [];
   if (!answerMatch) {
     // No label anywhere: report the first paragraph, which is where it should have been.
     const firstText = paragraphs[0] ? textOf(paragraphs[0]).trim() : "";
@@ -307,25 +311,30 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     parsed = parseListShape(paragraphs.filter(isContent));
   }
 
-  // Listening questions 1~3 offer four pictures and no words (M7.1). You cannot underline a
-  // picture, so for *that shape only* the answer label is the single source of truth. The test is
-  // deliberately narrow: one option carrying any text at all puts the question back under the
-  // usual rule, because then the underline exists and cross-checking the label is worth keeping.
+  // Reading questions 1~3 of a *listening* paper offer four pictures, and nothing can be
+  // underlined on a picture; see the note on parseTopikDocument for why the whole listening
+  // section follows the label instead of the underline.
   const allPictureOptions =
     parsed.options.length === TOPIK_OPTION_COUNT && parsed.options.every((o) => o.image_rid !== null && o.text.trim() === "");
+  const markedIndexes = parsed.options.flatMap((o, i) => (o.marked ? [i + 1] : []));
+  const labelIsTheAnswer = section === "listening" || allPictureOptions;
 
   if (parsed.options.length !== TOPIK_OPTION_COUNT) {
     errors.push(`expected ${TOPIK_OPTION_COUNT} options, found ${parsed.options.length}`);
-  } else if (allPictureOptions) {
-    // Nothing is assumed here: without a usable label the question is rejected rather than
-    // imported with a guessed answer, which would be indistinguishable from a correct one.
+  } else if (labelIsTheAnswer) {
+    // Nothing is assumed: without a usable label the question is rejected rather than imported
+    // with a guessed answer, which would be indistinguishable from a correct one.
     if (declared_correct === null) {
-      errors.push(`picture options cannot be underlined, so this question needs an answer label like "2(2)" — none was found`);
+      errors.push(`no answer label like "2(2)" was found, and the underline is not used as the answer here`);
     } else if (declared_correct < 1 || declared_correct > TOPIK_OPTION_COUNT) {
       errors.push(`answer label says option ${declared_correct}, which is not between 1 and ${TOPIK_OPTION_COUNT}`);
+    } else if (markedIndexes.length === 1 && markedIndexes[0] !== declared_correct) {
+      // Exactly one underline that disagrees with the label is a real contradiction, worth
+      // reading. Several underlines (or none) say nothing — in these files that is formatting
+      // bleed, not an opinion about the answer — so they pass without a word.
+      warnings.push(`answer label says option ${declared_correct}, but option ${markedIndexes[0]} is the underlined one (label was used)`);
     }
   } else {
-    const markedIndexes = parsed.options.flatMap((o, i) => (o.marked ? [i + 1] : []));
     if (markedIndexes.length !== 1) {
       errors.push(`expected exactly one underlined option, found ${markedIndexes.length} (${markedIndexes.join(",")})`);
     } else if (declared_correct !== null && markedIndexes[0] !== declared_correct) {
@@ -344,11 +353,20 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     options: parsed.options,
     declared_correct,
     errors,
+    warnings,
   };
 }
 
 /** Parses `word/document.xml`'s text content into exam groups of questions (no image bytes here). */
-export function parseTopikDocument(documentXml: string): ParseDocumentResult {
+/**
+ * `section` decides how the correct answer is established. Reading marks it by underlining the
+ * option, with the `N(N)` label as a cross-check. Listening takes the label as the single source
+ * of truth: its questions 1~3 offer four pictures (nothing to underline), and in a paper typed up
+ * from a PDF the underline bleeds across options often enough that treating it as authoritative
+ * rejected more good questions than it caught bad ones. A disagreement is still worth seeing, so
+ * it becomes a warning rather than vanishing.
+ */
+export function parseTopikDocument(documentXml: string, section: TopikSection = "reading"): ParseDocumentResult {
   const root = parser.parse(documentXml) as OrderedNode[];
   const doc = root.find((n) => tagOf(n) === "w:document");
   const body = doc ? childrenOf(doc).find((n) => tagOf(n) === "w:body") : undefined;
@@ -393,7 +411,7 @@ export function parseTopikDocument(documentXml: string): ParseDocumentResult {
         if (tagOf(n) === "w:p" && /^Heading[123]$/.test(headingStyle(n) ?? "")) break;
         rest.push(n);
       }
-      currentExam.items.push(parseItem(currentExam.items.length + 1, text, rest, currentInstruction));
+      currentExam.items.push(parseItem(currentExam.items.length + 1, text, rest, currentInstruction, section));
       i = j - 1;
       continue;
     }
