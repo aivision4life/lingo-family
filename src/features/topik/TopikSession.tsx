@@ -5,6 +5,8 @@ import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion, type TopikVocabEntry } 
 import { Button } from "@/components/ui/button";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
+import { allPictureOptions } from "./optionLayout";
+import { TopikPictureOptions } from "./TopikPictureOptions";
 import { useSubmitTopikAttempt, useTopikQuestionContent, useTopikQuestionStats } from "./api";
 import { markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplanation, type SessionStates } from "./sessionState";
 import { TopikClipPlayer } from "./TopikClipPlayer";
@@ -143,6 +145,16 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
           )}
         </div>
       )}
+      {/* Four drawings are the question itself (listening 1-3), so they get their own layout. */}
+      {allPictureOptions(question.options) ? (
+        <TopikPictureOptions
+          options={question.options}
+          selectedOption={selectedOption}
+          correctOption={effectiveResult?.correct_option ?? null}
+          answered={effectiveResult !== null && effectiveResult !== undefined}
+          onChoose={choose}
+        />
+      ) : (
       <div className="flex flex-col gap-2">
         {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => {
           const opt = question.options[n - 1]!;
@@ -183,6 +195,7 @@ export function TopikSession({ profileId, questions }: { profileId: string; ques
           );
         })}
       </div>
+      )}
       {effectiveResult && (
         <p className={effectiveResult.is_correct ? "text-green-700 dark:text-green-400" : "text-destructive"}>
           {effectiveResult.is_correct ? t("topik.practice.correct") : t("topik.practice.incorrect")}

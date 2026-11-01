@@ -587,7 +587,14 @@
       "stopAudio": "Stop",
       "replay": "Play again",
       "showTranscript": "Show transcript",
-      "transcript": "Transcript"
+      "transcript": "Transcript",
+      "optionImage": "Option {{n}} picture",
+      "optionN": "Option {{n}}",
+      "chooseOption": "Choose {{n}}",
+      "zoomOpen": "Enlarge option {{n}}",
+      "zoomClose": "Tap to close",
+      "correctOption": "Correct answer",
+      "yourOption": "Your answer"
     },
     "manage": {
       "title": "Manage TOPIK questions",

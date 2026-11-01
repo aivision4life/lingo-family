@@ -587,7 +587,14 @@
       "stopAudio": "Dừng",
       "replay": "Nghe lại",
       "showTranscript": "Xem lời thoại",
-      "transcript": "Lời thoại"
+      "transcript": "Lời thoại",
+      "optionImage": "Ảnh đáp án {{n}}",
+      "optionN": "Đáp án {{n}}",
+      "chooseOption": "Chọn {{n}}",
+      "zoomOpen": "Xem to ảnh đáp án {{n}}",
+      "zoomClose": "Chạm để đóng",
+      "correctOption": "Đáp án đúng",
+      "yourOption": "Bạn đã chọn"
     },
     "manage": {
       "title": "Quản lý câu hỏi TOPIK",

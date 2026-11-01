@@ -587,7 +587,14 @@
       "stopAudio": "정지",
       "replay": "다시 듣기",
       "showTranscript": "대본 보기",
-      "transcript": "대본"
+      "transcript": "대본",
+      "optionImage": "{{n}}번 그림",
+      "optionN": "{{n}}번",
+      "chooseOption": "{{n}}번 선택",
+      "zoomOpen": "{{n}}번 그림 크게 보기",
+      "zoomClose": "눌러서 닫기",
+      "correctOption": "정답",
+      "yourOption": "내가 고른 답"
     },
     "manage": {
       "title": "TOPIK 문제 관리",
