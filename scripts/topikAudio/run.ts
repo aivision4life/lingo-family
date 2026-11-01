@@ -14,8 +14,10 @@
 // order would put everything after the miscount onto the wrong clip while still playing perfectly
 // normal audio, which is the hardest kind of mistake to notice.
 //
-// mp3 naming: TOPIK_Listening_<source>_<round>.mp3 → the exam label its questions carry
-// ("TOPIK_Listening_8DeOfficial_60회.mp3" → "8DeOfficial-60회").
+// mp3 naming: TOPIK_Listening_<source>_Test<N>.mp3. File names stay ASCII, exam labels stay
+// Korean, and `plan.ts#examFromAudioName` is the single place the two meet:
+// "TOPIK_Listening_OfficialTest_Test35.mp3" → "OfficialTest-35회". A name it cannot read is an
+// error, never a guessed label.
 //
 // Needs ffmpeg + ffprobe on PATH, and `npx wrangler login` for --apply.
 import { spawnSync } from "node:child_process";
@@ -266,12 +268,17 @@ async function main() {
   );
 
   const plans: ExamPlan[] = [];
+  let failedNames = 0;
   for (const fileName of files) {
-    const exam = examFromAudioName(fileName);
-    if (!exam) {
-      console.log(`\n=== ${fileName} ===\n  PROBLEM: name does not match "TOPIK_Listening_<source>_<round>.mp3"`);
+    const named = examFromAudioName(fileName);
+    if (!named.ok) {
+      // Never a quiet fallback: a guessed label attaches real questions to the wrong exam, and
+      // nothing looks broken until much later.
+      console.log(`\n=== ${fileName} ===\n  PROBLEM: ${named.reason}`);
+      failedNames += 1;
       continue;
     }
+    const exam = named.exam;
     if (onlyExam && exam !== onlyExam) continue;
 
     const file = path.join(AUDIO_DIR, fileName);
@@ -295,8 +302,12 @@ async function main() {
   }
 
   for (const p of plans) report(p);
-  const clean = plans.filter((p) => p.plan.problems.length === 0 && p.questions.length > 0);
-  console.log(`\nTotal: ${plans.length} exam(s), ${clean.length} with boundaries that match the Word files.`);
+  const clean = plans.filter((p) => p.plan.problems.length === 0 && p.plan.coverage !== "none");
+  const partial = clean.filter((p) => p.plan.coverage === "partial").length;
+  console.log(
+    `\nTotal: ${plans.length} exam(s), ${clean.length} ready (${partial} of them covering only the start of the paper)` +
+      `${failedNames > 0 ? `, ${failedNames} file(s) skipped because their name could not be read` : ""}.`,
+  );
   console.log("Every exam is stored UNVERIFIED; approve it in Settings → TOPIK before practice uses it.");
   if (!apply) {
     console.log("\nDry run only. Check the report above, then run again with --apply.");

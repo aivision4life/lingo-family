@@ -210,10 +210,35 @@ export function formatMs(ms: number): string {
 }
 
 /**
- * "TOPIK_Listening_8DeOfficial_60회.mp3" → "8DeOfficial-60회", the exam label its questions carry.
- * The source may itself contain underscores, so the *last* underscore separates source from round.
+ * The one place a file name becomes an exam label (M7.1).
+ *
+ * File names stay ASCII — Korean in a file name has been mangled by one toolchain or another on
+ * every platform at some point — while exam labels stay Korean, matching the reading section and
+ * the Heading 2 the questions themselves carry. So the round travels as `Test35` in the file name
+ * and becomes `35회` here: `TOPIK_Listening_OfficialTest_Test35.mp3` → `OfficialTest-35회`.
+ *
+ * A name that does not carry a `Test<N>` token is an **error**, never a quiet fallback to the
+ * `연습N` group counter. A silent fallback is exactly what mislabelled a whole import once before
+ * (see the "exam label" lesson in CLAUDE.md): everything still looked fine, and the damage only
+ * showed up much later as questions attached to the wrong exam.
  */
-export function examFromAudioName(fileName: string): string | null {
-  const m = /^TOPIK_Listening_(.+)_([^_]+)\.mp3$/i.exec(fileName);
-  return m ? `${m[1]}-${m[2]}` : null;
+export type ExamNameResult = { ok: true; exam: string } | { ok: false; reason: string };
+
+const AUDIO_FILE_NAME = /^TOPIK_Listening_(.+)_([^_]+)\.mp3$/i;
+const ROUND_TOKEN = /^Test(\d+)$/i;
+
+export function examFromAudioName(fileName: string): ExamNameResult {
+  const m = AUDIO_FILE_NAME.exec(fileName);
+  if (!m) return { ok: false, reason: 'name does not match "TOPIK_Listening_<source>_Test<N>.mp3"' };
+
+  const [, source, roundToken] = m;
+  const round = ROUND_TOKEN.exec(roundToken!);
+  if (!round) {
+    return {
+      ok: false,
+      reason: `the round part of the name is "${roundToken}", which is not "Test<N>" — rename the file (e.g. ..._Test35.mp3) instead of letting it be guessed`,
+    };
+  }
+  // "Test01" and "Test1" are the same round; the label never keeps a leading zero.
+  return { ok: true, exam: `${source}-${Number(round[1])}회` };
 }

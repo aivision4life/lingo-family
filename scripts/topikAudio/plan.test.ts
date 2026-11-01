@@ -253,21 +253,35 @@ describe("planAudio", () => {
 });
 
 describe("examFromAudioName", () => {
-  it("maps the file name onto the exam label its questions carry", () => {
-    expect(examFromAudioName("TOPIK_Listening_8DeOfficial_60회.mp3")).toBe("8DeOfficial-60회");
-    expect(examFromAudioName("TOPIK_Listening_Yonsei_연습1.mp3")).toBe("Yonsei-연습1");
+  // File names stay ASCII, exam labels stay Korean; this function is the only place they meet.
+  it("turns the ASCII round token into the Korean label the questions carry", () => {
+    expect(examFromAudioName("TOPIK_Listening_OfficialTest_Test35.mp3")).toEqual({ ok: true, exam: "OfficialTest-35회" });
+    expect(examFromAudioName("TOPIK_Listening_8DeOfficial_Test60.mp3")).toEqual({ ok: true, exam: "8DeOfficial-60회" });
   });
 
-  // A source name may contain underscores; the round is the last part, so splitting on the first
-  // underscore would bind the audio to an exam label no question ever has.
+  it("treats Test01 and Test1 as the same round", () => {
+    expect(examFromAudioName("TOPIK_Listening_NewHotTopik_Test01.mp3")).toEqual({ ok: true, exam: "NewHotTopik-1회" });
+  });
+
+  // A source name may contain underscores; the round is the last part.
   it("splits source from round at the last underscore", () => {
-    expect(examFromAudioName("TOPIK_Listening_Master_Topik_연습3.mp3")).toBe("Master_Topik-연습3");
+    expect(examFromAudioName("TOPIK_Listening_Master_Topik_Test3.mp3")).toEqual({ ok: true, exam: "Master_Topik-3회" });
   });
 
-  it("rejects a name that does not follow the convention", () => {
-    expect(examFromAudioName("60회.mp3")).toBeNull();
-    expect(examFromAudioName("TOPIK_Reading_8DeOfficial_60회.mp3")).toBeNull();
-    expect(examFromAudioName("TOPIK_Listening_8DeOfficial_60회.wav")).toBeNull();
+  // The whole point: a name it cannot read must stop the exam, not quietly invent a label. A
+  // silent fallback mislabelled an entire import once already.
+  it("reports an error instead of guessing when the round token is missing or unreadable", () => {
+    expect(examFromAudioName("TOPIK_Listening_OfficialTest_35회.mp3")).toMatchObject({ ok: false });
+    expect(examFromAudioName("TOPIK_Listening_Yonsei_Practice1.mp3")).toMatchObject({ ok: false });
+    expect(examFromAudioName("TOPIK_Listening_OfficialTest.mp3")).toMatchObject({ ok: false });
+    expect(examFromAudioName("35회.mp3")).toMatchObject({ ok: false });
+    expect(examFromAudioName("TOPIK_Reading_OfficialTest_Test35.mp3")).toMatchObject({ ok: false });
+  });
+
+  it("names the expected pattern in the error, so the fix is obvious", () => {
+    const result = examFromAudioName("TOPIK_Listening_Yonsei_Practice1.mp3");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("Test<N>");
   });
 });
 

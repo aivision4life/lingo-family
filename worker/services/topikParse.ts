@@ -295,8 +295,23 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     parsed = parseListShape(paragraphs.filter(isContent));
   }
 
+  // Listening questions 1~3 offer four pictures and no words (M7.1). You cannot underline a
+  // picture, so for *that shape only* the answer label is the single source of truth. The test is
+  // deliberately narrow: one option carrying any text at all puts the question back under the
+  // usual rule, because then the underline exists and cross-checking the label is worth keeping.
+  const allPictureOptions =
+    parsed.options.length === TOPIK_OPTION_COUNT && parsed.options.every((o) => o.image_rid !== null && o.text.trim() === "");
+
   if (parsed.options.length !== TOPIK_OPTION_COUNT) {
     errors.push(`expected ${TOPIK_OPTION_COUNT} options, found ${parsed.options.length}`);
+  } else if (allPictureOptions) {
+    // Nothing is assumed here: without a usable label the question is rejected rather than
+    // imported with a guessed answer, which would be indistinguishable from a correct one.
+    if (declared_correct === null) {
+      errors.push(`picture options cannot be underlined, so this question needs an answer label like "2(2)" — none was found`);
+    } else if (declared_correct < 1 || declared_correct > TOPIK_OPTION_COUNT) {
+      errors.push(`answer label says option ${declared_correct}, which is not between 1 and ${TOPIK_OPTION_COUNT}`);
+    }
   } else {
     const markedIndexes = parsed.options.flatMap((o, i) => (o.marked ? [i + 1] : []));
     if (markedIndexes.length !== 1) {

@@ -386,4 +386,47 @@ describe("parseTopikDocument", () => {
     });
   });
 
+  // M7.1 listening questions 1~3: four pictures, no words. Nothing can be underlined, so the
+  // answer label is the only source of truth — and it has to actually be there.
+  describe("four picture options", () => {
+    const pictureTable = (rids: [string, string, string, string]) =>
+      `<w:tbl><w:tr>${cell("여자: 이거 좀 봐 주실래요?")}</w:tr>` +
+      `<w:tr>${cell("", false, rids[0])}${cell("", false, rids[1])}</w:tr>` +
+      `<w:tr>${cell("", false, rids[2])}${cell("", false, rids[3])}</w:tr></w:tbl>`;
+    const item = (body: string) =>
+      parseTopikDocument(doc(heading("Heading1", "문항 1~3") + heading("Heading2", "35회") + heading("Heading3", "1") + body)).exams[0]!.items[0]!;
+
+    it("takes the answer from the label when no option carries any text", () => {
+      const parsed = item(answer(2) + pictureTable(["rId1", "rId2", "rId3", "rId4"]));
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.declared_correct).toBe(2);
+      expect(parsed.options.map((o) => o.image_rid)).toEqual(["rId1", "rId2", "rId3", "rId4"]);
+    });
+
+    it("refuses the question when the label is missing, rather than guessing an answer", () => {
+      const parsed = item(pictureTable(["rId1", "rId2", "rId3", "rId4"]));
+      expect(parsed.declared_correct).toBeNull();
+      expect(parsed.errors.join(" ")).toContain("needs an answer label");
+    });
+
+    it("refuses an answer outside 1-4", () => {
+      const parsed = item(plain("5(5)") + pictureTable(["rId1", "rId2", "rId3", "rId4"]));
+      expect(parsed.errors.join(" ")).toContain("not between 1 and 4");
+    });
+
+    // One option with words means an underline is possible again, so the cross-check comes back.
+    it("goes back to requiring an underline as soon as one option has text", () => {
+      const mixed =
+        `<w:tbl><w:tr>${cell("지문")}</w:tr>` +
+        `<w:tr>${cell("", false, "rId1")}${cell("", false, "rId2")}</w:tr>` +
+        `<w:tr>${cell("", false, "rId3")}${cell("사진 아님", false, "rId4")}</w:tr></w:tbl>`;
+      expect(item(answer(2) + mixed).errors.join(" ")).toContain("expected exactly one underlined option");
+    });
+
+    it("still rejects a picture question that does not have exactly four options", () => {
+      const three = `<w:tbl><w:tr>${cell("지문")}</w:tr><w:tr>${cell("", false, "rId1")}${cell("", false, "rId2")}${cell("", false, "rId3")}</w:tr></w:tbl>`;
+      expect(item(answer(2) + three).errors.join(" ")).toContain("expected 4 options, found 3");
+    });
+  });
+
 });
