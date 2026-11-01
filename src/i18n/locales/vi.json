@@ -384,6 +384,16 @@
       "iosConfirm": "Bấm “Thêm” ở góc trên bên phải.",
       "iosNote": "Cần iOS 16.4 trở lên. Mở app từ biểu tượng mới trên màn hình chính.",
       "other": "Mở menu của trình duyệt và chọn “Cài đặt ứng dụng” hoặc “Thêm vào màn hình chính”."
+    },
+    "build": {
+      "id": "Bản dựng: {{id}}",
+      "sw": "Service worker: {{state}}",
+      "swState": {
+        "unsupported": "không hỗ trợ",
+        "none": "chưa chạy",
+        "active": "đang chạy",
+        "waiting": "đang chờ kích hoạt (bất thường)"
+      }
     }
   },
   "albums": {

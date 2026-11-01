@@ -4,6 +4,7 @@ import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
 import { BackfillCard } from "@/features/images/BackfillCard";
 import { UsageCard } from "@/features/images/UsageCard";
+import { BuildInfo } from "@/features/pwa/BuildInfo";
 import { InstallCard } from "@/features/pwa/InstallCard";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { useUpdateProfile } from "@/features/profiles/api";
@@ -64,6 +65,7 @@ export function SettingsPage() {
       <InstallCard />
       <UsageCard profileId={profile.id} />
       <BackfillCard profileId={profile.id} />
+      <BuildInfo />
     </PageShell>
   );
 }

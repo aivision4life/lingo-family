@@ -384,6 +384,16 @@
       "iosConfirm": "Tap “Add” in the top-right corner.",
       "iosNote": "Needs iOS 16.4 or later. Open the app from its new icon on the home screen.",
       "other": "Open the browser menu and choose “Install app” or “Add to Home screen”."
+    },
+    "build": {
+      "id": "Build: {{id}}",
+      "sw": "Service worker: {{state}}",
+      "swState": {
+        "unsupported": "not supported",
+        "none": "not running",
+        "active": "running",
+        "waiting": "waiting to activate (unexpected)"
+      }
     }
   },
   "albums": {

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { isApiRequest, isCacheableStatus, isFontRequest, isMediaRequest, isNavigationRequest, MEDIA_MAX_AGE_SECONDS, MEDIA_MAX_ENTRIES } from "./swRoutes";
+import {
+  isApiRequest,
+  isCacheableStatus,
+  isFontRequest,
+  isMediaRequest,
+  isNavigationRequest,
+  MEDIA_MAX_AGE_SECONDS,
+  MEDIA_MAX_ENTRIES,
+  NAVIGATION_TIMEOUT_SECONDS,
+  shouldSkipNetwork,
+} from "./swRoutes";
 
 const ORIGIN = "https://lingo.ai4life.workers.dev";
 const req = (path: string, origin = ORIGIN) => ({ url: new URL(path, origin), origin: ORIGIN });
@@ -43,5 +53,22 @@ describe("service worker routes", () => {
   it("media cache limits: 800 entries, 60 days", () => {
     expect(MEDIA_MAX_ENTRIES).toBe(800);
     expect(MEDIA_MAX_AGE_SECONDS).toBe(60 * 24 * 3600);
+  });
+});
+
+describe("shouldSkipNetwork", () => {
+  it("uses the network whenever the device is online, so a page load cannot come from a stale shell", () => {
+    expect(shouldSkipNetwork(true)).toBe(false);
+  });
+
+  it("goes straight to the precached shell when offline, with no wait", () => {
+    expect(shouldSkipNetwork(false)).toBe(true);
+  });
+});
+
+describe("NAVIGATION_TIMEOUT_SECONDS", () => {
+  it("is long enough that a slow connection does not fall back to the cached shell", () => {
+    // The fallback is how an older deploy's HTML comes back; it must be a last resort.
+    expect(NAVIGATION_TIMEOUT_SECONDS).toBeGreaterThanOrEqual(10);
   });
 });

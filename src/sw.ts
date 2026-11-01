@@ -5,10 +5,11 @@
 //  - app shell (HTML/JS/CSS/icons): precached, so the app opens without a network;
 //  - /api/media/*  (images + audio, content-addressed, immutable): cache-first, limited, 60 days;
 //  - other /api/*  : never cached (network only);
-//  - page loads    : network first. A redirect (e.g. Cloudflare Access login after the session
+//  - page loads    : network first (the shell is never served from the cache while the device is
+//                    online and answering). A redirect (e.g. Cloudflare Access login after the session
 //                    expired) is passed to the browser untouched and never stored, so the app can
-//                    still be sent to the login page. Only when the network fails (offline, or
-//                    slower than 4 s) the precached app shell answers.
+//                    still be sent to the login page. The precached shell answers only when the
+//                    device is offline, or the request fails or hangs.
 import { clientsClaim } from "workbox-core";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
 import { ExpirationPlugin } from "workbox-expiration";
@@ -28,11 +29,27 @@ import {
   MEDIA_MAX_AGE_SECONDS,
   MEDIA_MAX_ENTRIES,
   NAVIGATION_TIMEOUT_SECONDS,
+  shouldSkipNetwork,
 } from "./pwa/swRoutes";
 
 declare const self: ServiceWorkerGlobalScope;
 
-// A new version waits until the user taps "Reload" in the app (registerType "prompt").
+/**
+ * Take over as soon as this worker is installed, instead of sitting in `waiting` until a client
+ * asks for it.
+ *
+ * The previous version only called `skipWaiting()` from the message below, which the app sends when
+ * the user taps "Reload" in `UpdateBanner`. That button is rendered by the app itself, so a build
+ * that fails to mount (a shell whose HTML and JS came from different deploys, for example) leaves
+ * nothing that can send the message: the old worker stays active, keeps serving its own precached
+ * shell, and the only escape is developer tools — which a phone does not have. Activation must
+ * never depend on the broken app being able to draw a button.
+ *
+ * `clientsClaim()` then points pages that are already open at this worker, so the next request they
+ * make is served from the new precache rather than the previous one.
+ */
+self.addEventListener("install", () => void self.skipWaiting());
+// Kept for `updateServiceWorker()` from an older client that is still running the previous bundle.
 self.addEventListener("message", (event) => {
   if ((event.data as { type?: string } | null)?.type === "SKIP_WAITING") void self.skipWaiting();
 });
@@ -79,15 +96,20 @@ registerRoute(
 // Everything else under /api: explicitly network only.
 registerRoute(({ url }) => isApiRequest({ url, origin }), new NetworkOnly());
 
-// Page loads: network first, precached shell only when the network fails.
+// Page loads: the network decides, and its HTML is never stored. The precached shell answers only
+// when there is no usable network (`shouldSkipNetwork`), or when the request fails or hangs past
+// NAVIGATION_TIMEOUT_SECONDS. A slow phone connection must not be enough to bring back a shell from
+// an older deploy, which is why that timeout is generous rather than snappy.
 const network = new NetworkOnly({ networkTimeoutSeconds: NAVIGATION_TIMEOUT_SECONDS });
+const cachedShell = async () => (await matchPrecache("/index.html")) ?? Response.error();
 registerRoute(
   ({ request, url }) => isNavigationRequest(request, url),
   async (ctx) => {
+    if (shouldSkipNetwork(self.navigator.onLine)) return cachedShell();
     try {
       return await network.handle(ctx);
     } catch {
-      return (await matchPrecache("/index.html")) ?? Response.error();
+      return cachedShell();
     }
   },
 );
