@@ -20,24 +20,32 @@ export function useTestTape(span: Span) {
   const [pausedMs, setPausedMs] = useState(0);
   const pausedAt = useRef<number | null>(null);
 
+  // Keyed on the primitives, not on `span` itself: the sitting is refetched (answers are saved as
+  // they are given), and a new object with the same values must not tear the tape down and start
+  // the paper again from the first clip.
+  const audioKey = span?.audio_key ?? "";
+  const startMs = span?.start_ms ?? 0;
   useEffect(() => {
-    if (!span) return;
-    const el = new Audio(mediaUrl(span.audio_key));
+    if (!audioKey) return;
+    const el = new Audio(mediaUrl(audioKey));
     audio.current = el;
     const onTime = () => setPositionMs(el.currentTime * 1000);
     const start = () => {
-      el.currentTime = span.start_ms / 1000;
+      el.currentTime = startMs / 1000;
       void el.play().catch(() => setPlaying(false));
       setPlaying(true);
     };
     el.addEventListener("timeupdate", onTime);
-    el.addEventListener("loadedmetadata", start, { once: true });
+    el.addEventListener("loadedmetadata", start);
     return () => {
       el.removeEventListener("timeupdate", onTime);
+      // Removed too, or a cleaned-up element starts playing the moment its metadata arrives — an
+      // orphan tape nobody can pause, running underneath the real one.
+      el.removeEventListener("loadedmetadata", start);
       el.pause();
       audio.current = null;
     };
-  }, [span]);
+  }, [audioKey, startMs]);
 
   const toggle = useCallback(() => {
     const el = audio.current;

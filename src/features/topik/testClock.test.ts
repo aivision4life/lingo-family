@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TopikClip } from "@shared/topik";
-import { formatRemaining, isFinished, positionAt, progressFraction, remainingMs } from "./testClock";
+import { formatRemaining, isFinished, isParked, positionAt, progressFraction, remainingMs, shownPosition } from "./testClock";
 
 const clip = (start: number, speechEnd: number, end: number): TopikClip => ({
   audio_key: "topik/audio/x.mp3",
@@ -81,5 +81,61 @@ describe("progressFraction", () => {
 
   it("is zero for a paper with no questions, not NaN", () => {
     expect(progressFraction(0, 0)).toBe(0);
+  });
+});
+
+/**
+ * M6.4 fix. The old suite tested `positionAt` — tape position to question — and nothing else,
+ * because the other half of the decision ("…unless the learner went back") lived inline in the
+ * component as `viewing ?? tapePosition`. That expression had no test, and it was the bug: one tap
+ * on "Câu trước"/"Câu tiếp" parked the screen for the rest of the paper, so every later question
+ * needed a manual tap. These tests cover the part that was never a function before.
+ */
+describe("shownPosition", () => {
+  const answeredNone = () => false;
+  const answeredAll = () => true;
+
+  it("follows the tape when the learner has not gone anywhere", () => {
+    expect(shownPosition(null, 3, answeredNone)).toBe(3);
+  });
+
+  it("holds still on a question the learner went back to and has not answered", () => {
+    const park = { position: 1, tapeWhenParked: 2 };
+    expect(shownPosition(park, 2, answeredNone)).toBe(1);
+    // ...and keeps holding as the tape moves on, because the correction is not finished.
+    expect(shownPosition(park, 5, answeredNone)).toBe(1);
+  });
+
+  it("does not yank the screen away the instant the parked question is answered", () => {
+    // Still the same question on the tape as when they parked: they get to finish the thought.
+    expect(shownPosition({ position: 1, tapeWhenParked: 2 }, 2, answeredAll)).toBe(1);
+  });
+
+  it("rejoins the tape at the next boundary once the parked question is answered", () => {
+    expect(shownPosition({ position: 1, tapeWhenParked: 2 }, 3, answeredAll)).toBe(3);
+  });
+
+  it("rejoins when the tape catches up with the parked question", () => {
+    expect(shownPosition({ position: 4, tapeWhenParked: 2 }, 4, answeredNone)).toBe(4);
+  });
+
+  it("never leaves a sitting stuck forever: an answered park always ends", () => {
+    // The actual regression. Park at 1 with everything answered, let the tape run the whole paper:
+    // every later position must be followed, not the parked one.
+    const park = { position: 1, tapeWhenParked: 1 };
+    const shown = [2, 3, 4, 5, 6].map((tape) => shownPosition(park, tape, answeredAll));
+    expect(shown).toEqual([2, 3, 4, 5, 6]);
+  });
+
+  it("falls back to the parked question when the tape has no position at all", () => {
+    expect(shownPosition({ position: 2, tapeWhenParked: 2 }, null, answeredAll)).toBe(2);
+  });
+});
+
+describe("isParked", () => {
+  it("offers the way back only while the screen is actually held away from the tape", () => {
+    expect(isParked({ position: 1, tapeWhenParked: 2 }, 1, 3)).toBe(true);
+    expect(isParked({ position: 1, tapeWhenParked: 2 }, 3, 3)).toBe(false);
+    expect(isParked(null, 3, 3)).toBe(false);
   });
 });

@@ -18,7 +18,7 @@ import { imageUrl } from "@/features/images/api";
 import { useAbandonTopikTest, useFinishTopikTest, useSaveTopikTestAnswer } from "./api";
 import { answerAcknowledged, answerGiven, answeredCount, emptyQueue, unsentAnswers, type AnswerQueue } from "./answerQueue";
 import { allPictureOptions } from "./optionLayout";
-import { formatRemaining, isFinished, positionAt, progressFraction, remainingMs } from "./testClock";
+import { formatRemaining, isFinished, isParked, positionAt, progressFraction, remainingMs, shownPosition, type ParkedAt } from "./testClock";
 import { TopikPictureOptions } from "./TopikPictureOptions";
 import { useTestTape } from "./useTestTape";
 import { cn } from "@/lib/utils";
@@ -47,7 +47,8 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
       emptyQueue,
     ),
   );
-  const [viewing, setViewing] = useState<number | null>(null);
+  // Where the learner went back to, and where the tape was when they did (see `shownPosition`).
+  const [park, setPark] = useState<ParkedAt>(null);
   const [confirmExit, setConfirmExit] = useState(false);
   const submitted = useRef(false);
   /** Set the moment the learner confirms leaving, so the blocker stops blocking that very exit. */
@@ -61,8 +62,11 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
 
   const tape = useTestTape(test.audio);
   const tapePosition = positionAt(test.questions, tape.positionMs);
-  const current = viewing ?? tapePosition ?? test.questions[0]?.position ?? 1;
+  const shown = shownPosition(park, tapePosition, (position) => queue.answers[position] !== undefined);
+  const current = shown ?? test.questions[0]?.position ?? 1;
   const question = test.questions.find((q) => q.position === current) ?? test.questions[0];
+  const parked = isParked(park, shown, tapePosition);
+  const goTo = (position: number) => setPark({ position, tapeWhenParked: tapePosition ?? position });
 
   const submit = (): void => {
     if (submitted.current) return;
@@ -172,15 +176,17 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
       <div className="flex items-center justify-between gap-2">
         {/* Flipping back through the paper is allowed in the real exam, so it is allowed here —
             the tape keeps running either way, and "Theo băng" jumps back to where it is. */}
-        <Button variant="outline" onClick={() => setViewing(Math.max(1, current - 1))} disabled={current <= 1}>
+        <Button variant="outline" onClick={() => goTo(Math.max(1, current - 1))} disabled={current <= 1}>
           {t("topik.practice.prev")}
         </Button>
-        {viewing !== null && viewing !== tapePosition && (
-          <Button variant="ghost" onClick={() => setViewing(null)}>
+        {/* Always an outline button, never a ghost one: this is the way back to the paper, and on a
+            phone a ghost button between two outlined ones reads as decoration. */}
+        {parked && (
+          <Button variant="outline" onClick={() => setPark(null)}>
             {t("topik.test.followTape")}
           </Button>
         )}
-        <Button variant="outline" onClick={() => setViewing(Math.min(test.question_count, current + 1))} disabled={current >= test.question_count}>
+        <Button variant="outline" onClick={() => goTo(Math.min(test.question_count, current + 1))} disabled={current >= test.question_count}>
           {t("topik.practice.next")}
         </Button>
       </div>

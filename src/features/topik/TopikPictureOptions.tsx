@@ -1,10 +1,11 @@
-import { Check, ZoomIn } from "lucide-react";
+import { Check, Circle, ZoomIn } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TopikContent } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
+import { pictureOptionState } from "./optionLayout";
 import { TopikImageZoom } from "./TopikImageZoom";
 
 /**
@@ -41,19 +42,20 @@ export function TopikPictureOptions({
           const n = i + 1;
           const isSelected = selectedOption === n;
           const isCorrect = correctOption === n;
+          const state = pictureOptionState({ option: n, selected: selectedOption, correct: correctOption, answered });
           const label = t("topik.practice.optionImage", { n });
           return (
             <li
               key={n}
               className={cn(
                 "flex flex-col gap-2 overflow-hidden rounded-lg border-2 p-2",
-                answered
-                  ? isCorrect
-                    ? "border-green-600 bg-green-50 dark:bg-green-950/40"
-                    : isSelected
-                      ? "border-destructive bg-destructive/10"
-                      : "border-border opacity-60"
-                  : "border-border",
+                state === "correct" && "border-green-600 bg-green-50 dark:bg-green-950/40",
+                state === "wrong" && "border-destructive bg-destructive/10",
+                state === "dimmed" && "border-border opacity-60",
+                // Before anything is graded, a chosen option still has to *look* chosen — this is
+                // the only state a mock test has and practice does not.
+                state === "chosen" && "border-primary bg-accent",
+                state === "idle" && "border-border",
               )}
             >
               <div className="relative">
@@ -93,8 +95,15 @@ export function TopikPictureOptions({
                   {isCorrect ? t("topik.practice.correctOption") : isSelected ? t("topik.practice.yourOption") : t("topik.practice.optionN", { n })}
                 </p>
               ) : (
-                <Button type="button" variant="outline" className="w-full" onClick={() => onChoose(n)}>
-                  {t("topik.practice.chooseOption", { n })}
+                <Button
+                  type="button"
+                  variant={state === "chosen" ? "default" : "outline"}
+                  className="w-full"
+                  aria-pressed={state === "chosen"}
+                  onClick={() => onChoose(n)}
+                >
+                  {state === "chosen" ? <Check className="size-4" aria-hidden /> : <Circle className="size-4 opacity-40" aria-hidden />}
+                  {state === "chosen" ? t("topik.practice.chosenOption", { n }) : t("topik.practice.chooseOption", { n })}
                 </Button>
               )}
             </li>

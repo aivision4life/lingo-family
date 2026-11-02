@@ -14,3 +14,23 @@ import type { TopikContent } from "@shared/topik";
 export function allPictureOptions(options: readonly TopikContent[]): boolean {
   return options.length > 0 && options.every((o) => o.image_key !== null && (o.text === null || o.text.trim() === ""));
 }
+
+/**
+ * How one picture option looks right now (M6.4 fix).
+ *
+ * "chosen" exists only during a mock test: an answer is picked but nothing has been graded yet.
+ * Practice never has that state — it grades the moment you choose — which is why a picture option
+ * that showed no sign at all of being chosen went unnoticed until a real sitting on a phone, where
+ * tapping "Chọn 2" looked like the app had simply ignored the tap.
+ */
+export type PictureOptionState = "correct" | "wrong" | "dimmed" | "chosen" | "idle";
+
+export function pictureOptionState(args: { option: number; selected: number | null; correct: number | null; answered: boolean }): PictureOptionState {
+  const { option, selected, correct, answered } = args;
+  if (answered) {
+    if (correct === option) return "correct";
+    if (selected === option) return "wrong";
+    return "dimmed";
+  }
+  return selected === option ? "chosen" : "idle";
+}
