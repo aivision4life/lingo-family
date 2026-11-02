@@ -664,10 +664,13 @@ Trần này bị chạm do **dữ liệu lớn lên**, không phải do code đ�
 | `albums.ts` xoá từ khỏi album | 200 + 1 | hỏng, đã sửa |
 | `words.ts` chèn `examples` khi lưu từ | 17 × `EXAMPLES_MAX` 5 = **85** | chưa gãy nhưng chỉ cách một cột, đã sửa |
 | `topikTests.ts` đọc `inArray` câu hỏi / đoạn nghe | 50 | an toàn, vẫn chẻ mẻ cho chắc |
+| `albums.ts#listAlbums` đọc ảnh bìa theo số album | 1 × số album, **không chặn trên** | đã sửa |
 | `scripts/topikAudio` chèn 36 đoạn | 7 mỗi câu lệnh (`batch` 36 câu lệnh) | an toàn |
 | `scripts/topikImport`, `scripts/migrate` | một dòng mỗi câu lệnh | an toàn |
 | `review.ts#syncProfileCards` | `INSERT ... SELECT`, vài tham số | an toàn |
 
 **Cách sửa.** Một hàm dùng chung, `worker/lib/d1Chunk.ts`: `chunkForD1(rows, paramsPerRow, { reserved })` cùng hai hàm bọc `writeInD1Chunks` / `readInD1Chunks`. Mọi INSERT nhiều dòng và mọi `IN (...)` có số phần tử không chặn trước đều đi qua đây, thay vì từng người tự nhớ con số 100. `reserved` dành cho tham số mà câu lệnh ràng buộc ngoài phần dòng (ví dụ `WHERE deck_id = ? AND word_id IN (...)`).
+
+Mọi `IN (...)` còn lại đều có trần rõ ràng: ≤50 album (`wordAlbumsSchema`), ≤30 câu một trang quản lý, ≤10 câu một phiên luyện, ≤5 từ khoá của một câu TOPIK, ≤3 cụm từ của một từ.
 
 **Hệ quả phụ cùng lúc:** hàng `topik_tests` được chèn **trước** các câu, nên mỗi lần chèn câu gãy là để lại một bài thi `running` không có câu nào — 5 hàng rác trên production, đúng 5 lần người dùng bấm nút. Giờ nếu chèn câu hỏng thì hàng bài thi bị xoá trước khi báo lỗi, và có test khẳng định không còn hàng nào 0 câu.

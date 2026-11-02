@@ -6,6 +6,7 @@ import type { Album, AlbumCover, AlbumRef } from "../../shared/album";
 import type { ImageStatus, LearnLang } from "../../shared/enums";
 import { deck_words, decks, words } from "../../db/schema";
 import type { getDb } from "../env";
+import { readInD1Chunks } from "../lib/d1Chunk";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -30,18 +31,26 @@ export async function listAlbums(db: Db, lang?: LearnLang): Promise<Album[]> {
     .orderBy(sql`${decks.name} COLLATE NOCASE`);
   if (albums.length === 0) return [];
 
-  // Oldest membership first, so the cover stays stable while words are added later.
-  const members = await db
-    .select({
-      deck_id: deck_words.deck_id,
-      image_key: words.image_key,
-      image_status: words.image_status,
-      emoji: words.emoji,
-    })
-    .from(deck_words)
-    .innerJoin(words, eq(words.id, deck_words.word_id))
-    .where(inArray(deck_words.deck_id, albums.map((a) => a.id)))
-    .orderBy(deck_words.deck_id, deck_words.added_at, sql`${deck_words}.rowid`);
+  // Oldest membership first, so the cover stays stable while words are added later. Chunked
+  // because the number of albums a family makes has no upper bound and each one binds a parameter
+  // (D1 refuses a statement over 100). Every row of one album lands in the same chunk — a row has
+  // exactly one `deck_id` — so each album's own ordering survives the split, and the grouping into
+  // `byAlbum` below is what the cover is picked from anyway.
+  const members = await readInD1Chunks(
+    albums.map((a) => a.id),
+    (chunk) =>
+      db
+        .select({
+          deck_id: deck_words.deck_id,
+          image_key: words.image_key,
+          image_status: words.image_status,
+          emoji: words.emoji,
+        })
+        .from(deck_words)
+        .innerJoin(words, eq(words.id, deck_words.word_id))
+        .where(inArray(deck_words.deck_id, chunk))
+        .orderBy(deck_words.deck_id, deck_words.added_at, sql`${deck_words}.rowid`),
+  );
   const byAlbum = new Map<string, CoverCandidate[]>();
   for (const m of members) byAlbum.set(m.deck_id, [...(byAlbum.get(m.deck_id) ?? []), m]);
 
