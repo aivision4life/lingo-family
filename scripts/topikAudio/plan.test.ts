@@ -9,6 +9,7 @@ import {
   parseSilenceLog,
   pickIntroEnd,
   planAudio,
+  planLinks,
   silenceHistogram,
   type Silence,
 } from "./plan";
@@ -296,3 +297,120 @@ describe("formatMs", () => {
 function q(number: number, same_segment = false) {
   return { number, same_segment };
 }
+
+/**
+ * `--link-only` (M7.2): attaching questions to clips that already exist and are already approved.
+ * The pairs from question 21 on are the reason this cannot be "one question, one clip".
+ */
+describe("planLinks", () => {
+  /** Questions 1..n, each on its own clip. */
+  const solo = (n: number) => Array.from({ length: n }, (_, i) => ({ number: i + 1, same_segment: false }));
+  const idxs = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+  /** Everything the Word files describe is also in the database, unless a test says otherwise. */
+  const allImported = (questions: readonly { number: number }[]) => new Set(questions.map((q) => q.number));
+
+  it("links the questions that have no clip to the clips that have no question", () => {
+    const plan = planLinks({
+      questions: solo(20),
+      segmentIdxs: idxs(36),
+      linked: new Map(idxs(12).map((n) => [n, n])),
+      existing: allImported(solo(20)),
+    });
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.links.map((l) => [l.number, l.segmentIdx])).toEqual([13, 14, 15, 16, 17, 18, 19, 20].map((n) => [n, n]));
+    // The clips for questions nobody has typed up yet are simply left alone.
+    expect(plan.unusedSegments).toEqual(idxs(36).slice(20));
+  });
+
+  it("puts both questions of a pair on the one clip they share", () => {
+    // The real shape from question 21: one dialogue, two questions about it.
+    const questions = [
+      ...solo(20),
+      { number: 21, same_segment: false },
+      { number: 22, same_segment: true },
+      { number: 23, same_segment: false },
+      { number: 24, same_segment: true },
+    ];
+    const plan = planLinks({ questions, segmentIdxs: idxs(36), linked: new Map(idxs(20).map((n) => [n, n])), existing: allImported(questions) });
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.links.map((l) => [l.number, l.segmentIdx])).toEqual([
+      [21, 21],
+      [22, 21],
+      [23, 22],
+      [24, 22],
+    ]);
+    expect(plan.links.every((l) => l.shared)).toBe(true);
+  });
+
+  it("links the second half of a pair to the clip its partner already has", () => {
+    // Question 21 was linked in an earlier run; 22 shares its clip and must land on the same one,
+    // not on the next free clip — which is exactly how everything after it would shift by one.
+    const questions = [...solo(20), { number: 21, same_segment: false }, { number: 22, same_segment: true }];
+    const plan = planLinks({
+      questions,
+      segmentIdxs: idxs(36),
+      linked: new Map([...idxs(20).map((n) => [n, n] as const), [21, 21]]),
+      existing: allImported(questions),
+    });
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.links).toEqual([{ number: 22, segmentIdx: 21, shared: true }]);
+  });
+
+  it("links nothing when the stored links disagree with the Word files", () => {
+    // Question 5 sits on clip 6: either the clips were cut differently or the paper changed, and
+    // guessing which is right puts every question after it one clip out.
+    const plan = planLinks({ questions: solo(20), segmentIdxs: idxs(36), linked: new Map([[5, 6]]), existing: allImported(solo(20)) });
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.reasons[0]).toContain("question 5 is attached to clip 6");
+  });
+
+  it("links nothing when a question needs a clip the exam does not have", () => {
+    const plan = planLinks({ questions: solo(20), segmentIdxs: idxs(12), linked: new Map(idxs(12).map((n) => [n, n])), existing: allImported(solo(20)) });
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.reasons[0]).toContain("needs clip 13");
+  });
+
+  it("links nothing when the questions do not start at 1", () => {
+    const plan = planLinks({
+      questions: [{ number: 21, same_segment: false }, { number: 22, same_segment: true }],
+      segmentIdxs: idxs(36),
+      linked: new Map(),
+      existing: new Set([21, 22]),
+    });
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.reasons[0]).toContain("not a run starting at 1");
+  });
+
+  it("has nothing to do when every question already has its clip", () => {
+    const plan = planLinks({ questions: solo(12), segmentIdxs: idxs(36), linked: new Map(idxs(12).map((n) => [n, n])), existing: allImported(solo(12)) });
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.links).toEqual([]);
+    expect(plan.unusedSegments).toHaveLength(24);
+  });
+
+
+  it("does not try to link a question the Word file describes but nobody has imported yet", () => {
+    // The usual order: the Word file is written, then `topik-import` runs. Planning a link for a
+    // row that does not exist would be an UPDATE matching nothing, reported as a link that worked.
+    const plan = planLinks({
+      questions: solo(20),
+      segmentIdxs: idxs(36),
+      linked: new Map(idxs(12).map((n) => [n, n])),
+      existing: new Set(idxs(12)),
+    });
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.links).toEqual([]);
+    expect(plan.notImported).toEqual([13, 14, 15, 16, 17, 18, 19, 20]);
+  });
+  it("refuses an exam with no questions in the Word files at all", () => {
+    expect(planLinks({ questions: [], segmentIdxs: idxs(36), linked: new Map(), existing: new Set() }).ok).toBe(false);
+  });
+});

@@ -7,6 +7,9 @@
 //   npm run topik-audio -- --apply --force  also replaces an exam's existing audio + segments
 //   npm run topik-audio -- --apply --local         writes to the local dev D1/R2 instead (try it out first)
 //   npm run topik-audio -- --exam 8DeOfficial-60회   only this exam
+//   npm run topik-audio -- --link-only              attach newly imported questions to clips that
+//                                                   already exist; no mp3, no re-cutting, no
+//                                                   approval lost (see `planLinks`)
 //
 // An exam's audio ALWAYS lands unverified, so none of its questions reach practice until an adult
 // has checked the boundaries in Settings → TOPIK. When the number of clips found does not match
@@ -37,8 +40,10 @@ import {
   parseSilenceLog,
   pickIntroEnd,
   planAudio,
+  planLinks,
   silenceHistogram,
   type AudioPlan,
+  type LinkPlan,
   type Segment,
   type Silence,
 } from "./plan";
@@ -79,6 +84,8 @@ const apply = args.includes("--apply");
 /** Write to the dev server's own D1/R2 (.wrangler/state) instead of production. */
 const local = args.includes("--local");
 const force = args.includes("--force");
+/** Only write `topik_questions.segment_id`; never touch the mp3, the clips or their approval. */
+const linkOnly = args.includes("--link-only");
 const flag = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const onlyExam = flag("--exam");
 const noiseDb = Number(flag("--noise") ?? DEFAULT_NOISE_DB);
@@ -124,6 +131,144 @@ async function listeningQuestions(exam: string) {
     }
   }
   return questions;
+}
+
+/** Every listening exam the Word files mention, with its questions — `--link-only` needs no mp3. */
+async function listeningExams(): Promise<Map<string, { number: number; same_segment: boolean }[]>> {
+  const exams = new Map<string, { number: number; same_segment: boolean }[]>();
+  if (!existsSync(DOCX_DIR)) return exams;
+  const files = (await readdir(DOCX_DIR)).filter((f) => f.toLowerCase().endsWith(".docx") && !f.startsWith("~$"));
+  for (const fileName of files) {
+    const zip = await JSZip.loadAsync(await readFile(path.join(DOCX_DIR, fileName)));
+    const documentXml = await zip.file("word/document.xml")?.async("string");
+    if (!documentXml) continue;
+    for (const q of buildImportDraft(fileName, documentXml).questions) {
+      if (q.section !== "listening") continue;
+      exams.set(q.exam, [...(exams.get(q.exam) ?? []), { number: q.number, same_segment: q.same_segment }]);
+    }
+  }
+  return exams;
+}
+
+/**
+ * `--link-only`: attach questions to clips that already exist, and nothing else.
+ *
+ * Reads the Word files for the paper's shape and D1 for what is already there, plans every exam up
+ * front, and writes only `topik_questions.segment_id`. An exam whose plan has any problem is
+ * skipped whole — see `planLinks` for why a half-applied linking is the worst outcome available.
+ */
+async function runLinkOnly() {
+  const fromWord = await listeningExams();
+  if (fromWord.size === 0) {
+    console.log(`No listening questions found in ${DOCX_DIR}.`);
+    return;
+  }
+  const proxy = local ? await getPlatformProxy({ remoteBindings: false }) : await getPlatformProxy({ configPath: tempConfig(), remoteBindings: true });
+  try {
+    const db = proxy.env.DB as unknown as D1Like;
+    type Planned = { exam: string; plan: LinkPlan; segments: Map<number, Segment>; segmentIdOf: Map<number, string> };
+    const planned: Planned[] = [];
+
+    for (const [exam, questions] of [...fromWord.entries()].sort()) {
+      if (onlyExam && exam !== onlyExam) continue;
+      const audio = await db
+        .prepare("SELECT id, verified FROM topik_audio WHERE section = 'listening' AND exam = ?")
+        .bind(exam)
+        .first<{ id: string; verified: number }>();
+      if (!audio) {
+        console.log(`\n=== ${exam} ===\n  SKIPPED: no audio stored yet — run the normal --apply for this exam first.`);
+        continue;
+      }
+      const segmentRows = (
+        await db
+          .prepare("SELECT id, idx, start_ms, speech_end_ms, end_ms FROM topik_segments WHERE audio_id = ? ORDER BY idx")
+          .bind(audio.id)
+          .all<{ id: string; idx: number; start_ms: number; speech_end_ms: number; end_ms: number }>()
+      ).results;
+      const existingRows = (
+        await db
+          .prepare("SELECT number FROM topik_questions WHERE section = 'listening' AND exam = ?")
+          .bind(exam)
+          .all<{ number: number }>()
+      ).results;
+      const linkedRows = (
+        await db
+          .prepare(
+            `SELECT q.number AS number, s.idx AS idx FROM topik_questions q
+             JOIN topik_segments s ON s.id = q.segment_id
+             WHERE q.section = 'listening' AND q.exam = ?`,
+          )
+          .bind(exam)
+          .all<{ number: number; idx: number }>()
+      ).results;
+
+      planned.push({
+        exam,
+        plan: planLinks({
+          questions,
+          segmentIdxs: segmentRows.map((r) => r.idx),
+          linked: new Map(linkedRows.map((r) => [r.number, r.idx])),
+          existing: new Set(existingRows.map((r) => r.number)),
+        }),
+        segments: new Map(segmentRows.map((r) => [r.idx, { idx: r.idx, start_ms: r.start_ms, speech_end_ms: r.speech_end_ms, end_ms: r.end_ms }])),
+        segmentIdOf: new Map(segmentRows.map((r) => [r.idx, r.id])),
+      });
+    }
+
+    let totalLinks = 0;
+    for (const p of planned) {
+      console.log(`\n=== ${p.exam} ===`);
+      if (!p.plan.ok) {
+        for (const r of p.plan.reasons) console.log(`  PROBLEM: ${r}`);
+        console.log("  Nothing will be linked for this exam.");
+        continue;
+      }
+      if (p.plan.notImported.length > 0) {
+        // Not a problem: the Word file simply arrived before `npm run topik-import` was run.
+        console.log(`  ${p.plan.notImported.length} question(s) not imported yet, so not linkable: ${p.plan.notImported.join(", ")}`);
+      }
+      if (p.plan.links.length === 0) {
+        console.log(`  Nothing to link; ${p.plan.unusedSegments.length} clip(s) still have no question.`);
+        continue;
+      }
+      console.log(`  ${p.plan.links.length} question(s) to link, ${p.plan.unusedSegments.length} clip(s) left for questions not typed up yet`);
+      console.log("   Câu   Đoạn   Bắt đầu        Hết tiếng      Kết thúc");
+      for (const link of p.plan.links) {
+        const seg = p.segments.get(link.segmentIdx)!;
+        console.log(
+          `   ${String(link.number).padStart(3)}  →  ${String(link.segmentIdx).padStart(3)}   ` +
+            `${formatMs(seg.start_ms).padStart(11)}    ${formatMs(seg.speech_end_ms).padStart(11)}    ${formatMs(seg.end_ms).padStart(11)}` +
+            `${link.shared ? "   (chung đoạn)" : ""}`,
+        );
+      }
+      totalLinks += p.plan.links.length;
+    }
+
+    const blocked = planned.filter((p) => !p.plan.ok).length;
+    console.log(`\nTotal: ${totalLinks} link(s) across ${planned.length - blocked} exam(s)${blocked > 0 ? `, ${blocked} exam(s) blocked` : ""}.`);
+    if (!apply) {
+      console.log("\nDry run only. Check the table above, then run again with --apply --link-only.");
+      return;
+    }
+    if (totalLinks === 0) {
+      console.log("\nNothing to link.");
+      return;
+    }
+    if (!local) backupProduction();
+    for (const p of planned) {
+      if (!p.plan.ok) continue;
+      for (const link of p.plan.links) {
+        await db
+          .prepare("UPDATE topik_questions SET segment_id = ?, updated_at = ? WHERE section = 'listening' AND exam = ? AND number = ?")
+          .bind(p.segmentIdOf.get(link.segmentIdx)!, Date.now(), p.exam, link.number)
+          .run();
+      }
+    }
+    // The clips themselves, their timings and their approval were never touched.
+    console.log(`\nLinked ${totalLinks} question(s). No clip, no timing and no approval was changed.`);
+  } finally {
+    await proxy.dispose();
+  }
 }
 
 function tempConfig() {
@@ -254,6 +399,11 @@ async function writeExam(db: D1Like, bucket: R2Like, p: ExamPlan) {
 }
 
 async function main() {
+  if (linkOnly) {
+    console.log(apply ? `APPLY --link-only: will write to ${local ? "the LOCAL dev database" : "production"}` : "DRY RUN --link-only: nothing is written");
+    await runLinkOnly();
+    return;
+  }
   if (!existsSync(AUDIO_DIR)) {
     console.error(`No ${AUDIO_DIR} directory — put the exam mp3s there first.`);
     return;

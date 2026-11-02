@@ -242,3 +242,100 @@ export function examFromAudioName(fileName: string): ExamNameResult {
   // "Test01" and "Test1" are the same round; the label never keeps a leading zero.
   return { ok: true, exam: `${source}-${Number(round[1])}회` };
 }
+
+/** One question that `--link-only` would attach to a clip that already exists. */
+export type LinkTarget = { number: number; segmentIdx: number; shared: boolean };
+export type LinkPlan =
+  | { ok: true; links: LinkTarget[]; unusedSegments: number[]; notImported: number[] }
+  | { ok: false; reasons: string[] };
+
+/**
+ * Attaches questions to clips that are already cut and already approved (`--link-only`).
+ *
+ * The normal path cuts an exam's audio and links everything in one go, but a paper is typed up a
+ * few questions at a time: the clips for questions 13-20 exist and have been checked by hand, and
+ * only the newly imported questions need pointing at them. Re-cutting to achieve that would delete
+ * the segments, null every existing link and throw away the approval — all to change a foreign key.
+ *
+ * A clip's ordinal is its identity: group 1 of the questions is segment 1, and from question 21 a
+ * group is a *pair* sharing one clip (`same_segment`, the "CHUNG ĐOẠN" mark in the Word file), so
+ * the mapping is by group, never one question per clip. Everything is checked before anything is
+ * written, and any disagreement links nothing at all: a question on the wrong clip plays perfectly
+ * normal audio and shows up only as answers that stop making sense, which is the worst kind of
+ * mistake this tool can make.
+ */
+export function planLinks(args: {
+  /** Every listening question of this exam, as the Word files describe it. */
+  questions: readonly { number: number; same_segment: boolean }[];
+  /** The 1-based indexes of the clips that exist for this exam. */
+  segmentIdxs: readonly number[];
+  /** Question number → the clip index it is already attached to. */
+  linked: ReadonlyMap<number, number>;
+  /**
+   * The question numbers that actually exist in the database for this exam.
+   *
+   * The Word files describe the whole paper, but a question is only importable once
+   * `topik-import` has run: linking one that is not there yet would be an UPDATE matching no rows,
+   * and the run would report links it never made. Those are reported as "not imported yet"
+   * instead, which is the normal state when the Word file arrives before the import.
+   */
+  existing: ReadonlySet<number>;
+}): LinkPlan {
+  const ordered = [...args.questions].sort((a, b) => a.number - b.number);
+  const reasons: string[] = [];
+  if (ordered.length === 0) return { ok: false, reasons: ["no questions found for this exam in the Word files"] };
+  if (!ordered.every((q, i) => q.number === i + 1)) {
+    reasons.push(
+      `the Word file(s) cover questions ${ordered[0]!.number}-${ordered.at(-1)!.number}, which is not a run starting at 1` +
+        " — there is no way to tell which clip the first of them belongs to",
+    );
+    return { ok: false, reasons };
+  }
+
+  // Group ordinal per question: a new clip unless this question shares the previous one's.
+  const ordinalOf = new Map<number, number>();
+  let ordinal = 0;
+  for (const [i, q] of ordered.entries()) {
+    if (i === 0 || !q.same_segment) ordinal += 1;
+    ordinalOf.set(q.number, ordinal);
+  }
+
+  const available = new Set(args.segmentIdxs);
+  // Questions already attached must sit on their own group's clip. If they do not, the stored data
+  // and the Word files disagree about the paper's shape, and guessing which is right is how
+  // everything after the disagreement ends up one clip out.
+  for (const [number, segmentIdx] of args.linked) {
+    const want = ordinalOf.get(number);
+    if (want === undefined) reasons.push(`question ${number} is attached to clip ${segmentIdx} but is not in the Word file(s)`);
+    else if (want !== segmentIdx) reasons.push(`question ${number} is attached to clip ${segmentIdx}, but the Word file(s) put it on clip ${want}`);
+  }
+
+  const links: LinkTarget[] = [];
+  const notImported: number[] = [];
+  for (const [number, want] of ordinalOf) {
+    if (args.linked.has(number)) continue;
+    if (!args.existing.has(number)) {
+      notImported.push(number);
+      continue;
+    }
+    if (!available.has(want)) {
+      reasons.push(`question ${number} needs clip ${want}, which this exam does not have (it has ${args.segmentIdxs.length})`);
+      continue;
+    }
+    links.push({ number, segmentIdx: want, shared: false });
+  }
+  if (reasons.length > 0) return { ok: false, reasons };
+
+  // A clip is "shared" when more than one question sits on it — the paired questions from 21 on.
+  const perGroup = new Map<number, number>();
+  for (const want of ordinalOf.values()) perGroup.set(want, (perGroup.get(want) ?? 0) + 1);
+  for (const link of links) link.shared = (perGroup.get(link.segmentIdx) ?? 0) > 1;
+
+  const needed = new Set([...ordinalOf.values()]);
+  return {
+    ok: true,
+    links: links.sort((a, b) => a.number - b.number),
+    unusedSegments: args.segmentIdxs.filter((i) => !needed.has(i)).sort((a, b) => a - b),
+    notImported: notImported.sort((a, b) => a - b),
+  };
+}
