@@ -615,3 +615,19 @@ Số module là dấu hiệu đáng tin nhất (1,84×); dung lượng chỉ ph�
 **Đã sửa:** `vite.config.ts` chốt `root` (và cả ba alias `@`, `@shared`, `@db`) vào `realpathSync.native(import.meta.dirname)`, nên hai cách viết hội tụ về một chuỗi; build từ `d:\dev\...` và `D:\DEV\...` giờ ra **cùng một hash**. `buildIntegrity()` làm **fail build** nếu có file nào lọt vào dưới nhiều hơn một id, hoặc đồ thị client vượt `CLIENT_MODULE_CEILING`, hoặc bundle vượt `CLIENT_BYTES_CEILING` — vì kiểu lỗi này âm thầm theo nghĩa xấu nhất: build xanh, test xanh, preview ở máy chạy tốt, chỉ sập trên máy thật.
 
 **Bài học đi kèm:** giả thuyết đầu tiên của tôi (service worker cũ kẹt ở `waiting` phục vụ shell cũ) **sai**, dù nó giải thích được triệu chứng một cách hợp lý và đã có thật một lỗi lifecycle trong `src/sw.ts` (sửa ở `dd1f51f`, vẫn đáng giữ). Phép thử đáng làm **trước tiên** là so byte bundle production với bản build local — nó phân định ngay giữa "sai cái được phục vụ" và "sai cái được build", thay vì suy luận từ triệu chứng.
+
+### M6.4 — Quyết định hiển thị nằm trong JSX thì không có gì để test (2026-11-02)
+
+**Hai lỗi lọt lưới cùng một lý do.** Cả hai chỉ lộ ra khi ngồi thi thật trên điện thoại, và cả hai đều **không** phải do test yếu — mà do thứ cần kiểm **không phải là hàm**, nên không có gì để gọi trong test.
+
+1. **Chọn đáp án ảnh không thấy phản hồi.** Màu viền của thẻ ảnh được quyết định ngay trong JSX bằng một chuỗi ba tầng `answered ? (isCorrect ? … : isSelected ? … : …) : "border-border"`. Nhánh `answered === false` gộp cả "chưa chọn" lẫn "đã chọn" vào một kiểu duy nhất. Trạng thái **đã chọn nhưng chưa chấm chỉ tồn tại trong bài thi** — màn ôn tập chấm ngay khi chọn — nên không có đường nào để bộ test cũ chạm tới. Bộ test cũ có `allPictureOptions` (chọn *bố cục nào*) nhưng không có gì hỏi *thẻ trông ra sao sau khi được chọn*.
+2. **Màn hình kẹt, không tự nhảy câu.** Quy tắc là một biểu thức trong thân component: `const current = viewing ?? tapePosition`. `positionAt` (băng → câu) có test đầy đủ; nửa còn lại của quyết định — "…trừ khi người học chủ động quay lại" — không phải hàm, không ai xoá `viewing`, và một lần bấm "Câu tiếp" khoá màn hình cho hết bài.
+
+**Quy tắc rút ra:** mỗi khi một quyết định hiển thị có **nhiều hơn hai nhánh**, tách nó thành một **hàm thuần** rồi mới dùng kết quả trong JSX. Hàm đó nhận đủ dữ kiện, trả về một trong các tên trạng thái (`"correct" | "wrong" | "dimmed" | "chosen" | "idle"`) hoặc một giá trị dứt khoát (số câu đang hiện), và JSX chỉ việc ánh xạ tên đó sang class. Hai lợi ích, và lợi ích thứ hai mới là chính:
+
+- test gọi thẳng được từng nhánh, kể cả nhánh chỉ xuất hiện ở một màn;
+- **liệt kê hết các trạng thái buộc phải nghĩ tới nhánh mình đang bỏ quên** — viết ra `PictureOptionState` là lúc nhận ra "đã chọn, chưa chấm" chưa có chỗ nào xử lý.
+
+Áp dụng xong: `pictureOptionState()` (`src/features/topik/optionLayout.ts`) và `shownPosition()`/`isParked()` (`testClock.ts`), 13 test mới cho đúng hai ca hồi quy đó. Cùng lúc phát hiện thêm `useTestTape` gắn effect theo *đối tượng* `test.audio` và không gỡ `loadedmetadata` khi dọn — 4 thẻ `<audio>` phát chồng lên nhau mà nghe như một vì cùng vị trí.
+
+**Liên quan:** cùng tinh thần với §11 ở trên — khi một lỗi "chạy máy mình thì tốt", đừng suy luận từ triệu chứng, hãy dựng lại. Ở đây cách dựng lại là chặn `window.Audio` trong trình duyệt để tua băng, không đụng tới dữ liệu.
