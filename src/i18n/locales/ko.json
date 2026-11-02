@@ -732,7 +732,6 @@
       "notContiguous": "문항 번호에 빠진 곳이 있습니다",
       "neverTaken": "아직 응시 기록 없음",
       "history": "{{count}}회 응시: {{scores}}",
-      "startFailed": "시험을 시작하지 못했습니다. 다시 시도하세요.",
       "empty": "이 시험에는 문항이 없습니다.",
       "sittingTitle": "{{exam}}",
       "resultTitle": "모의고사 결과",
@@ -757,7 +756,13 @@
       "itemAnswers": "선택 {{chosen}} · 정답 {{correct}}",
       "listenAgain": "이 구간 다시 듣기",
       "backToPicker": "시험 목록으로",
-      "abandonedNote": "이 시험은 취소되었거나 열 수 없습니다."
+      "abandonedNote": "이 시험은 취소되었거나 열 수 없습니다.",
+      "errorNotContiguous": "이 시험은 중간 문항이 빠져 있어 응시할 수 없습니다. 빠진 문항을 먼저 넣어 주세요.",
+      "errorTooShort": "이 시험에는 선택한 길이만큼의 문항이 없습니다.",
+      "errorNotFound": "이 시험을 찾을 수 없습니다. 페이지를 새로 고치세요.",
+      "errorServer": "서버 오류 ({{status}}). 잠시 후 다시 시도하고, 계속되면 이 번호를 알려 주세요.",
+      "errorRequest": "시험을 시작하지 못했습니다 ({{status}} · {{code}}).",
+      "errorOffline": "연결이 끊겼습니다. 네트워크를 확인한 뒤 다시 시도하세요."
     }
   }
 }

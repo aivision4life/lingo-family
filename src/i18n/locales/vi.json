@@ -732,7 +732,6 @@
       "notContiguous": "số câu của đề còn thiếu chỗ",
       "neverTaken": "Chưa thi lần nào",
       "history": "Đã thi {{count}} lần: {{scores}}",
-      "startFailed": "Không mở được bài thi. Thử lại.",
       "empty": "Đề này không có câu nào.",
       "sittingTitle": "{{exam}}",
       "resultTitle": "Kết quả thi thử",
@@ -757,7 +756,13 @@
       "itemAnswers": "bạn chọn {{chosen}} · đúng {{correct}}",
       "listenAgain": "Nghe lại đoạn này",
       "backToPicker": "Về danh sách đề",
-      "abandonedNote": "Bài thi này đã bị huỷ hoặc không mở được."
+      "abandonedNote": "Bài thi này đã bị huỷ hoặc không mở được.",
+      "errorNotContiguous": "Đề này thiếu một số câu ở giữa nên chưa thi được. Nhập nốt các câu còn thiếu rồi thử lại.",
+      "errorTooShort": "Đề này chưa đủ câu cho độ dài bạn chọn.",
+      "errorNotFound": "Không tìm thấy đề này nữa. Tải lại trang.",
+      "errorServer": "Lỗi máy chủ (mã {{status}}). Thử lại sau; nếu vẫn lỗi thì báo mã này.",
+      "errorRequest": "Không mở được bài thi (mã {{status}} · {{code}}).",
+      "errorOffline": "Mất kết nối. Kiểm tra mạng rồi thử lại."
     }
   }
 }

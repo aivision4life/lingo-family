@@ -18,6 +18,7 @@ import { getDb, type AppEnv } from "../env";
 import { requireAdult } from "../lib/access";
 import { zv } from "../lib/validate";
 import { addWordsStatements, albumsOfWord, findAlbumByName, listAlbums, loadAlbum, unsortedCounts } from "../services/albums";
+import { readInD1Chunks } from "../lib/d1Chunk";
 
 const idParam = zv("param", z.object({ id: z.string().min(1) }));
 const notFound = { error: ALBUM_ERRORS.notFound } as const;
@@ -75,7 +76,11 @@ export const albumRoutes = new Hono<AppEnv>()
     if (!album) return c.json(notFound, 404);
 
     const ids = [...new Set(word_ids)];
-    const found = await db.select({ id: words.id, lang: words.lang }).from(words).where(inArray(words.id, ids));
+    // One bound parameter per id, and `ALBUM_BATCH_MAX` is 200 — twice D1's ceiling for a single
+    // statement, so selecting them all at once failed outright for a large selection.
+    const found = await readInD1Chunks(ids, (chunk) =>
+      db.select({ id: words.id, lang: words.lang }).from(words).where(inArray(words.id, chunk)),
+    );
     if (found.length !== ids.length) return c.json({ error: "not_found" }, 404);
     if (found.some((w) => w.lang !== album.lang)) return c.json({ error: ALBUM_ERRORS.languageMismatch }, 400);
 
@@ -92,10 +97,16 @@ export const albumRoutes = new Hono<AppEnv>()
     const denied = await requireAdult(c, profile_id);
     if (denied) return denied;
     if (!(await loadAlbum(db, id))) return c.json(notFound, 404);
-    const removed = await db
-      .delete(deck_words)
-      .where(and(eq(deck_words.deck_id, id), inArray(deck_words.word_id, [...new Set(word_ids)])))
-      .returning({ id: deck_words.word_id });
+    const removed = await readInD1Chunks(
+      [...new Set(word_ids)],
+      (chunk) =>
+        db
+          .delete(deck_words)
+          .where(and(eq(deck_words.deck_id, id), inArray(deck_words.word_id, chunk)))
+          .returning({ id: deck_words.word_id }),
+      // The deck id is bound alongside the ids in the same statement.
+      { reserved: 1 },
+    );
     return c.json({ changed: removed.length });
   })
 

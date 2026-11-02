@@ -632,3 +632,42 @@ Số module là dấu hiệu đáng tin nhất (1,84×); dung lượng chỉ ph�
 Áp dụng xong: `pictureOptionState()` (`src/features/topik/optionLayout.ts`) và `shownPosition()`/`isParked()` (`testClock.ts`), 13 test mới cho đúng hai ca hồi quy đó. Cùng lúc phát hiện thêm `useTestTape` gắn effect theo *đối tượng* `test.audio` và không gỡ `loadedmetadata` khi dọn — 4 thẻ `<audio>` phát chồng lên nhau mà nghe như một vì cùng vị trí.
 
 **Liên quan:** cùng tinh thần với §11 ở trên — khi một lỗi "chạy máy mình thì tốt", đừng suy luận từ triệu chứng, hãy dựng lại. Ở đây cách dựng lại là chặn `window.Audio` trong trình duyệt để tua băng, không đụng tới dữ liệu.
+
+### M6.4 — D1 chỉ cho 100 tham số mỗi câu lệnh, và test chạy ở quy mô tối thiểu không bắt được (2026-11-02)
+
+**Lỗi.** Màn thi thử báo "Không mở được bài thi" ở mọi đề. Log thật:
+
+```
+D1_ERROR: too many SQL variables at offset 746: SQLITE_ERROR
+  at worker/routes/topikTests.ts:120   ← insert into topik_test_items
+```
+
+`POST /topik/tests` chèn toàn bộ câu của bài thi bằng **một INSERT nhiều dòng**, mỗi dòng 7 tham số. D1 từ chối mọi câu lệnh **quá 100 tham số** (giới hạn tính theo *câu lệnh*, không phải theo `batch()` — một `batch()` gồm 36 câu lệnh một dòng thì hoàn toàn bình thường).
+
+| Số câu | Tham số | |
+|---|---|---|
+| 12 | 84 | chạy được — nên hôm trước không ai thấy gì |
+| **15** | **105** | ngưỡng gãy |
+| 20 | 140 | lỗi thật của người dùng |
+| 50 (đề đủ) | 350 | |
+
+Trần này bị chạm do **dữ liệu lớn lên**, không phải do code đổi. Loại lỗi này không bao giờ xuất hiện khi đang viết tính năng.
+
+**Vì sao bộ test không bắt được.** Mọi test API của thi thử tạo bài **3 câu** (21 tham số) — vừa đủ để khẳng định logic đúng, và mãi mãi dưới trần. Bài học: **test phải chạy ở quy mô thật, không phải quy mô tối thiểu**. Với một tính năng có kích thước dữ liệu biết trước (đề TOPIK = 50 câu), ít nhất một test phải chạy ở kích thước đó, hoặc gần nhất có thể. Cùng họ với §11 ở trên: thứ chỉ sai ở quy mô thật thì chỉ test ở quy mô thật mới thấy.
+
+**Rà soát toàn bộ mã nguồn** (mọi chỗ sinh câu lệnh có số tham số tỉ lệ với số dòng):
+
+| Chỗ | Tham số tối đa | |
+|---|---|---|
+| `topikTests.ts` chèn `topik_test_items` | 7 × 50 = **350** | hỏng, đã sửa |
+| `albums.ts` `inArray(words.id, ids)` khi thêm từ vào album | 1 × `ALBUM_BATCH_MAX` = **200** | hỏng (>100 từ một lần), đã sửa |
+| `albums.ts` xoá từ khỏi album | 200 + 1 | hỏng, đã sửa |
+| `words.ts` chèn `examples` khi lưu từ | 17 × `EXAMPLES_MAX` 5 = **85** | chưa gãy nhưng chỉ cách một cột, đã sửa |
+| `topikTests.ts` đọc `inArray` câu hỏi / đoạn nghe | 50 | an toàn, vẫn chẻ mẻ cho chắc |
+| `scripts/topikAudio` chèn 36 đoạn | 7 mỗi câu lệnh (`batch` 36 câu lệnh) | an toàn |
+| `scripts/topikImport`, `scripts/migrate` | một dòng mỗi câu lệnh | an toàn |
+| `review.ts#syncProfileCards` | `INSERT ... SELECT`, vài tham số | an toàn |
+
+**Cách sửa.** Một hàm dùng chung, `worker/lib/d1Chunk.ts`: `chunkForD1(rows, paramsPerRow, { reserved })` cùng hai hàm bọc `writeInD1Chunks` / `readInD1Chunks`. Mọi INSERT nhiều dòng và mọi `IN (...)` có số phần tử không chặn trước đều đi qua đây, thay vì từng người tự nhớ con số 100. `reserved` dành cho tham số mà câu lệnh ràng buộc ngoài phần dòng (ví dụ `WHERE deck_id = ? AND word_id IN (...)`).
+
+**Hệ quả phụ cùng lúc:** hàng `topik_tests` được chèn **trước** các câu, nên mỗi lần chèn câu gãy là để lại một bài thi `running` không có câu nào — 5 hàng rác trên production, đúng 5 lần người dùng bấm nút. Giờ nếu chèn câu hỏng thì hàng bài thi bị xoá trước khi báo lỗi, và có test khẳng định không còn hàng nào 0 câu.

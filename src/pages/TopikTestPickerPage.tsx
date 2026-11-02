@@ -6,6 +6,7 @@ import type { TopikTestLength, TopikTestOption } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useCreateTopikTest, useTopikTestOptions } from "@/features/topik/api";
+import { topikTestStartMessage } from "@/features/topik/errors";
 import { cn } from "@/lib/utils";
 
 /**
@@ -42,15 +43,15 @@ function PaperCard({ paper, profileId, section }: { paper: TopikTestOption; prof
   const { t } = useTranslation();
   const navigate = useNavigate();
   const create = useCreateTopikTest();
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
 
   const start = (length: TopikTestLength) => {
-    setFailed(false);
+    setFailure(null);
     create.mutate(
       { profile_id: profileId, section, exam: paper.exam, length },
       {
         onSuccess: (test) => void navigate(`/topik/tests/${test.id}`),
-        onError: () => setFailed(true),
+        onError: (error) => setFailure(topikTestStartMessage(error, t)),
       },
     );
   };
@@ -97,7 +98,11 @@ function PaperCard({ paper, profileId, section }: { paper: TopikTestOption; prof
               scores: paper.history.map((h) => `${h.score_points}/${h.total_points}`).join(", "),
             })}
       </p>
-      {failed && <p className="text-sm text-destructive">{t("topik.test.startFailed")}</p>}
+      {failure && (
+        <p role="alert" className="text-sm text-destructive">
+          {failure}
+        </p>
+      )}
     </div>
   );
 }

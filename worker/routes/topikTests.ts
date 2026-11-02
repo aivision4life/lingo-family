@@ -26,10 +26,13 @@ import { topik_attempts, topik_audio, topik_cards, topik_questions, topik_segmen
 import { getDb, type AppEnv } from "../env";
 import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
 import { zv } from "../lib/validate";
+import { readInD1Chunks, writeInD1Chunks } from "../lib/d1Chunk";
 import { audioSpan, isContiguousFromOne, lengthOptions, lengthQuestionCount, pointsOf, scoreTest } from "../services/topikTest";
 import { toCardFields } from "../services/topikCards";
 
 const err = (error: string) => ({ error });
+/** Columns `topik_test_items` binds per row: id, test_id, position, question_id, number, points, segment_id. */
+const ITEM_INSERT_PARAMS = 7;
 const idParam = zv("param", z.object({ id: z.string().min(1) }));
 
 /** A question is usable in a test only when it is approved and, for listening, has an approved clip. */
@@ -117,16 +120,27 @@ export const topikTestRoutes = () =>
         })
         .returning();
 
-      await db.insert(topik_test_items).values(
-        chosen.map((q) => ({
-          test_id: test!.id,
-          position: q.number,
-          question_id: q.id,
-          number: q.number,
-          points: pointsOf(q.points),
-          segment_id: q.segment_id,
-        })),
-      );
+      // Seven bound parameters per row: a 20-question paper is 140, over D1's ceiling of 100, so
+      // this goes in chunks (`writeInD1Chunks`). A failure here would otherwise leave the test row
+      // behind with no questions in it — a sitting that exists and cannot be taken — so the row is
+      // removed before the error is reported.
+      try {
+        await writeInD1Chunks(
+          chosen.map((q) => ({
+            test_id: test!.id,
+            position: q.number,
+            question_id: q.id,
+            number: q.number,
+            points: pointsOf(q.points),
+            segment_id: q.segment_id,
+          })),
+          ITEM_INSERT_PARAMS,
+          (rows) => db.insert(topik_test_items).values(rows),
+        );
+      } catch (e) {
+        await db.delete(topik_tests).where(eq(topik_tests.id, test!.id));
+        throw e;
+      }
 
       return c.json(runPayload(test!, chosen, clips, new Map()), 201);
     })
@@ -273,24 +287,26 @@ type Clip = { audio_key: string; start_ms: number; speech_end_ms: number; end_ms
 async function questionsOf(db: Db, ids: readonly (string | null)[]): Promise<Map<string, QuestionRow>> {
   const wanted = ids.filter((i): i is string => i !== null);
   if (wanted.length === 0) return new Map();
-  const rows = await db.select().from(topik_questions).where(inArray(topik_questions.id, wanted));
+  const rows = await readInD1Chunks(wanted, (chunk) => db.select().from(topik_questions).where(inArray(topik_questions.id, chunk)));
   return new Map(rows.map((r) => [r.id, r]));
 }
 
 /** segment id → clip, with the key of the file it belongs to. */
 async function clipsFor(db: Db, segmentIds: readonly string[]): Promise<Map<string, Clip>> {
   if (segmentIds.length === 0) return new Map();
-  const rows = await db
-    .select({
-      id: topik_segments.id,
-      start_ms: topik_segments.start_ms,
-      speech_end_ms: topik_segments.speech_end_ms,
-      end_ms: topik_segments.end_ms,
-      audio_key: topik_audio.audio_key,
-    })
-    .from(topik_segments)
-    .innerJoin(topik_audio, eq(topik_audio.id, topik_segments.audio_id))
-    .where(inArray(topik_segments.id, [...segmentIds]));
+  const rows = await readInD1Chunks([...segmentIds], (chunk) =>
+    db
+      .select({
+        id: topik_segments.id,
+        start_ms: topik_segments.start_ms,
+        speech_end_ms: topik_segments.speech_end_ms,
+        end_ms: topik_segments.end_ms,
+        audio_key: topik_audio.audio_key,
+      })
+      .from(topik_segments)
+      .innerJoin(topik_audio, eq(topik_audio.id, topik_segments.audio_id))
+      .where(inArray(topik_segments.id, chunk)),
+  );
   return new Map(rows.map((r) => [r.id, { audio_key: r.audio_key, start_ms: r.start_ms, speech_end_ms: r.speech_end_ms, end_ms: r.end_ms }]));
 }
 

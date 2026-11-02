@@ -98,6 +98,33 @@ describe("mock test", () => {
     ]);
   });
 
+  /**
+   * The size that broke production (M6.4). Every other test here sits at three questions, which
+   * binds 21 parameters; a 20-question paper binds 140 and D1 refuses any statement over 100, so
+   * the suite could not have caught it at its usual scale. A real paper is 50 questions, and the
+   * only reason this test stops at 20 is how long creating the rows takes.
+   */
+  it("creates a sitting far past D1's 100-parameter ceiling", async () => {
+    for (const n of Array.from({ length: 20 }, (_, i) => i + 1)) await question(n);
+    const test = await start();
+    expect(test.question_count).toBe(20);
+    expect(test.questions.map((q) => q.number)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+
+    const items = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_test_items WHERE test_id = ?").bind(test.id).first<{ n: number }>();
+    expect(items!.n).toBe(20);
+  }, 30_000);
+
+  it("leaves no half-made sitting behind when the questions cannot be written", async () => {
+    await question(1);
+    const test = await start();
+    // The row and its items arrive together or not at all: a test row with no questions is a
+    // sitting that exists and cannot be taken, which is what every failed attempt used to leave.
+    const tests = await t.env.DB.prepare(
+      "SELECT count(*) AS n FROM topik_tests WHERE (SELECT count(*) FROM topik_test_items i WHERE i.test_id = topik_tests.id) = 0",
+    ).first<{ n: number }>();
+    expect([test.question_count, tests!.n]).toEqual([1, 0]);
+  });
+
   it("offers nothing for a paper with a hole in its numbering", async () => {
     for (const n of [1, 3]) await question(n);
     const options = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=listening`)).body as {

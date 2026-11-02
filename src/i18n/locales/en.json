@@ -732,7 +732,6 @@
       "notContiguous": "this paper's numbering has a gap",
       "neverTaken": "Not taken yet",
       "history": "Taken {{count}} time(s): {{scores}}",
-      "startFailed": "Could not start the test. Try again.",
       "empty": "This paper has no questions.",
       "sittingTitle": "{{exam}}",
       "resultTitle": "Mock test result",
@@ -757,7 +756,13 @@
       "itemAnswers": "you chose {{chosen}} · correct {{correct}}",
       "listenAgain": "Listen to this clip again",
       "backToPicker": "Back to the papers",
-      "abandonedNote": "This sitting was cancelled, or cannot be opened."
+      "abandonedNote": "This sitting was cancelled, or cannot be opened.",
+      "errorNotContiguous": "This paper is missing questions in the middle, so it cannot be sat. Import the rest first.",
+      "errorTooShort": "This paper does not have enough questions for the length you picked.",
+      "errorNotFound": "This paper is no longer there. Reload the page.",
+      "errorServer": "Server error ({{status}}). Try again later, and quote this number if it keeps happening.",
+      "errorRequest": "Could not start the test ({{status}} · {{code}}).",
+      "errorOffline": "No connection. Check the network and try again."
     }
   }
 }

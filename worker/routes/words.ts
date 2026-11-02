@@ -30,10 +30,14 @@ import { isLocalHost } from "../lib/localDev";
 import { createFakeImageAi } from "../services/fakeImage";
 import type { AiRunner } from "../services/imageModels";
 import { imageView } from "../services/imageStore";
+import { chunkForD1 } from "../lib/d1Chunk";
 import type { LlmClient } from "../services/llm";
 import { loadPhrases, savePhrases, toExample, wordOnlyExamples } from "../services/phrases";
 import { supportedStudyLangs, syncProfileCards } from "../services/review";
 import type { TtsClient } from "../services/tts";
+
+/** Columns `examples` binds per row (10 of its own plus the seven shared image columns). */
+const EXAMPLE_INSERT_PARAMS = 17;
 
 type Db = ReturnType<typeof getDb>;
 type WordRow = typeof words.$inferSelect;
@@ -144,9 +148,14 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       const insertWord = db
         .insert(words)
         .values({ ...fields, ...image, id, verified: false, created_by_profile: profile_id });
-      // Word + examples in one D1 batch (atomic).
+      // Word + examples in one D1 batch (atomic). `examples` binds ~17 parameters per row, so five
+      // of them already sit at 85 of D1's 100-parameter ceiling — one added column would break
+      // saving a word. The rows go in through the shared chunker rather than relying on that
+      // margin (see worker/lib/d1Chunk.ts).
       if (exampleInputs.length > 0) {
-        await db.batch([insertWord, db.insert(examples).values(exampleInputs.map((ex) => ({ ...ex, word_id: id })))]);
+        const rows = exampleInputs.map((ex) => ({ ...ex, word_id: id }));
+        const inserts = chunkForD1(rows, EXAMPLE_INSERT_PARAMS).map((chunk) => db.insert(examples).values(chunk));
+        await db.batch([insertWord, ...inserts]);
       } else {
         await insertWord;
       }
