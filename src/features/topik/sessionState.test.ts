@@ -8,6 +8,7 @@ const result = (over: Partial<TopikAttemptResult> = {}): TopikAttemptResult => (
   explanation_vi: null,
   key_terms: [],
   explain_ready: false,
+  group_reveal: [],
   transcript: null,
   vocab: [],
   ...over,

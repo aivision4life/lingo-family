@@ -111,6 +111,30 @@ const toQuestion = (r: QuestionRow, clip: TopikClip | null = null): TopikQuestio
  * answered, exactly like `correct_option`. Hiding them in the UI would not be enough: they would
  * still be sitting in the session response. They come back with the attempt result.
  */
+/**
+ * Everything that was withheld while the group was being answered, for every question in it.
+ *
+ * The group is the clip: `segment_id` is shared by the questions asked about one recording, so no
+ * flag has to be kept in step with the data. A question with no clip is a group of one.
+ */
+async function revealGroup(db: ReturnType<typeof getDb>, profileId: string, question: QuestionRow) {
+  const siblings = question.segment_id
+    ? await db.select().from(topik_questions).where(eq(topik_questions.segment_id, question.segment_id)).orderBy(asc(topik_questions.number))
+    : [question];
+  return await Promise.all(
+    siblings.map(async (q) => ({
+      question_id: q.id,
+      number: q.number,
+      correct_option: q.correct_option,
+      transcript: q.section === "listening" ? q.stem_text : null,
+      vocab: q.vocab ?? [],
+      explanation_vi: q.explanation_vi,
+      key_terms: await resolveKeyTermViews(db, profileId, q.vocab ?? [], q.key_terms ?? []),
+      explain_ready: q.explain_checked_at !== null,
+    })),
+  );
+}
+
 const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): TopikPracticeQuestion => {
   const hideTranscript = r.section === "listening";
   return {
@@ -126,6 +150,8 @@ const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): Topi
     vocab: hideTranscript ? [] : (r.vocab ?? []),
     vocab_ready: r.vocab_checked_at !== null,
     audio: clip,
+    // The clip two questions share is their group (M7.5); a question with none is its own group.
+    group_id: r.segment_id ?? r.id,
   };
 };
 
@@ -523,7 +549,11 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         { reserved: 1 },
       );
       const cardByQuestion = new Map(cardRows.map((r) => [r.question_id, toCardFields(r)]));
-      const candidates: TopikCandidate[] = questions.map((q) => ({ question_id: q.id, card: cardByQuestion.get(q.id) ?? null }));
+      const candidates: TopikCandidate[] = questions.map((q) => ({
+        question_id: q.id,
+        group_id: q.segment_id ?? q.id,
+        card: cardByQuestion.get(q.id) ?? null,
+      }));
 
       // How many questions this profile asked for (M6.13); an unknown profile keeps the default.
       const profile = await db.select({ session_size: profiles.session_size }).from(profiles).where(eq(profiles.id, profile_id)).get();
@@ -641,7 +671,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     )
 
     .post("/topik/attempts", zv("json", topikAttemptRequestSchema), async (c) => {
-      const { profile_id, question_id, selected_option, duration_ms, schedule = true } = c.req.valid("json");
+      const { profile_id, question_id, selected_option, duration_ms, schedule = true, group_pending = false } = c.req.valid("json");
       const db = getDb(c.env);
       const question = await db.select().from(topik_questions).where(eq(topik_questions.id, question_id)).get();
       if (!question) return c.json(err("not_found"), 404);
@@ -677,6 +707,23 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         scheduled: schedule,
         duration_ms: duration_ms ?? null,
       });
+      // M7.5: while another question about this same recording is still unanswered, the verdict
+      // for this one is all that may be sent. The transcript answers the sibling too, and so does
+      // the explanation — handing them over now would be handing over a mark. Enforced here, not
+      // in the screen: data the screen hides is still data on the device.
+      if (group_pending) {
+        return c.json({
+          is_correct,
+          correct_option: question.correct_option,
+          explanation_vi: null,
+          key_terms: [],
+          explain_ready: question.explain_checked_at !== null,
+          transcript: null,
+          vocab: [],
+          group_reveal: [],
+        });
+      }
+
       // Only revealed now (the answer is already known at this point) — never in GET /topik/session.
       const key_terms = await resolveKeyTermViews(db, profile_id, question.vocab ?? [], question.key_terms ?? []);
       return c.json({
@@ -689,6 +736,24 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         // the session response so the exercise stayed a listening one. The answer is in now.
         transcript: question.section === "listening" ? question.stem_text : null,
         vocab: question.vocab ?? [],
+        // The whole group, so the screen can show one transcript with both explanations under it.
+        group_reveal: await revealGroup(db, profile_id, question),
       });
+    })
+
+    /**
+     * Giving up on a group and reading it instead (M7.5): the questions still unanswered are
+     * abandoned by the learner's own deliberate choice, so the transcript and the explanations are
+     * handed over for the whole group.
+     *
+     * Read-only on purpose — no attempt row, no card, nothing in the schedule. Skipping a question
+     * is not the same as getting it wrong, and the one thing worse than no data is data that says
+     * something that did not happen.
+     */
+    .get("/topik/questions/:id/reveal", idParam, zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
+      const db = getDb(c.env);
+      const question = await db.select().from(topik_questions).where(eq(topik_questions.id, c.req.valid("param").id)).get();
+      if (!question) return c.json(err("not_found"), 404);
+      return c.json({ group: await revealGroup(db, c.req.valid("query").profile_id, question) });
     });
 };

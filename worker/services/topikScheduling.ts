@@ -6,6 +6,12 @@ import { TOPIK_SESSION_SIZE, type TopikSessionMode } from "../../shared/topik";
 
 export type TopikCandidate = {
   question_id: string;
+  /**
+   * The questions asked about one recording share a group (M7.5): the clip's id, or the question's
+   * own id when it has no clip. A session takes whole groups — the tape plays once, so a pair
+   * split across two sessions would be unanswerable in the second.
+   */
+  group_id: string;
   /** null = no `topik_cards` row yet (never attempted). */
   card: CardFields | null;
 };
@@ -37,5 +43,31 @@ export function buildTopikSession(
   // need the work rather than reading like a different exercise.
   const notDueYet = mode === "all" ? cands.filter((c) => c.card !== null && !isDue(c)).sort(byDue) : [];
 
-  return [...overdueWrong, ...neverAttempted, ...overdueClean, ...notDueYet].slice(0, limit).map((c) => c.question_id);
+  const ordered = [...overdueWrong, ...neverAttempted, ...overdueClean, ...notDueYet];
+  return takeWholeGroups(ordered, cands, limit);
+}
+
+/**
+ * Cuts the ordered list at `limit` questions **without ever splitting a group**.
+ *
+ * A group that straddles the limit is taken whole, so a 5-question session can come back with 6.
+ * That is deliberate: a group is at most two questions, so the overshoot is at most one, while
+ * stopping short would throw away a prepared pair — and the real waste is hearing a recording and
+ * being allowed to answer only half of what it asks. The session length is "how long do I want to
+ * sit for", not a contract.
+ */
+function takeWholeGroups(ordered: readonly TopikCandidate[], all: readonly TopikCandidate[], limit: number): string[] {
+  const members = new Map<string, TopikCandidate[]>();
+  for (const c of all) members.set(c.group_id, [...(members.get(c.group_id) ?? []), c]);
+
+  const taken: string[] = [];
+  const done = new Set<string>();
+  for (const candidate of ordered) {
+    if (taken.length >= limit) break;
+    if (done.has(candidate.group_id)) continue;
+    done.add(candidate.group_id);
+    // In the order the questions were given (by number), so a pair reads 21 then 22.
+    for (const member of members.get(candidate.group_id) ?? [candidate]) taken.push(member.question_id);
+  }
+  return taken;
 }

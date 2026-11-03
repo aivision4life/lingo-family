@@ -976,3 +976,91 @@ describe("review list filtered by section", () => {
     expect(body.questions[0]!.audio).toBeNull();
   });
 });
+
+// M7.5: two questions about one recording are one screen, answered in either order. The payload is
+// where this is decided, not the screen: anything sent to the device has already left the server.
+describe("a pair of questions sharing one clip", () => {
+  const pair = async () => {
+    const q21 = await createQuestion({ section: "listening", exam: "Listen-70회", number: 21, block: "21~22", stem: { text: "남자: 자전거로 출근해요.", image_key: null } });
+    const q22 = await createQuestion({ section: "listening", exam: "Listen-70회", number: 22, block: "21~22", stem: { text: "남자: 자전거로 출근해요.", image_key: null } });
+    const audioId = crypto.randomUUID();
+    const segmentId = crypto.randomUUID();
+    const now = Date.now();
+    await t.env.DB.prepare(
+      `INSERT INTO topik_audio (id, section, exam, audio_key, duration_ms, verified, created_at, updated_at)
+       VALUES (?, 'listening', 'Listen-70회', 'topik/audio/${"c".repeat(40)}.mp3', 600000, 1, ?, ?)`,
+    ).bind(audioId, now, now).run();
+    await t.env.DB.prepare(
+      "INSERT INTO topik_segments (id, audio_id, idx, start_ms, speech_end_ms, end_ms, created_at) VALUES (?, ?, 21, 1000, 20000, 26000, ?)",
+    ).bind(segmentId, audioId, now).run();
+    for (const [number, q] of [[21, q21], [22, q22]] as const) {
+      await t.env.DB.prepare("UPDATE topik_questions SET segment_id = ?, explanation_vi = ?, explain_checked_at = ? WHERE id = ?")
+        .bind(segmentId, `giải thích câu ${number}`, now, q.id)
+        .run();
+    }
+    return { q21, q22, segmentId };
+  };
+
+  const answer = async (questionId: string, selected: number, group_pending: boolean) =>
+    (await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: questionId, selected_option: selected, group_pending })).body as {
+      is_correct: boolean;
+      correct_option: number;
+      transcript: string | null;
+      vocab: unknown[];
+      explanation_vi: string | null;
+      group_reveal: { question_id: string; number: number; transcript: string | null; explanation_vi: string | null }[];
+    };
+
+  it("gives both questions of the pair the same group", async () => {
+    const { q21, q22, segmentId } = await pair();
+    const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=21&to=22`)).body as {
+      questions: { id: string; group_id: string }[];
+    }).questions;
+    expect(questions.map((q) => q.group_id)).toEqual([segmentId, segmentId]);
+    expect(questions.map((q) => q.id)).toEqual([q21.id, q22.id]);
+  });
+
+  // The one that matters: answering the first half must not hand over the recording's words.
+  it("withholds the transcript and the explanation while the other half is unanswered", async () => {
+    const { q21 } = await pair();
+    const res = await answer(q21.id, 1, true);
+    expect(res.transcript).toBeNull();
+    expect(res.explanation_vi).toBeNull();
+    expect(res.vocab).toEqual([]);
+    expect(res.group_reveal).toEqual([]);
+    // The verdict for this question is still given — knowing 21 is wrong says nothing about 22.
+    expect(res).toMatchObject({ is_correct: false, correct_option: 3 });
+    expect(JSON.stringify(res)).not.toContain("자전거");
+  });
+
+  it("reveals the whole pair once the second half is answered", async () => {
+    const { q21, q22 } = await pair();
+    await answer(q21.id, 1, true);
+    const res = await answer(q22.id, 3, false);
+    expect(res.transcript).toBe("남자: 자전거로 출근해요.");
+    expect(res.group_reveal.map((r) => r.number)).toEqual([21, 22]);
+    expect(res.group_reveal.map((r) => r.explanation_vi)).toEqual(["giải thích câu 21", "giải thích câu 22"]);
+  });
+
+  it("reveals a lone question's own group of one", async () => {
+    const q = await createQuestion({ section: "reading", number: 5, block: "5~8" });
+    const res = await answer(q.id, 3, false);
+    expect(res.group_reveal).toHaveLength(1);
+    expect(res.group_reveal[0]).toMatchObject({ question_id: q.id, number: 5 });
+  });
+
+  // Giving up: the learner asks for the recording's words instead of answering.
+  it("hands over the whole group on reveal, and writes nothing", async () => {
+    const { q21, q22 } = await pair();
+    const before = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_attempts").first<{ n: number }>();
+    const res = (await t.api("GET", `/topik/questions/${q21.id}/reveal?profile_id=${adult}`)).body as {
+      group: { question_id: string; number: number; transcript: string | null; correct_option: number }[];
+    };
+    expect(res.group.map((r) => r.number)).toEqual([21, 22]);
+    expect(res.group[0]!.transcript).toBe("남자: 자전거로 출근해요.");
+    expect(res.group.map((r) => r.question_id)).toEqual([q21.id, q22.id]);
+    const after = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_attempts").first<{ n: number }>();
+    const cards = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_cards").first<{ n: number }>();
+    expect([after!.n, cards!.n]).toEqual([before!.n, 0]);
+  });
+});

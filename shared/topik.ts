@@ -225,6 +225,12 @@ export const topikPracticeQuestionSchema = z.object({
   vocab_ready: z.boolean(),
   /** Listening only; null for reading and for a listening question with no clip yet. */
   audio: topikClipSchema.nullable(),
+  /**
+   * Which group of questions this one belongs to (M7.5): the clip they share, or its own id when
+   * it has none. From question 21 a recording is followed by two questions, and the real paper
+   * prints them on one page — the tape plays once, so they are answered together or not at all.
+   */
+  group_id: z.string(),
 });
 export type TopikPracticeQuestion = z.infer<typeof topikPracticeQuestionSchema>;
 
@@ -385,6 +391,29 @@ export const topikSessionRequestSchema = z
 export type TopikSessionRequest = z.infer<typeof topikSessionRequestSchema>;
 export const topikSessionResponseSchema = z.object({ questions: z.array(topikPracticeQuestionSchema) });
 
+/**
+ * Everything that is withheld while a question is being answered (M7.5): the transcript, its
+ * tappable words, the explanation and the correct option. Sent for a whole **group** at once —
+ * two questions asked about one recording are revealed together or not at all, because the
+ * transcript answers both.
+ */
+export const topikRevealEntrySchema = z.object({
+  question_id: z.string(),
+  number: z.number().int(),
+  correct_option: topikCorrectOptionSchema,
+  /** A listening question's transcript; null for reading, where the stem was never hidden. */
+  transcript: z.string().nullable(),
+  vocab: topikVocabListSchema,
+  explanation_vi: z.string().nullable(),
+  key_terms: z.array(topikKeyTermViewSchema),
+  explain_ready: z.boolean(),
+});
+export type TopikRevealEntry = z.infer<typeof topikRevealEntrySchema>;
+
+/** `GET /topik/questions/:id/reveal` — giving up on a group and reading it instead. */
+export const topikGroupRevealSchema = z.object({ group: z.array(topikRevealEntrySchema) });
+export type TopikGroupReveal = z.infer<typeof topikGroupRevealSchema>;
+
 export const topikAttemptRequestSchema = z.object({
   profile_id: z.string().min(1),
   question_id: z.string().min(1),
@@ -398,6 +427,14 @@ export const topikAttemptRequestSchema = z.object({
    * still new — or still due when it was due — for the next real review.
    */
   schedule: z.boolean().optional(),
+  /**
+   * True while another question about the same recording is still unanswered (M7.5). The server
+   * then answers with the verdict for *this* question only and withholds the transcript, the
+   * explanation and the words — all three answer the sibling question too, so sending them would
+   * hand over a mark that has not been earned. Withheld on the server rather than hidden by the
+   * screen: hiding it client-side still puts it on the device.
+   */
+  group_pending: z.boolean().optional(),
 });
 export type TopikAttemptRequest = z.infer<typeof topikAttemptRequestSchema>;
 
@@ -418,6 +455,12 @@ export const topikAttemptResultSchema = z.object({
   transcript: z.string().nullable(),
   /** The transcript's tappable words, withheld from the session response for the same reason. */
   vocab: topikVocabListSchema,
+  /**
+   * The whole group's reveal, sent only by the answer that completes it (M7.5), so the screen can
+   * show the transcript once with both questions' explanations under it. Empty while a sibling is
+   * still unanswered, and for a question that has no sibling it holds just itself.
+   */
+  group_reveal: z.array(topikRevealEntrySchema),
 });
 export type TopikAttemptResult = z.infer<typeof topikAttemptResultSchema>;
 
