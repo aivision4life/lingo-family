@@ -29,12 +29,15 @@ import { requireAdult } from "../lib/access";
 import { zv } from "../lib/validate";
 import { readInD1Chunks, writeInD1Chunks } from "../lib/d1Chunk";
 import { audioSpan, isContiguousFromOne, lengthOptions, lengthQuestionCount, pointsOf, scoreTest } from "../services/topikTest";
+import { mixedLengthOptions, planMixedTest, reachableLength, type MixedCandidate } from "../services/topikMixed";
 import { toCardFields } from "../services/topikCards";
 
 const err = (error: string) => ({ error });
 /** Columns `topik_test_items` binds per row: id, test_id, position, question_id, number, points, segment_id. */
 const ITEM_INSERT_PARAMS = 7;
 const idParam = zv("param", z.object({ id: z.string().min(1) }));
+/** How far back "already seen" looks when drawing a mixed paper. */
+const SEEN_SITTINGS = 3;
 
 /** A question is usable in a test only when it is approved and, for listening, has an approved clip. */
 const readyQuestions = (section: "reading" | "listening") =>
@@ -65,27 +68,40 @@ export const topikTestRoutes = () =>
         .where(and(eq(topik_tests.profile_id, profile_id), eq(topik_tests.section, section), eq(topik_tests.status, "finished")))
         .orderBy(desc(topik_tests.finished_at));
 
-      return c.json(
-        [...byExam.entries()].map(([exam, numbers]) => {
-          const contiguous = isContiguousFromOne(numbers);
-          return {
-            exam,
-            ready_questions: numbers.length,
-            contiguous,
-            lengths: lengthOptions(numbers.length, contiguous),
-            history: history
-              .filter((h) => h.source_exam === exam)
-              .map((h) => ({
-                id: h.id,
-                score_points: h.score_points ?? 0,
-                total_points: h.total_points,
-                question_count: h.question_count,
-                correct_count: h.correct_count ?? 0,
-                finished_at: (h.finished_at ?? h.started_at).getTime(),
-              })),
-          };
-        }),
-      );
+      const entry = (h: TestRow) => ({
+        id: h.id,
+        score_points: h.score_points ?? 0,
+        total_points: h.total_points,
+        question_count: h.question_count,
+        correct_count: h.correct_count ?? 0,
+        finished_at: (h.finished_at ?? h.started_at).getTime(),
+      });
+
+      const papers = [...byExam.entries()].map(([exam, numbers]) => {
+        const contiguous = isContiguousFromOne(numbers);
+        return {
+          exam,
+          ready_questions: numbers.length,
+          contiguous,
+          lengths: lengthOptions(numbers.length, contiguous),
+          // An original paper's history is that paper's own sittings, never a mixed one's.
+          history: history.filter((h) => h.kind === "original" && h.source_exam === exam).map(entry),
+        };
+      });
+
+      // The mixed card draws clips, so a section with no clips (reading) has no mixed mode at all.
+      const candidates = section === "listening" ? await mixedCandidates(db) : [];
+      const mixed =
+        candidates.length === 0
+          ? null
+          : {
+              ready_questions: candidates.reduce((n, c) => n + c.numbers.length, 0),
+              reachable: reachableLength(candidates),
+              lengths: mixedLengthOptions(candidates),
+              history: history.filter((h) => h.kind === "mixed").map(entry),
+            };
+
+      return c.json({ papers, mixed });
     })
 
     /**
@@ -133,19 +149,14 @@ export const topikTestRoutes = () =>
 
     // --- Sitting one ---------------------------------------------------------------------------
     .post("/topik/tests", zv("json", topikTestCreateSchema), async (c) => {
-      const { profile_id, section, exam, length } = c.req.valid("json");
+      const { profile_id, section, kind, exam, length } = c.req.valid("json");
       const db = getDb(c.env);
 
-      const all = await db
-        .select()
-        .from(topik_questions)
-        .where(and(eq(topik_questions.section, section), eq(topik_questions.exam, exam), readyQuestions(section)))
-        .orderBy(asc(topik_questions.number));
-
-      if (!isContiguousFromOne(all.map((q) => q.number))) return c.json(err("topik_test_not_contiguous"), 400);
-      const wanted = lengthQuestionCount(length as TopikTestLength, all.length);
-      if (wanted <= 0 || wanted > all.length) return c.json(err("topik_test_too_short"), 400);
-      const chosen = all.slice(0, wanted);
+      // Two ways to choose the questions, one way to sit them: a test owns a list of questions, so
+      // the mixed mode differs only in how that list is filled.
+      const picked = kind === "mixed" ? await drawMixed(db, profile_id, section, length) : await takePaper(db, section, exam!, length);
+      if ("error" in picked) return c.json(picked.error, 400);
+      const chosen = picked.questions;
 
       const clips = await clipsFor(db, chosen.map((q) => q.segment_id).filter((s): s is string => s !== null));
       const total_points = chosen.reduce((n, q) => n + pointsOf(q.points), 0);
@@ -155,8 +166,10 @@ export const topikTestRoutes = () =>
         .values({
           profile_id,
           section,
-          kind: "original",
-          source_exam: exam,
+          kind,
+          // A mixed sitting has no source paper; each item carries its own, read live from the
+          // question it points at.
+          source_exam: kind === "mixed" ? null : exam!,
           question_count: chosen.length,
           total_points,
           status: "running",
@@ -328,6 +341,95 @@ type TestRow = typeof topik_tests.$inferSelect;
 type ItemRow = typeof topik_test_items.$inferSelect;
 type Clip = { audio_key: string; start_ms: number; speech_end_ms: number; end_ms: number };
 
+type Picked = { questions: QuestionRow[] } | { error: { error: string; missing_position?: number } };
+
+/** One original paper, questions 1..N. */
+async function takePaper(db: Db, section: "reading" | "listening", exam: string, length: TopikTestLength): Promise<Picked> {
+  const all = await db
+    .select()
+    .from(topik_questions)
+    .where(and(eq(topik_questions.section, section), eq(topik_questions.exam, exam), readyQuestions(section)))
+    .orderBy(asc(topik_questions.number));
+
+  if (!isContiguousFromOne(all.map((q) => q.number))) return { error: err("topik_test_not_contiguous") };
+  const wanted = lengthQuestionCount(length, all.length);
+  if (wanted <= 0 || wanted > all.length) return { error: err("topik_test_too_short") };
+  return { questions: all.slice(0, wanted) };
+}
+
+/**
+ * A mixed paper: every position drawn from the whole bank, preferring questions this profile has
+ * not met lately (`planMixedTest` has the rules). The failure carries the position the bank ran
+ * out at — "the bank has nothing for question 23" is actionable; "too short" is not.
+ */
+async function drawMixed(db: Db, profileId: string, section: "reading" | "listening", length: TopikTestLength): Promise<Picked> {
+  const candidates = await mixedCandidates(db);
+  const wanted = lengthQuestionCount(length, reachableLength(candidates));
+  if (wanted <= 0) return { error: { ...err("topik_test_bank_short"), missing_position: 1 } };
+
+  const plan = planMixedTest({ candidates, length: wanted, seen: await seenRanks(db, profileId, section), random: Math.random });
+  if (!plan.ok) return { error: { ...err("topik_test_bank_short"), missing_position: plan.missingPosition } };
+
+  const rows = await questionsOf(db, plan.picks.map((p) => p.question_id));
+  const questions = plan.picks.map((p) => rows.get(p.question_id)).filter((q): q is QuestionRow => !!q);
+  if (questions.length !== plan.picks.length) return { error: { ...err("topik_test_bank_short"), missing_position: 1 } };
+  return { questions: questions.sort((a, b) => a.number - b.number) };
+}
+
+/** Every approved listening clip in the bank, with the questions asked about it. */
+async function mixedCandidates(db: Db): Promise<MixedCandidate[]> {
+  const rows = await db
+    .select({ id: topik_questions.id, exam: topik_questions.exam, number: topik_questions.number, segment_id: topik_questions.segment_id })
+    .from(topik_questions)
+    .where(and(eq(topik_questions.section, "listening"), readyQuestions("listening")))
+    .orderBy(asc(topik_questions.number));
+
+  const byClip = new Map<string, MixedCandidate>();
+  for (const r of rows) {
+    if (!r.segment_id) continue;
+    const found = byClip.get(r.segment_id) ?? { segment_id: r.segment_id, exam: r.exam, numbers: [], question_ids: [] };
+    found.numbers.push(r.number);
+    found.question_ids.push(r.id);
+    byClip.set(r.segment_id, found);
+  }
+  return [...byClip.values()];
+}
+
+/**
+ * How recently this profile met each question: 1 = the most recent sitting, and so on over the last
+ * few. An **abandoned** sitting counts only the questions actually answered — the tape may have
+ * stopped at question 3, and pretending the other 17 were seen would push them out of the next
+ * draw for nothing. A finished sitting counts all of its questions, answered or not: the tape
+ * played every one of them.
+ */
+async function seenRanks(db: Db, profileId: string, section: "reading" | "listening"): Promise<Map<string, number>> {
+  const recent = await db
+    .select({ id: topik_tests.id, status: topik_tests.status })
+    .from(topik_tests)
+    .where(and(eq(topik_tests.profile_id, profileId), eq(topik_tests.section, section)))
+    .orderBy(desc(topik_tests.started_at))
+    .limit(SEEN_SITTINGS);
+  if (recent.length === 0) return new Map();
+
+  const items = await readInD1Chunks(recent.map((r) => r.id), (chunk) =>
+    db
+      .select({ test_id: topik_test_items.test_id, question_id: topik_test_items.question_id, answered_at: topik_test_items.answered_at })
+      .from(topik_test_items)
+      .where(inArray(topik_test_items.test_id, chunk)),
+  );
+
+  const ranks = new Map<string, number>();
+  for (const item of items) {
+    const sitting = recent.findIndex((r) => r.id === item.test_id);
+    if (sitting < 0 || !item.question_id) continue;
+    if (recent[sitting]!.status !== "finished" && item.answered_at === null) continue;
+    const rank = sitting + 1;
+    const known = ranks.get(item.question_id);
+    if (known === undefined || rank < known) ranks.set(item.question_id, rank);
+  }
+  return ranks;
+}
+
 async function questionsOf(db: Db, ids: readonly (string | null)[]): Promise<Map<string, QuestionRow>> {
   const wanted = ids.filter((i): i is string => i !== null);
   if (wanted.length === 0) return new Map();
@@ -358,7 +460,9 @@ async function clipsFor(db: Db, segmentIds: readonly string[]): Promise<Map<stri
  * the transcript, which is the answer read out loud). */
 function runPayload(test: TestRow, questions: readonly QuestionRow[], clips: Map<string, Clip>, answered: Map<number, number | null>) {
   const used = questions.map((q) => (q.segment_id ? clips.get(q.segment_id) : undefined)).filter((c): c is Clip => !!c);
-  const span = audioSpan(used);
+  // Only an original paper has one span of one file. A mixed paper's clips come from several mp3s,
+  // so there is nothing to span: the client stitches the per-question clips into a tape instead.
+  const span = test.kind === "original" ? audioSpan(used) : null;
   return {
     id: test.id,
     section: test.section,
@@ -377,6 +481,7 @@ function runPayload(test: TestRow, questions: readonly QuestionRow[], clips: Map
         number: q.number,
         points: pointsOf(q.points),
         instruction: q.instruction,
+        exam: q.exam,
         stem: { text: test.section === "listening" ? null : q.stem_text, image_key: q.stem_image_key },
         options: q.options,
         selected_option: answered.get(q.number) ?? null,
@@ -410,6 +515,7 @@ function resultPayload(test: TestRow, items: readonly ItemRow[], questions: Map<
         question_id: i.question_id,
         number: i.number,
         points: i.points,
+        exam: q?.exam ?? null,
         selected_option: i.selected_option,
         correct_option: q?.correct_option ?? 1,
         is_correct: !!i.is_correct,

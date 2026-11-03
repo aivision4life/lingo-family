@@ -440,6 +440,8 @@ export const TOPIK_ERRORS = {
   notContiguous: "topik_test_not_contiguous",
   /** Asked for more questions than the paper has ready. */
   tooShort: "topik_test_too_short",
+  /** A mixed test the bank cannot fill: no clip starts at some position (reported with it). */
+  bankShort: "topik_test_bank_short",
   /** Answering or finishing a test that is already finished or abandoned. */
   notRunning: "topik_test_not_running",
   /** Reading a cancelled sitting: it has no result, and must not leak the answers. */
@@ -484,13 +486,40 @@ export const topikTestOptionSchema = z.object({
 export const topikTestOptionListSchema = z.array(topikTestOptionSchema);
 export type TopikTestOption = z.infer<typeof topikTestOptionSchema>;
 
-export type TopikTestCreate = z.infer<typeof topikTestCreateSchema>;
-export const topikTestCreateSchema = z.object({
-  profile_id: z.string().min(1),
-  section: topikSectionSchema,
-  exam: z.string().min(1),
-  length: topikTestLengthSchema,
+/**
+ * The mixed paper (M6.5), which is not a paper at all: every position is drawn from the whole bank,
+ * so it has no exam of its own. A length says which position it ran out at rather than just
+ * "not ready" — "the bank has nothing for question 23" is something the owner can act on.
+ */
+export const topikMixedOptionSchema = z.object({
+  /** Questions in the bank that a mixed test could use at all. */
+  ready_questions: z.number().int().nonnegative(),
+  /** The longest test the bank can currently fill, counting from question 1 with no hole. */
+  reachable: z.number().int().nonnegative(),
+  lengths: z.array(topikTestLengthOptionSchema.extend({ missing_position: z.number().int().positive().nullable() })),
+  history: z.array(topikTestHistoryEntrySchema),
 });
+export type TopikMixedOption = z.infer<typeof topikMixedOptionSchema>;
+
+/** What the picker screen loads: the original papers, and the one mixed card above them. */
+export const topikTestOptionsSchema = z.object({
+  papers: topikTestOptionListSchema,
+  /** Null for a section with no clips to draw from — the mixed draw takes clips, not questions. */
+  mixed: topikMixedOptionSchema.nullable(),
+});
+export type TopikTestOptions = z.infer<typeof topikTestOptionsSchema>;
+
+export type TopikTestCreate = z.infer<typeof topikTestCreateSchema>;
+export const topikTestCreateSchema = z
+  .object({
+    profile_id: z.string().min(1),
+    section: topikSectionSchema,
+    kind: topikTestKindSchema.default("original"),
+    /** The paper to sit. A mixed test has none: its questions come from everywhere. */
+    exam: z.string().min(1).optional(),
+    length: topikTestLengthSchema,
+  })
+  .refine((v) => v.kind === "mixed" || !!v.exam, { message: "exam_required", path: ["exam"] });
 
 /**
  * One position of a running test. No `correct_option`, and for listening no transcript either —
@@ -502,6 +531,8 @@ export const topikTestQuestionSchema = z.object({
   number: z.number().int().positive(),
   points: z.number().int().positive(),
   instruction: z.string().nullable(),
+  /** Which paper this question came from. Shown only in a mixed sitting, where it changes. */
+  exam: z.string(),
   stem: topikSentContentSchema,
   options: topikOptionsSchema,
   selected_option: topikCorrectOptionSchema.nullable(),
@@ -510,10 +541,14 @@ export const topikTestQuestionSchema = z.object({
 });
 
 /**
- * Everything a sitting needs to run. The audio is **one span** of one file — the approval rules
- * guarantee an exam's clips are contiguous (no gaps, no overlaps), so the tape simply plays from
- * the first clip's start to the last clip's end, silences and all, exactly as the real exam paces
- * it. A mixed paper (stage 2) will instead carry several spans.
+ * Everything a sitting needs to run.
+ *
+ * For an original paper the audio is **one span** of one file: the approval rules guarantee an
+ * exam's clips are contiguous (no gaps, no overlaps), so the tape plays from the first clip's start
+ * to the last clip's end, silences and all, exactly as the real exam paces it.
+ *
+ * A mixed paper has `audio: null` and carries everything in the per-question `clip`s instead —
+ * there is no one file to span, so the client stitches those clips into one tape (M6.5).
  */
 export const topikTestRunSchema = z.object({
   id: z.string(),
@@ -553,6 +588,8 @@ export const topikTestResultItemSchema = z.object({
   question_id: z.string().nullable(),
   number: z.number().int(),
   points: z.number().int(),
+  /** Read live from the question, not snapshotted: a deleted question simply loses its label. */
+  exam: z.string().nullable(),
   selected_option: topikCorrectOptionSchema.nullable(),
   correct_option: topikCorrectOptionSchema,
   is_correct: z.boolean(),

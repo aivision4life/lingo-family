@@ -18,9 +18,9 @@ import { imageUrl } from "@/features/images/api";
 import { useAbandonTopikTest, useFinishTopikTest, useSaveTopikTestAnswer } from "./api";
 import { answerAcknowledged, answerGiven, answeredCount, emptyQueue, unsentAnswers, type AnswerQueue } from "./answerQueue";
 import { allPictureOptions } from "./optionLayout";
-import { formatRemaining, isFinished, isParked, positionAt, progressFraction, remainingMs, shownPosition, type ParkedAt } from "./testClock";
+import { formatRemaining, isParked, positionAt, progressFraction, remainingMs, shownPosition, type ParkedAt } from "./testClock";
 import { TopikPictureOptions } from "./TopikPictureOptions";
-import { useTestTape } from "./useTestTape";
+import { useSittingTape } from "./useSittingTape";
 import { cn } from "@/lib/utils";
 
 /** Outside the component so `react-hooks/purity` does not flag the clock read itself. */
@@ -60,8 +60,8 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
     startedAt.current = nowMs();
   }, []);
 
-  const tape = useTestTape(test.audio);
-  const tapePosition = positionAt(test.questions, tape.positionMs);
+  const tape = useSittingTape(test);
+  const tapePosition = positionAt(tape.positions, tape.positionMs);
   const shown = shownPosition(park, tapePosition, (position) => queue.answers[position] !== undefined);
   const current = shown ?? test.questions[0]?.position ?? 1;
   const question = test.questions.find((q) => q.position === current) ?? test.questions[0];
@@ -86,7 +86,7 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   };
 
   // The end of the tape is the end of the paper.
-  const finished = test.audio !== null && isFinished(tape.positionMs, test.audio.end_ms);
+  const finished = tape.finished;
   useEffect(() => {
     if (finished) submit();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- submit is a one-shot guarded by a ref
@@ -120,7 +120,8 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
 
   if (!question) return <p className="text-muted-foreground">{t("topik.test.empty")}</p>;
   const answered = answeredCount(queue);
-  const left = test.audio ? remainingMs(tape.positionMs, test.audio.end_ms) : 0;
+  const left = remainingMs(tape.positionMs, tape.endMs);
+  const mixed = test.kind === "mixed";
 
   return (
     <div className="flex flex-col gap-4">
@@ -134,6 +135,16 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </div>
         <span className="text-xs text-muted-foreground">{t("topik.test.answeredCount", { answered, total: test.question_count })}</span>
       </div>
+
+      {/* Which paper this question came from. Only in a mixed sitting, where it is genuinely new
+          information — on an original paper it is the same label on all 50 and just noise. */}
+      {mixed && (
+        <p className="text-xs text-muted-foreground">
+          <span lang="ko">{question.exam}</span>
+          {t("topik.test.sourceSeparator")}
+          {t("topik.test.itemNumber", { number: question.number })}
+        </p>
+      )}
 
       {question.instruction && (
         <p className="font-medium" lang="ko">
@@ -191,8 +202,20 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </Button>
       </div>
 
+      {/* The mixed tape must be started by a tap: a phone only lets a page play audio an actual
+          gesture asked for, and the second `<audio>` element is unlocked in that same tap. */}
+      {tape.needsStart && (
+        <div className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-accent/40 p-3">
+          <p className="text-sm">{t("topik.test.startNote")}</p>
+          <Button type="button" onClick={tape.start}>
+            {t("topik.test.startTape")}
+          </Button>
+        </div>
+      )}
+      {tape.waiting && <p className="text-sm text-amber-700 dark:text-amber-500">{t("topik.test.tapeWaiting")}</p>}
+
       <div className="flex items-center justify-between gap-2 border-t pt-3">
-        <Button variant="secondary" onClick={tape.toggle}>
+        <Button variant="secondary" onClick={tape.toggle} disabled={tape.needsStart}>
           {tape.playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
           {t(tape.playing ? "topik.test.pause" : "topik.test.resume")}
         </Button>
@@ -201,6 +224,15 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </Button>
       </div>
       {tape.pauseCount > 0 && <p className="text-xs text-amber-700 dark:text-amber-500">{t("topik.test.pausedNote", { count: tape.pauseCount })}</p>}
+
+      {/* Folded away, but kept: if a handover ever goes wrong on a phone there are no developer
+          tools to find out why, and this is the only record of what the tape actually did. */}
+      {tape.log.length > 0 && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="min-h-11 cursor-pointer py-3">{t("topik.test.tapeLog")}</summary>
+          <pre className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 whitespace-pre-wrap">{tape.log.join("\n")}</pre>
+        </details>
+      )}
 
       <AlertDialog
         open={showExitDialog}

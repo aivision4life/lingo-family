@@ -41,7 +41,7 @@ export function TopikTestPage() {
     // The two shapes share every field the heading needs; only this branch has `questions`.
     const running = test.data as TopikTestRunData;
     return (
-      <Shell title={t("topik.test.sittingTitle", { exam: running.source_exam ?? "" })}>
+      <Shell title={running.kind === "mixed" ? t("topik.test.mixedTitle") : t("topik.test.sittingTitle", { exam: running.source_exam ?? "" })}>
         <TopikTestRun test={running} profileId={profile.id} onFinished={setJustFinished} />
       </Shell>
     );

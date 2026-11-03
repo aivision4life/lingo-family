@@ -79,19 +79,32 @@ const start = async (length: number | "full" = "full") =>
     questions: { position: number; number: number; stem: { text: string | null }; points: number }[];
   };
 
+type OptionsBody = {
+  papers: {
+    exam: string;
+    ready_questions: number;
+    contiguous: boolean;
+    lengths: { length: number | string; available: boolean; questions: number }[];
+    history: { score_points: number; total_points: number; correct_count: number }[];
+  }[];
+  mixed: {
+    ready_questions: number;
+    reachable: number;
+    lengths: { length: number | string; available: boolean; questions: number; missing_position: number | null }[];
+    history: { score_points: number }[];
+  } | null;
+};
+
+const options = async (profile = adult) =>
+  (await t.api("GET", `/topik/tests/options?profile_id=${profile}&section=listening`)).body as OptionsBody;
+
 describe("mock test", () => {
   it("offers a paper's lengths, disabling the ones it cannot fill", async () => {
     for (const n of [1, 2, 3]) await question(n);
-    const options = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=listening`)).body as {
-      exam: string;
-      ready_questions: number;
-      contiguous: boolean;
-      lengths: { length: number | string; available: boolean; questions: number }[];
-      history: unknown[];
-    }[];
-    expect(options).toHaveLength(1);
-    expect(options[0]).toMatchObject({ exam: "Test-35회", ready_questions: 3, contiguous: true, history: [] });
-    expect(options[0]!.lengths).toEqual([
+    const body = await options();
+    expect(body.papers).toHaveLength(1);
+    expect(body.papers[0]).toMatchObject({ exam: "Test-35회", ready_questions: 3, contiguous: true, history: [] });
+    expect(body.papers[0]!.lengths).toEqual([
       { length: 20, available: false, questions: 20 },
       { length: 30, available: false, questions: 30 },
       { length: "full", available: true, questions: 3 },
@@ -127,19 +140,15 @@ describe("mock test", () => {
 
   it("offers nothing for a paper with a hole in its numbering", async () => {
     for (const n of [1, 3]) await question(n);
-    const options = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=listening`)).body as {
-      contiguous: boolean;
-      lengths: { available: boolean }[];
-    }[];
-    expect(options[0]!.contiguous).toBe(false);
-    expect(options[0]!.lengths.every((l) => !l.available)).toBe(true);
+    const body = await options();
+    expect(body.papers[0]!.contiguous).toBe(false);
+    expect(body.papers[0]!.lengths.every((l) => !l.available)).toBe(true);
   });
 
   it("ignores a question whose exam's audio is not approved yet", async () => {
     await question(1);
     await t.env.DB.prepare("UPDATE topik_audio SET verified = 0").run();
-    const options = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=listening`)).body as unknown[];
-    expect(options).toEqual([]);
+    expect(await options()).toEqual({ papers: [], mixed: null });
   });
 
   it("creates a sitting whose audio is one span from the first clip to the last", async () => {
@@ -285,13 +294,9 @@ describe("mock test", () => {
     await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
     await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
 
-    const options = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=listening`)).body as {
-      history: { score_points: number; total_points: number; correct_count: number }[];
-    }[];
-    expect(options[0]!.history).toMatchObject([{ score_points: 2, total_points: 2, correct_count: 1 }]);
+    expect((await options()).papers[0]!.history).toMatchObject([{ score_points: 2, total_points: 2, correct_count: 1 }]);
     // Another profile's history is its own.
-    const theirs = (await t.api("GET", `/topik/tests/options?profile_id=${other}&section=listening`)).body as { history: unknown[] }[];
-    expect(theirs[0]!.history).toEqual([]);
+    expect((await options(other)).papers[0]!.history).toEqual([]);
   });
 
   it("keeps a sitting readable after its question is deleted", async () => {
@@ -306,5 +311,135 @@ describe("mock test", () => {
     };
     expect(result.question_count).toBe(1);
     expect(result.items[0]).toMatchObject({ number: 1, question_id: null });
+  });
+});
+
+describe("mixed mock test (M6.5)", () => {
+  type MixedRun = {
+    id: string;
+    kind: string;
+    source_exam: string | null;
+    audio: unknown;
+    question_count: number;
+    questions: { position: number; number: number; exam: string; clip: { audio_key: string; start_ms: number } | null }[];
+  };
+
+  const startMixed = async (length: number | "full" = "full", profile = adult) =>
+    await t.api("POST", "/topik/tests", { profile_id: profile, section: "listening", kind: "mixed", length });
+
+  const mixedRun = async (length: number | "full" = "full", profile = adult) => (await startMixed(length, profile)).body as MixedRun;
+
+  /** Two papers covering the same question numbers — the bank a mixed draw needs. */
+  const twoPapers = async (numbers: number[]) => {
+    for (const n of numbers) await question(n, { exam: "Test-35회" });
+    for (const n of numbers) await question(n, { exam: "Test-41회" });
+  };
+
+  it("offers the mixed card with how far the bank reaches", async () => {
+    await twoPapers([1, 2, 3]);
+    const body = await options();
+    expect(body.mixed).toMatchObject({ ready_questions: 6, reachable: 3, history: [] });
+    expect(body.mixed!.lengths).toEqual([
+      { length: 20, available: false, questions: 20, missing_position: 4 },
+      { length: 30, available: false, questions: 30, missing_position: 4 },
+      { length: "full", available: true, questions: 3, missing_position: null },
+    ]);
+  });
+
+  it("has no mixed card for reading, which has no clips to draw", async () => {
+    await twoPapers([1]);
+    const body = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=reading`)).body as OptionsBody;
+    expect(body.mixed).toBeNull();
+  });
+
+  it("creates a sitting with no paper of its own and a clip on every question", async () => {
+    await twoPapers([1, 2, 3]);
+    const run = await mixedRun();
+    expect(run).toMatchObject({ kind: "mixed", source_exam: null, audio: null, question_count: 3 });
+    expect(run.questions.map((q) => q.position)).toEqual([1, 2, 3]);
+    expect(run.questions.every((q) => q.clip !== null)).toBe(true);
+    // Each question says which paper it came from: in a mixed sitting that changes question to
+    // question, and it is the only way back to the original later.
+    expect(run.questions.every((q) => q.exam.startsWith("Test-"))).toBe(true);
+  });
+
+  it("never sends a transcript or an answer while a mixed sitting runs", async () => {
+    await twoPapers([1]);
+    const run = await mixedRun();
+    expect(JSON.stringify(run)).not.toContain("안녕하세요");
+    expect(JSON.stringify(run)).not.toContain("correct_option");
+  });
+
+  it("prefers the paper the profile has not just sat", async () => {
+    await twoPapers([1, 2, 3]);
+    const first = await mixedRun();
+    await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+
+    // Every position has exactly one alternative, and the first sitting's questions are all seen
+    // now (it was finished, so the tape played them all): the second sitting must be the mirror.
+    const second = await mixedRun();
+    for (const q of second.questions) {
+      expect(q.exam).not.toBe(first.questions.find((f) => f.position === q.position)!.exam);
+    }
+  });
+
+  it("counts only the answered questions of an abandoned sitting as seen", async () => {
+    await twoPapers([1, 2, 3]);
+    const first = await mixedRun();
+    await t.api("PUT", `/topik/tests/${first.id}/items/1`, { profile_id: adult, selected_option: 2 });
+    await t.api("POST", `/topik/tests/${first.id}/abandon`, { profile_id: adult });
+
+    // The tape stopped at question 1. Only that question was really met, so only that position is
+    // forced to the other paper; the rest were never heard and stay free to be drawn again.
+    const second = await mixedRun();
+    expect(second.questions[0]!.exam).not.toBe(first.questions[0]!.exam);
+  });
+
+  it("keeps each profile's own seen list", async () => {
+    await twoPapers([1]);
+    const mine = await mixedRun();
+    await t.api("POST", `/topik/tests/${mine.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    // The other profile has sat nothing, so the question I just answered is still new to them and
+    // either paper is fair game — what must not happen is my history steering their draw.
+    const theirs = await mixedRun("full", other);
+    expect(theirs.questions).toHaveLength(1);
+  });
+
+  it("says which question the bank is missing instead of a short test", async () => {
+    await twoPapers([1, 2, 3]);
+    const res = await startMixed(20);
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: "topik_test_bank_short", missing_position: 4 });
+  });
+
+  it("refuses a mixed draw from an empty bank", async () => {
+    const res = await startMixed("full");
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: "topik_test_bank_short", missing_position: 1 });
+  });
+
+  it("lists a finished mixed sitting in the mixed history, not in a paper's", async () => {
+    await twoPapers([1]);
+    const run = await mixedRun();
+    await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    const body = await options();
+    expect(body.mixed!.history).toHaveLength(1);
+    expect(body.papers.every((p) => p.history.length === 0)).toBe(true);
+  });
+
+  it("names every item's source paper in the result", async () => {
+    await twoPapers([1, 2]);
+    const run = await mixedRun();
+    const result = (await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 }))
+      .body as { kind: string; items: { position: number; exam: string | null }[] };
+    expect(result.kind).toBe("mixed");
+    for (const item of result.items) {
+      expect(item.exam).toBe(run.questions.find((q) => q.position === item.position)!.exam);
+    }
+  });
+
+  it("refuses an original sitting with no paper named", async () => {
+    await twoPapers([1]);
+    expect((await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", length: "full" })).status).toBe(400);
   });
 });

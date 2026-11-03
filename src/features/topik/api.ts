@@ -17,7 +17,7 @@ import {
   type TopikQuestionInput,
   type TopikQuestionUpdate,
   type TopikSegmentUpdate,
-  topikTestOptionListSchema,
+  topikTestOptionsSchema,
   topikTestResultSchema,
   topikTestRunSchema,
   type TopikSessionMode,
@@ -207,7 +207,7 @@ export const useVerifyTopikAudio = () =>
 export const useTopikTestOptions = (profileId: string, section: TopikSection) =>
   useQuery({
     queryKey: ["topik", "tests", "options", profileId, section],
-    queryFn: () => api("GET", `/topik/tests/options?profile_id=${profileId}&section=${section}`, topikTestOptionListSchema),
+    queryFn: () => api("GET", `/topik/tests/options?profile_id=${profileId}&section=${section}`, topikTestOptionsSchema),
     enabled: profileId !== "",
   });
 

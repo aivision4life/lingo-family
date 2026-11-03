@@ -5,6 +5,7 @@ import { topikClipSchema } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import type { TapeEvent } from "@/features/topik/mixedTape";
+import { tapeLogLine } from "@/features/topik/tapeLog";
 import { useMixedTape } from "@/features/topik/useMixedTape";
 import { api } from "@/lib/api";
 import { formatDuration } from "@/features/topik/segmentEdit";
@@ -47,10 +48,7 @@ type ProbeClip = z.infer<typeof probeSchema>["clips"][number];
 
 function TapeRunner({ clips }: { clips: ProbeClip[] }) {
   const [log, setLog] = useState<string[]>([]);
-  const note = (e: TapeEvent) => {
-    const at = new Date().toISOString().slice(14, 23);
-    setLog((l) => [...l, `${at}  ${describe(e)}`]);
-  };
+  const note = (e: TapeEvent) => setLog((l) => [...l, tapeLogLine(e, new Date())]);
   const tape = useMixedTape();
   const current = clips[tape.index];
 
@@ -92,25 +90,4 @@ function TapeRunner({ clips }: { clips: ProbeClip[] }) {
       <pre className="max-h-80 overflow-auto rounded-lg border bg-muted/30 p-3 text-xs whitespace-pre-wrap">{log.join("\n") || "(chưa có gì)"}</pre>
     </>
   );
-}
-
-function describe(e: TapeEvent): string {
-  switch (e.kind) {
-    case "unlocked":
-      return e.blocked === 0 ? "GỠ KHOÁ: cả 2 thẻ audio OK" : `GỠ KHOÁ: ${e.blocked}/2 thẻ BỊ CHẶN`;
-    case "preloading":
-      return `nạp trước đoạn ${e.index + 1} (${e.src})`;
-    case "ready":
-      return `đoạn ${e.index + 1} sẵn sàng`;
-    case "playing":
-      return `PHÁT đoạn ${e.index + 1} (${e.src})`;
-    case "waiting":
-      return `CHỜ đoạn ${e.index + 1} nạp xong (im lặng, không nhảy cóc)`;
-    case "switched":
-      return `chuyển ${e.from + 1} → ${e.to + 1}${e.waitedMs > 0 ? `, đã chờ ${e.waitedMs}ms` : ", không phải chờ"}`;
-    case "finished":
-      return "HẾT BĂNG";
-    case "error":
-      return `LỖI: ${e.message}`;
-  }
 }

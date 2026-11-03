@@ -762,7 +762,17 @@
       "errorNotFound": "This paper is no longer there. Reload the page.",
       "errorServer": "Server error ({{status}}). Try again later, and quote this number if it keeps happening.",
       "errorRequest": "Could not start the test ({{status}} · {{code}}).",
-      "errorOffline": "No connection. Check the network and try again."
+      "errorOffline": "No connection. Check the network and try again.",
+      "mixedTitle": "Mixed paper",
+      "mixedIntro": "Every question from a different exam, preferring ones you have not met. The clips are stitched into one tape.",
+      "mixedMissingAt": "the bank has no question {{position}}",
+      "mixedLabel": "Mixed paper",
+      "sourceSeparator": " · ",
+      "startNote": "Press Start to run the tape. It plays straight through; there is no replay.",
+      "startTape": "Start",
+      "tapeWaiting": "Loading the next clip — the tape waits in the silence and skips nothing.",
+      "tapeLog": "Tape details",
+      "errorBankShort": "The bank has no question {{position}}, so a mixed paper cannot be filled. Add more questions and try again."
     }
   }
 }

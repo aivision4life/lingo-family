@@ -762,7 +762,17 @@
       "errorNotFound": "Không tìm thấy đề này nữa. Tải lại trang.",
       "errorServer": "Lỗi máy chủ (mã {{status}}). Thử lại sau; nếu vẫn lỗi thì báo mã này.",
       "errorRequest": "Không mở được bài thi (mã {{status}} · {{code}}).",
-      "errorOffline": "Mất kết nối. Kiểm tra mạng rồi thử lại."
+      "errorOffline": "Mất kết nối. Kiểm tra mạng rồi thử lại.",
+      "mixedTitle": "Đề trộn",
+      "mixedIntro": "Mỗi câu lấy từ một đề khác nhau, ưu tiên câu bạn chưa gặp. Băng nối các đoạn lại như một đề thật.",
+      "mixedMissingAt": "ngân hàng chưa có câu {{position}}",
+      "mixedLabel": "Đề trộn",
+      "sourceSeparator": " · ",
+      "startNote": "Bấm Bắt đầu để chạy băng. Băng chạy liên tục cho tới hết, không nghe lại được.",
+      "startTape": "Bắt đầu",
+      "tapeWaiting": "Đang chờ nạp đoạn tiếp theo — băng dừng ở chỗ im lặng, không bỏ đoạn nào.",
+      "tapeLog": "Chi tiết băng",
+      "errorBankShort": "Ngân hàng chưa có câu {{position}} nên chưa trộn đủ. Nhập thêm câu rồi thử lại."
     }
   }
 }

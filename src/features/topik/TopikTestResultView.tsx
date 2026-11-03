@@ -35,6 +35,7 @@ export function TopikTestResultView({ result, profileId }: { result: TopikTestRe
         <p className="text-sm text-muted-foreground">
           {t("topik.test.correctCount", { correct: result.correct_count, total: result.question_count })}
         </p>
+        {result.kind === "mixed" && <p className="text-sm text-muted-foreground">{t("topik.test.mixedLabel")}</p>}
         <p className="text-sm text-muted-foreground">
           {t("topik.test.tookTime", { time: formatDuration(result.duration_ms ?? 0) })}
         </p>
@@ -64,6 +65,13 @@ export function TopikTestResultView({ result, profileId }: { result: TopikTestRe
                 {item.is_correct ? <Check className="size-4" /> : <X className="size-4" />}
               </span>
               <span className="font-medium">{t("topik.test.itemNumber", { number: item.number })}</span>
+              {/* Which paper the question came from: in a mixed result it is a different one on
+                  nearly every row, and it is how a question gets looked up again later. */}
+              {result.kind === "mixed" && item.exam && (
+                <span className="text-xs text-muted-foreground" lang="ko">
+                  {item.exam}
+                </span>
+              )}
               <span className="ml-auto text-sm text-muted-foreground">
                 {t("topik.test.itemAnswers", { chosen: item.selected_option ?? "–", correct: item.correct_option })}
               </span>

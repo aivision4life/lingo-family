@@ -1,6 +1,10 @@
 import type { TFunction } from "i18next";
+import { z } from "zod";
 import { TOPIK_ERRORS } from "@shared/topik";
 import { ApiError } from "@/lib/api";
+
+/** The position a mixed draw ran out at, when the server sent one. */
+const bankShortBody = z.object({ missing_position: z.number().int().positive() });
 
 /** Translated message for a failed TOPIK question mutation, or null if there is no error. */
 export function topikErrorMessage(error: unknown, t: TFunction): string | null {
@@ -20,6 +24,10 @@ export function topikTestStartMessage(error: unknown, t: TFunction): string {
   if (error instanceof ApiError) {
     if (error.code === TOPIK_ERRORS.notContiguous) return t("topik.test.errorNotContiguous");
     if (error.code === TOPIK_ERRORS.tooShort) return t("topik.test.errorTooShort");
+    if (error.code === TOPIK_ERRORS.bankShort) {
+      const detail = bankShortBody.safeParse(error.body);
+      return detail.success ? t("topik.test.errorBankShort", { position: detail.data.missing_position }) : t("topik.test.errorTooShort");
+    }
     if (error.status === 404) return t("topik.test.errorNotFound");
     if (error.status >= 500) return t("topik.test.errorServer", { status: error.status });
     return t("topik.test.errorRequest", { status: error.status, code: error.code });
