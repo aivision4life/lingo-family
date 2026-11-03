@@ -482,6 +482,8 @@ function runPayload(test: TestRow, questions: readonly QuestionRow[], clips: Map
         points: pointsOf(q.points),
         instruction: q.instruction,
         exam: q.exam,
+        // Two questions about one clip are one screen: the tape plays once (M7.5).
+        group_id: q.segment_id ?? q.id,
         stem: { text: test.section === "listening" ? null : q.stem_text, image_key: q.stem_image_key },
         options: q.options,
         selected_option: answered.get(q.number) ?? null,

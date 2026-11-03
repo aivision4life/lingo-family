@@ -443,3 +443,25 @@ describe("mixed mock test (M6.5)", () => {
     expect((await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", length: "full" })).status).toBe(400);
   });
 });
+
+// M7.5: from question 21 one recording carries two questions, and the sitting shows them on one
+// screen. The payload is what makes that possible: both must name the same group.
+describe("a pair sharing one clip in a sitting", () => {
+  it("gives both questions the clip as their group, and a lone question its own", async () => {
+    await question(1);
+    const id2 = await question(2);
+    const id3 = await question(3);
+    // Point question 3 at question 2's clip, as a paired question is pointed in a real paper.
+    const segment = await t.env.DB.prepare("SELECT segment_id AS s FROM topik_questions WHERE id = ?").bind(id2).first<{ s: string }>();
+    await t.env.DB.prepare("UPDATE topik_questions SET segment_id = ? WHERE id = ?").bind(segment!.s, id3).run();
+
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", exam: "Test-35회", length: "full" })).body as {
+      questions: { number: number; group_id: string }[];
+    };
+    const byNumber = new Map(run.questions.map((q) => [q.number, q.group_id]));
+    expect(byNumber.get(2)).toBe(segment!.s);
+    expect(byNumber.get(3)).toBe(segment!.s);
+    // Question 1 has a clip of its own, so it is a group of one — a different id from the pair's.
+    expect(byNumber.get(1)).not.toBe(segment!.s);
+  });
+});

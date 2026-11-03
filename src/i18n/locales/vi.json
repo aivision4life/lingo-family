@@ -784,7 +784,10 @@
       "startTape": "Bắt đầu",
       "tapeWaiting": "Đang chờ nạp đoạn tiếp theo — băng dừng ở chỗ im lặng, không bỏ đoạn nào.",
       "tapeLog": "Chi tiết băng",
-      "errorBankShort": "Ngân hàng chưa có câu {{position}} nên chưa trộn đủ. Nhập thêm câu rồi thử lại."
+      "errorBankShort": "Ngân hàng chưa có câu {{position}} nên chưa trộn đủ. Nhập thêm câu rồi thử lại.",
+      "atQuestions": "Câu {{from}}–{{to}} / {{total}}",
+      "groupQuestions": "Câu {{from}}–{{to}}",
+      "pairNote": "Hai câu này hỏi về cùng một đoạn, băng chỉ phát một lần."
     }
   }
 }

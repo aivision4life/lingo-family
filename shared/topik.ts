@@ -583,12 +583,16 @@ export const topikTestQuestionSchema = z.object({
   instruction: z.string().nullable(),
   /** Which paper this question came from. Shown only in a mixed sitting, where it changes. */
   exam: z.string(),
+  /** The clip this question shares with the rest of its group (M7.5), or its own id when alone. */
+  group_id: z.string(),
   stem: topikSentContentSchema,
   options: topikOptionsSchema,
   selected_option: topikCorrectOptionSchema.nullable(),
   /** Where this position's clip sits in the exam's mp3, so the screen can follow the tape. */
   clip: topikClipSchema.nullable(),
 });
+
+export type TopikTestQuestion = z.infer<typeof topikTestQuestionSchema>;
 
 /**
  * Everything a sitting needs to run.

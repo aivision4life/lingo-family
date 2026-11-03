@@ -2,7 +2,7 @@ import { Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBlocker, useNavigate } from "react-router";
-import { TOPIK_OPTION_COUNT, type TopikTestResult, type TopikTestRun } from "@shared/topik";
+import type { TopikTestQuestion, TopikTestResult, TopikTestRun } from "@shared/topik";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,14 +14,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { imageUrl } from "@/features/images/api";
 import { useAbandonTopikTest, useFinishTopikTest, useSaveTopikTestAnswer } from "./api";
 import { answerAcknowledged, answerGiven, answeredCount, emptyQueue, unsentAnswers, type AnswerQueue } from "./answerQueue";
-import { allPictureOptions } from "./optionLayout";
+import { groupNumbers, groupQuestions } from "./groups";
 import { formatRemaining, isParked, positionAt, progressFraction, remainingMs, shownPosition, type ParkedAt } from "./testClock";
-import { TopikPictureOptions } from "./TopikPictureOptions";
+import { TopikTestQuestionCard } from "./TopikTestQuestionCard";
 import { useSittingTape } from "./useSittingTape";
-import { cn } from "@/lib/utils";
 
 /** Outside the component so `react-hooks/purity` does not flag the clock read itself. */
 const nowMs = () => Date.now();
@@ -61,12 +59,21 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   }, []);
 
   const tape = useSittingTape(test);
-  const tapePosition = positionAt(tape.positions, tape.positionMs);
-  const shown = shownPosition(park, tapePosition, (position) => queue.answers[position] !== undefined);
-  const current = shown ?? test.questions[0]?.position ?? 1;
-  const question = test.questions.find((q) => q.position === current) ?? test.questions[0];
+  // A screen is a group: the questions about one recording, which the tape plays once (M7.5).
+  const groups = groupQuestions(test.questions.map((q) => ({ ...q, id: q.question_id })));
+  const groupOf = (position: number) => groups.find((g) => g.questions.some((q) => q.position === position)) ?? groups[0];
+  /** A group is addressed by its first question's position, so the park rules work unchanged. */
+  const head = (position: number | null) => (position === null ? null : (groupOf(position)?.questions[0]?.position ?? position));
+
+  const tapePosition = head(positionAt(tape.positions, tape.positionMs));
+  // "Answered" means the whole screen: the tape must not move on while half a pair is open.
+  const groupAnswered = (position: number) => (groupOf(position)?.questions ?? []).every((q) => queue.answers[q.position] !== undefined);
+  const shown = shownPosition(park, tapePosition, groupAnswered);
+  const current = shown ?? groups[0]?.questions[0]?.position ?? 1;
+  const group = groupOf(current) ?? groups[0];
   const parked = isParked(park, shown, tapePosition);
-  const goTo = (position: number) => setPark({ position, tapeWhenParked: tapePosition ?? position });
+  const goTo = (position: number) => setPark({ position: head(position) ?? position, tapeWhenParked: tapePosition ?? position });
+  const groupIndex = groups.findIndex((g) => g === group);
 
   const submit = (): void => {
     if (submitted.current) return;
@@ -97,14 +104,13 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   const blocker = useBlocker(() => !leaving.current && !submitted.current && !finish.isPending);
   const showExitDialog = confirmExit || blocker.state === "blocked";
 
-  const choose = (option: number) => {
-    const next = answerGiven(queue, question!.position, option);
-    setQueue(next);
+  const choose = (q: TopikTestQuestion, option: number) => {
+    setQueue(answerGiven(queue, q.position, option));
     // Fire and forget: a failure must not stop the tape or block the screen. Whatever is still
     // unacknowledged rides along with the submit.
     save.mutate(
-      { testId: test.id, position: question!.position, profile_id: profileId, selected_option: option },
-      { onSuccess: () => setQueue((q) => answerAcknowledged(q, question!.position, option)), onError: () => undefined },
+      { testId: test.id, position: q.position, profile_id: profileId, selected_option: option },
+      { onSuccess: () => setQueue((s) => answerAcknowledged(s, q.position, option)), onError: () => undefined },
     );
   };
 
@@ -118,7 +124,8 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
     else void navigate("/topik/tests", { replace: true });
   };
 
-  if (!question) return <p className="text-muted-foreground">{t("topik.test.empty")}</p>;
+  if (!group) return <p className="text-muted-foreground">{t("topik.test.empty")}</p>;
+  const { from, to } = groupNumbers(group);
   const answered = answeredCount(queue);
   const left = remainingMs(tape.positionMs, tape.endMs);
   const mixed = test.kind === "mixed";
@@ -127,7 +134,11 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between gap-2 text-sm">
-          <span className="font-medium">{t("topik.test.atQuestion", { number: question.number, total: test.question_count })}</span>
+          <span className="font-medium">
+            {from === to
+              ? t("topik.test.atQuestion", { number: from, total: test.question_count })
+              : t("topik.test.atQuestions", { from, to, total: test.question_count })}
+          </span>
           <span className="font-mono tabular-nums text-muted-foreground">{t("topik.test.timeLeft", { time: formatRemaining(left) })}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-border" role="progressbar" aria-valuenow={answered} aria-valuemax={test.question_count}>
@@ -140,55 +151,27 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
           information — on an original paper it is the same label on all 50 and just noise. */}
       {mixed && (
         <p className="text-xs text-muted-foreground">
-          <span lang="ko">{question.exam}</span>
+          <span lang="ko">{group.questions[0]!.exam}</span>
           {t("topik.test.sourceSeparator")}
-          {t("topik.test.itemNumber", { number: question.number })}
+          {from === to ? t("topik.test.itemNumber", { number: from }) : t("topik.test.groupQuestions", { from, to })}
         </p>
       )}
+      {group.questions.length > 1 && <p className="text-sm text-muted-foreground">{t("topik.test.pairNote")}</p>}
 
-      {/* Two lines since M7.3: the block instruction, then this question's own question line. */}
-      {question.instruction && (
-        <p className="font-medium whitespace-pre-line" lang="ko">
-          {question.instruction}
-        </p>
-      )}
-      {question.stem.image_key && <img src={imageUrl(question.stem.image_key)} alt="" className="w-full rounded-md object-contain" />}
-
-      {allPictureOptions(question.options) ? (
-        <TopikPictureOptions
-          options={question.options}
-          selectedOption={queue.answers[question.position] ?? null}
-          correctOption={null}
-          answered={false}
-          onChoose={choose}
+      {group.questions.map((q) => (
+        <TopikTestQuestionCard
+          key={q.question_id}
+          question={q}
+          selected={queue.answers[q.position] ?? null}
+          showNumber={group.questions.length > 1}
+          onChoose={(option) => choose(q, option)}
         />
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => {
-            const selected = queue.answers[question.position] === n;
-            return (
-              <li key={n}>
-                <button
-                  type="button"
-                  onClick={() => choose(n)}
-                  className={cn(
-                    "flex min-h-11 w-full items-start gap-3 rounded-lg border p-3 text-left",
-                    selected ? "border-primary bg-accent" : "hover:bg-accent",
-                  )}
-                >
-                  <span className="font-medium">{n})</span>
-                  <span lang="ko">{question.options[n - 1]?.text}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      ))}
 
       <div className="flex items-center justify-between gap-2">
         {/* Flipping back through the paper is allowed in the real exam, so it is allowed here —
             the tape keeps running either way, and "Theo băng" jumps back to where it is. */}
-        <Button variant="outline" onClick={() => goTo(Math.max(1, current - 1))} disabled={current <= 1}>
+        <Button variant="outline" onClick={() => goTo(groups[groupIndex - 1]!.questions[0]!.position)} disabled={groupIndex <= 0}>
           {t("topik.practice.prev")}
         </Button>
         {/* Always an outline button, never a ghost one: this is the way back to the paper, and on a
@@ -198,7 +181,11 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
             {t("topik.test.followTape")}
           </Button>
         )}
-        <Button variant="outline" onClick={() => goTo(Math.min(test.question_count, current + 1))} disabled={current >= test.question_count}>
+        <Button
+          variant="outline"
+          onClick={() => goTo(groups[groupIndex + 1]!.questions[0]!.position)}
+          disabled={groupIndex >= groups.length - 1}
+        >
           {t("topik.practice.next")}
         </Button>
       </div>

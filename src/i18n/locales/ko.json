@@ -784,7 +784,10 @@
       "startTape": "시작",
       "tapeWaiting": "다음 음원을 불러오는 중입니다 — 빈 구간에서 기다리며 건너뛰지 않습니다.",
       "tapeLog": "음원 기록",
-      "errorBankShort": "{{position}}번 문항이 없어 세트를 만들 수 없습니다. 문항을 더 넣고 다시 시도하세요."
+      "errorBankShort": "{{position}}번 문항이 없어 세트를 만들 수 없습니다. 문항을 더 넣고 다시 시도하세요.",
+      "atQuestions": "{{from}}–{{to}}번 / 총 {{total}}문항",
+      "groupQuestions": "{{from}}–{{to}}번",
+      "pairNote": "같은 음원에 대한 두 문항이며, 음원은 한 번만 재생됩니다."
     }
   }
 }

@@ -784,7 +784,10 @@
       "startTape": "Start",
       "tapeWaiting": "Loading the next clip — the tape waits in the silence and skips nothing.",
       "tapeLog": "Tape details",
-      "errorBankShort": "The bank has no question {{position}}, so a mixed paper cannot be filled. Add more questions and try again."
+      "errorBankShort": "The bank has no question {{position}}, so a mixed paper cannot be filled. Add more questions and try again.",
+      "atQuestions": "Questions {{from}}–{{to}} of {{total}}",
+      "groupQuestions": "Questions {{from}}–{{to}}",
+      "pairNote": "Both questions are about the same recording, which plays once."
     }
   }
 }
