@@ -16,6 +16,18 @@ export const DEFAULT_CARD_TYPES: ReviewCardType[] = [...REVIEW_CARD_TYPES];
 export const PIN_LENGTH = 4;
 export const DAILY_NEW_LIMIT_MAX = 100;
 
+/**
+ * How many questions one TOPIK practice session asks (M6.13).
+ *
+ * Only TOPIK practice has a session length to set: word review has none — it asks everything due
+ * today plus up to `daily_new_limit` new cards, and that limit is the knob for how long a word
+ * session runs. A fixed set of choices rather than a free number, because this is a "how long do
+ * I want to sit here" decision, not a measurement.
+ */
+export const SESSION_SIZES = [5, 10, 15, 20] as const;
+export type SessionSize = (typeof SESSION_SIZES)[number];
+export const DEFAULT_SESSION_SIZE: SessionSize = 10;
+
 export const pinSchema = z.string().regex(/^\d{4}$/, "pin_format");
 
 const editableFields = {
@@ -31,6 +43,8 @@ const editableFields = {
     .refine((langs) => new Set(langs).size === langs.length, "study_langs_duplicate"),
   /** Review only what this profile added itself (M6.12); hides cards, never deletes them. */
   own_words_only: z.boolean(),
+  /** Questions per TOPIK practice session (M6.13). */
+  session_size: z.union(SESSION_SIZES.map((n) => z.literal(n)) as [z.ZodLiteral<5>, z.ZodLiteral<10>, z.ZodLiteral<15>, z.ZodLiteral<20>]),
   // At least one: with none enabled every review session would be empty, which looks like a bug
   // rather than a setting. Turning a type off never deletes its cards — they just stop appearing.
   card_types: z
@@ -51,6 +65,9 @@ export const profileCreateSchema = z
     ...editableFields,
     card_types: editableFields.card_types.default(DEFAULT_CARD_TYPES),
     own_words_only: editableFields.own_words_only.default(false),
+    // Defaulted for the same reason as `card_types`: an installed PWA may still be running a build
+    // from before the setting existed, and must not start getting a 400.
+    session_size: editableFields.session_size.default(DEFAULT_SESSION_SIZE),
     pin: pinSchema.optional(),
   })
   .refine(kidHasNoPin, kidPinIssue);
@@ -81,6 +98,7 @@ export const profileSchema = z.object({
   study_langs: z.array(learnLangSchema),
   card_types: z.array(cardTypeSchema),
   own_words_only: z.boolean(),
+  session_size: z.number().int(),
   has_pin: z.boolean(),
   created_at: z.number(),
 });

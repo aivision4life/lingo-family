@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { LEARN_LANGS, type CardType, type LearnLang } from "@shared/enums";
-import { AVATARS, REVIEW_CARD_TYPES } from "@shared/profile";
+import { AVATARS, REVIEW_CARD_TYPES, SESSION_SIZES, type SessionSize } from "@shared/profile";
 import { cn } from "@/lib/utils";
 
 const chip = (selected: boolean) =>
@@ -87,6 +87,33 @@ export function CardTypesPicker({ id, value, onChange }: CardTypesPickerProps) {
           className={cn(chip(value.includes(type)), "px-1 py-1 text-xs leading-tight sm:text-sm")}
         >
           {t(`review.cardType.${type}`)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * How many questions one TOPIK practice session asks (M6.13).
+ *
+ * Next to the card-type switches because it answers the same question — what a sitting down looks
+ * like for this profile — even though it is the TOPIK side that has a session length to set. Word
+ * review has none: it asks everything due plus up to `daily_new_limit` new cards, and that number
+ * is the field just below.
+ */
+export function SessionSizePicker({ id, value, onChange }: { id: string; value: SessionSize; onChange: (size: SessionSize) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div id={id} role="group" className="grid grid-cols-4 gap-2">
+      {SESSION_SIZES.map((size) => (
+        <button
+          key={size}
+          type="button"
+          aria-pressed={value === size}
+          onClick={() => onChange(size)}
+          className={cn(chip(value === size), "px-1 text-sm tabular-nums")}
+        >
+          {t("profiles.form.sessionSizeN", { count: size })}
         </button>
       ))}
     </div>

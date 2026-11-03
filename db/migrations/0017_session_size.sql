@@ -1,0 +1,1 @@
+ALTER TABLE `profiles` ADD `session_size` integer DEFAULT 10 NOT NULL;

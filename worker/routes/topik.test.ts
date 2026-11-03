@@ -352,6 +352,35 @@ describe("blocks + practice session", () => {
     expect(blocks).toMatchObject([{ count: 1, unseen: 1 }]);
   });
 
+  // M6.13: the session length is the profile's own setting, not a constant.
+  it("asks as many questions as the profile's session_size says", async () => {
+    for (const n of [1, 2, 3, 4, 5, 6, 7]) await createQuestion({ number: n, block: "1~7" });
+    const sessionFor = async (profileId: string) =>
+      ((await t.api("GET", `/topik/session?section=reading&from=1&to=7&profile_id=${profileId}`)).body as { questions: unknown[] }).questions.length;
+
+    const short = ((await t.api("POST", "/profiles", profile({ name: "Ngắn", session_size: 5 }))).body as { id: string }).id;
+    expect(await sessionFor(short)).toBe(5);
+    // The default profile keeps asking for 10, so it gets everything the block has.
+    expect(await sessionFor(adult)).toBe(7);
+
+    await t.api("PATCH", `/profiles/${short}`, { session_size: 20 });
+    expect(await sessionFor(short)).toBe(7);
+  });
+
+  // The 100-parameter ceiling: a 20-question session reads cards and clips by id, and the card
+  // query's IN list is the whole block, which is bigger still. Both are chunked; this runs it at a
+  // size that would have failed as one statement.
+  it("serves a 20-question session from a block of 105 questions", async () => {
+    // 105, not 60: the card query binds one parameter per question in the block plus the profile,
+    // so it only crosses D1's ceiling of 100 above a hundred questions. A smaller block would pass
+    // either way and prove nothing.
+    for (let n = 1; n <= 105; n += 1) await createQuestion({ number: n, block: "1~105" });
+    const big = ((await t.api("POST", "/profiles", profile({ name: "Dài", session_size: 20 }))).body as { id: string }).id;
+    const res = await t.api("GET", `/topik/session?section=reading&from=1&to=105&profile_id=${big}`);
+    expect(res.status).toBe(200);
+    expect((res.body as { questions: unknown[] }).questions).toHaveLength(20);
+  });
+
   it("a practice session never includes the answer, and defaults to the empty-card order", async () => {
     await createQuestion({ number: 1 });
     await createQuestion({ number: 2, exam: "Test/연습2" });

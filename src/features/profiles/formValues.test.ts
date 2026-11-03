@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { emptyFormValues, toCreateInput, toUpdateInput, type FormValues } from "./formValues";
+import type { Profile } from "@shared/profile";
+import { emptyFormValues, formValuesFromProfile, toCreateInput, toUpdateInput, type FormValues } from "./formValues";
+
+const emptyProfile: Profile = {
+  id: "p1",
+  name: "Bố",
+  avatar: "🐻",
+  avatar_photo: null,
+  ui_lang: "vi",
+  gloss_lang: "vi",
+  is_kid: false,
+  daily_new_limit: 10,
+  study_langs: ["ko"],
+  card_types: ["recognition"],
+  own_words_only: false,
+  session_size: 10,
+  has_pin: false,
+  created_at: 0,
+};
 
 const filled: FormValues = { ...emptyFormValues("vi"), name: "Bố", study_langs: ["ko"] };
 
@@ -20,6 +38,20 @@ describe("profile form values", () => {
     expect(emptyFormValues("vi").card_types).toEqual(["recognition", "picture", "listening"]);
     expect(toCreateInput({ ...filled, card_types: [] }).errors).toEqual({ card_types: true });
     expect(toUpdateInput({ ...filled, card_types: ["listening"] }).data?.card_types).toEqual(["listening"]);
+  });
+
+  // M6.13: how many questions a TOPIK session asks, per profile.
+  it("starts at 10 questions a session and carries the chosen size through", () => {
+    expect(emptyFormValues("vi").session_size).toBe(10);
+    expect(toCreateInput({ ...filled, session_size: 5 }).data?.session_size).toBe(5);
+    expect(toUpdateInput({ ...filled, session_size: 20 }).data?.session_size).toBe(20);
+  });
+
+  it("falls back to 10 for a profile saved with a size the form does not offer", () => {
+    // A row written before the setting existed, or by a build that offered other numbers: the
+    // form must open on a real choice rather than on a button nothing matches.
+    const stored = { session_size: 7 } as Profile;
+    expect(formValuesFromProfile({ ...emptyProfile, ...stored }).session_size).toBe(10);
   });
 
   it("drops the PIN for kids", () => {

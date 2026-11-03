@@ -69,7 +69,10 @@
       "create": "Create profile",
       "save": "Save",
       "saving": "Saving…",
-      "saved": "Saved."
+      "saved": "Saved.",
+      "sessionSize": "Questions per TOPIK session",
+      "sessionSizeHint": "How many questions one TOPIK practice session asks. Word review does not use this — it asks everything due plus up to the daily new-word limit below.",
+      "sessionSizeN": "{{count}}"
     },
     "errors": {
       "name": "Name must be 1 to 30 characters.",

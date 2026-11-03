@@ -89,6 +89,12 @@ export const profiles = sqliteTable("profiles", {
    * which is what every profile did before the setting existed.
    */
   own_words_only: bool("own_words_only").notNull().default(false),
+  /**
+   * How many questions one TOPIK practice session asks (M6.13). Only the TOPIK side has a fixed
+   * session length; word review has no session size at all (it is "everything due today" plus
+   * `daily_new_limit` new cards), so this setting deliberately does not touch it.
+   */
+  session_size: integer("session_size").notNull().default(10),
   created_at: createdAt(),
 });
 

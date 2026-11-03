@@ -18,6 +18,7 @@ import {
   TOPIK_ERRORS,
   TOPIK_IMAGE_MAX_BYTES,
   TOPIK_IMAGE_MAX_SIDE,
+  TOPIK_SESSION_SIZE,
   topikAttemptRequestSchema,
   topikAudioVerifySchema,
   topikGenerateContentResponseSchema,
@@ -34,7 +35,8 @@ import {
   type TopikPracticeQuestion,
   type TopikQuestion,
 } from "../../shared/topik";
-import { topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments } from "../../db/schema";
+import { profiles, topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments } from "../../db/schema";
+import { readInD1Chunks } from "../lib/d1Chunk";
 import { getDb, type AppEnv } from "../env";
 import { requireAdult } from "../lib/access";
 import { runInBackground } from "../lib/background";
@@ -512,14 +514,25 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         .orderBy(asc(topik_questions.number));
       if (questions.length === 0) return c.json({ questions: [] });
 
-      const cardRows = await db
-        .select()
-        .from(topik_cards)
-        .where(and(eq(topik_cards.profile_id, profile_id), inArray(topik_cards.question_id, questions.map((q) => q.id))));
+      // Chunked: this IN list is every verified question of the chosen block, which grows with the
+      // bank (a 21~50 block across several papers is already past D1's 100-parameter ceiling).
+      const cardRows = await readInD1Chunks(
+        questions.map((q) => q.id),
+        (chunk) => db.select().from(topik_cards).where(and(eq(topik_cards.profile_id, profile_id), inArray(topik_cards.question_id, chunk))),
+        // One parameter is already spent on profile_id.
+        { reserved: 1 },
+      );
       const cardByQuestion = new Map(cardRows.map((r) => [r.question_id, toCardFields(r)]));
       const candidates: TopikCandidate[] = questions.map((q) => ({ question_id: q.id, card: cardByQuestion.get(q.id) ?? null }));
 
-      const sessionIds = buildTopikSession(candidates, resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url), mode);
+      // How many questions this profile asked for (M6.13); an unknown profile keeps the default.
+      const profile = await db.select({ session_size: profiles.session_size }).from(profiles).where(eq(profiles.id, profile_id)).get();
+      const sessionIds = buildTopikSession(
+        candidates,
+        resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url),
+        mode,
+        profile?.session_size ?? TOPIK_SESSION_SIZE,
+      );
       const byId = new Map(questions.map((q) => [q.id, q]));
 
       // One query for every clip this session needs; a question with no clip never got here (the
@@ -527,11 +540,13 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const clipByQuestion = new Map<string, TopikClip>();
       const segmentIds = [...new Set(sessionIds.map((id) => byId.get(id)!.segment_id).filter((x) => x !== null))];
       if (segmentIds.length > 0) {
-        const clips = await db
-          .select({ segment: topik_segments, audio: topik_audio })
-          .from(topik_segments)
-          .innerJoin(topik_audio, eq(topik_audio.id, topik_segments.audio_id))
-          .where(inArray(topik_segments.id, segmentIds));
+        const clips = await readInD1Chunks(segmentIds, (chunk) =>
+          db
+            .select({ segment: topik_segments, audio: topik_audio })
+            .from(topik_segments)
+            .innerJoin(topik_audio, eq(topik_audio.id, topik_segments.audio_id))
+            .where(inArray(topik_segments.id, chunk)),
+        );
         const bySegment = new Map(clips.map((c2) => [c2.segment.id, c2]));
         for (const id of sessionIds) {
           const row = byId.get(id)!;

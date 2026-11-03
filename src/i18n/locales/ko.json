@@ -69,7 +69,10 @@
       "create": "프로필 만들기",
       "save": "저장",
       "saving": "저장 중…",
-      "saved": "저장되었습니다."
+      "saved": "저장되었습니다.",
+      "sessionSize": "TOPIK 연습 한 회 문항 수",
+      "sessionSizeHint": "TOPIK 연습 한 회에 몇 문항을 풀지 정합니다. 단어 복습은 이 값을 쓰지 않습니다 — 기한이 된 카드 전부와 아래의 \"하루 새 단어\" 수만큼을 복습합니다.",
+      "sessionSizeN": "{{count}}문항"
     },
     "errors": {
       "name": "이름은 1~30자여야 합니다.",

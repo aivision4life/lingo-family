@@ -69,7 +69,10 @@
       "create": "Tạo hồ sơ",
       "save": "Lưu",
       "saving": "Đang lưu…",
-      "saved": "Đã lưu."
+      "saved": "Đã lưu.",
+      "sessionSize": "Số câu mỗi phiên luyện TOPIK",
+      "sessionSizeHint": "Một phiên luyện TOPIK hỏi bao nhiêu câu. Ôn từ vựng không theo số này — nó ôn hết số câu đến hạn, cộng thêm tối đa \"từ mới mỗi ngày\" ở dưới.",
+      "sessionSizeN": "{{count}} câu"
     },
     "errors": {
       "name": "Tên cần từ 1 đến 30 ký tự.",

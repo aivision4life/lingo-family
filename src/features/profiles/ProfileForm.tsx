@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { UI_LANG_NATIVE_NAMES } from "@/i18n";
 import { toCreateInput, toUpdateInput, type FieldErrors, type FormValues } from "./formValues";
-import { AvatarPicker, CardTypesPicker, StudyLangsPicker } from "./pickers";
+import { AvatarPicker, CardTypesPicker, SessionSizePicker, StudyLangsPicker } from "./pickers";
 
 type CommonProps = {
   initial: FormValues;
@@ -111,6 +111,10 @@ export function ProfileForm(props: Props) {
         error={errorText("card_types")}
       >
         <CardTypesPicker id="pf-card-types" value={values.card_types} onChange={(types) => set("card_types", types)} />
+      </FormField>
+
+      <FormField id="pf-session-size" label={t("profiles.form.sessionSize")} hint={t("profiles.form.sessionSizeHint")}>
+        <SessionSizePicker id="pf-session-size" value={values.session_size} onChange={(size) => set("session_size", size)} />
       </FormField>
 
       <div className="flex flex-col gap-1">

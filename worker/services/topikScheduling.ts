@@ -16,13 +16,14 @@ export type TopikCandidate = {
  * questions — "câu hay sai lên trước, rồi câu chưa làm, rồi câu đúng đến hạn". A question not yet
  * due (and never gotten wrong) is left out entirely — unless `mode` is "all", which adds those as
  * a final tier for a deliberate practise-anyway session. `cands` should already be in a stable
- * order (e.g. by question number) so ties within a tier stay predictable.
+ * order (e.g. by question number) so ties within a tier stay predictable. `limit` is the profile's
+ * own `session_size` (M6.13); the default here is only the fallback.
  */
 export function buildTopikSession(
   cands: TopikCandidate[],
   now: Date,
   mode: TopikSessionMode = "due",
-  limit = TOPIK_SESSION_SIZE,
+  limit: number = TOPIK_SESSION_SIZE,
 ): string[] {
   const nowMs = now.getTime();
   const isDue = (c: TopikCandidate) => c.card !== null && c.card.due.getTime() <= nowMs;

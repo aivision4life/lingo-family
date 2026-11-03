@@ -3,11 +3,14 @@ import type { CardType, LearnLang, UiLang } from "@shared/enums";
 import {
   AVATARS,
   DEFAULT_CARD_TYPES,
+  DEFAULT_SESSION_SIZE,
+  SESSION_SIZES,
   profileCreateSchema,
   profileUpdateSchema,
   type Profile,
   type ProfileCreate,
   type ProfileUpdate,
+  type SessionSize,
 } from "@shared/profile";
 
 /** Raw form state (inputs are strings until validated). */
@@ -23,6 +26,8 @@ export type FormValues = {
   card_types: CardType[];
   /** Review only what this profile added itself (M6.12). */
   own_words_only: boolean;
+  /** Questions per TOPIK practice session (M6.13). */
+  session_size: SessionSize;
   /** New PIN; empty = none (create) / keep (edit). */
   pin: string;
   removePin: boolean;
@@ -45,10 +50,13 @@ export function emptyFormValues(uiLang: UiLang): FormValues {
     study_langs: [],
     card_types: DEFAULT_CARD_TYPES,
     own_words_only: false,
+    session_size: DEFAULT_SESSION_SIZE,
     pin: "",
     removePin: false,
   };
 }
+
+const isSessionSize = (n: number): n is SessionSize => (SESSION_SIZES as readonly number[]).includes(n);
 
 const isAvatar = (s: string): s is FormValues["avatar"] => (AVATARS as readonly string[]).includes(s);
 
@@ -63,6 +71,8 @@ export function formValuesFromProfile(p: Profile): FormValues {
     study_langs: p.study_langs,
     card_types: p.card_types,
     own_words_only: p.own_words_only,
+    // A profile saved before the setting existed, or by an older build, reads back as the default.
+    session_size: isSessionSize(p.session_size) ? p.session_size : DEFAULT_SESSION_SIZE,
     pin: "",
     removePin: false,
   };
@@ -79,6 +89,7 @@ const commonFields = (v: FormValues) => ({
   study_langs: v.study_langs,
   card_types: v.card_types,
   own_words_only: v.own_words_only,
+  session_size: v.session_size,
 });
 
 function parse<S extends z.ZodType>(schema: S, input: unknown): Result<z.output<S>> {

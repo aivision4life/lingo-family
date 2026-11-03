@@ -2,6 +2,7 @@
 // practice sessions and the "tap a word" vocabulary AI adds to each question.
 import { z } from "zod";
 import { topikSectionSchema, topikTestKindSchema, topikTestStatusSchema } from "./enums";
+import { DEFAULT_SESSION_SIZE } from "./profile";
 import { posSchema } from "./word";
 
 export const TOPIK_OPTION_COUNT = 4;
@@ -355,7 +356,13 @@ export function pointsFromInstruction(instruction: string | null): number | null
 /** The default when nothing says otherwise — see `pointsFromInstruction`. */
 export const DEFAULT_QUESTION_POINTS = 2;
 
-export const TOPIK_SESSION_SIZE = 10;
+/**
+ * How many questions a practice session asks when the profile has no say.
+ *
+ * The real number is the profile's own `session_size` (M6.13, `shared/profile.ts`); this is only
+ * the fallback for a profile that cannot be read.
+ */
+export const TOPIK_SESSION_SIZE = DEFAULT_SESSION_SIZE;
 
 /**
  * `due` (the default) serves what FSRS says is ready: questions never answered, plus cards that
