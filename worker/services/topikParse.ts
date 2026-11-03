@@ -295,6 +295,8 @@ function parseListShape(paras: OrderedNode[]): {
   stem_image_rid: string | null;
   options: ParsedOption[];
   trailing: OrderedNode[];
+  /** The stem paragraphs as separate lines; `stem_text` joins them and loses the boundaries. */
+  stem_lines: string[];
 } {
   let stem_image_rid: string | null = null;
   const stemTexts: string[] = [];
@@ -314,7 +316,30 @@ function parseListShape(paras: OrderedNode[]): {
     const text = textOf(p).trim();
     if (text) stemTexts.push(text);
   }
-  return { stem_text: stemTexts.join(" "), stem_image_rid, options, trailing };
+  return { stem_text: stemTexts.join(" "), stem_image_rid, options, trailing, stem_lines: stemTexts };
+}
+
+/**
+ * A paragraph that reads like an exam instruction rather than like the recording: it ends in the
+ * polite imperative the instructions are written in (고르십시오, 답하십시오, 쓰십시오, …).
+ *
+ * This is the one way a question line can still be lost (M7.3). In the listening layout the
+ * transcript is plain paragraphs, so a question line typed without its `HỎI: ` prefix is
+ * indistinguishable from a line of the recording — it is simply absorbed into the transcript,
+ * which the server withholds while the question is being answered. Nothing can be refused over it:
+ * a speaker really can say "안녕히 계십시오". So it is a warning, and a line that opens with a
+ * speaker marker ("남자 : …") is not even that.
+ *
+ * It matches the handful of verbs the instructions themselves use, not every polite imperative:
+ * questions 5-8 of the reading section quote notices and medicine labels full of "복용하지
+ * 마십시오" / "냉장고에 두십시오", and the broad rule flagged 11 of them — every one a false alarm,
+ * and every one would have been written into that question's warning field for good.
+ */
+const POLITE_IMPERATIVE = /(고르|답하|쓰|완성하|서술하|작성하)십시오[.。]?$/;
+const SPEAKER_PREFIX = /^[^:：]{1,12}[:：]/;
+
+export function commandLikeStemLines(lines: readonly string[]): string[] {
+  return lines.map((l) => l.trim()).filter((l) => POLITE_IMPERATIVE.test(l) && !SPEAKER_PREFIX.test(l));
 }
 
 /** Parses one question item starting right after its Heading3 label, consuming until the next heading. */
@@ -363,6 +388,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   const before = (nodes: OrderedNode[]) => nodes.map((node) => ({ node, after_options: false }));
   const after = (nodes: OrderedNode[]) => nodes.map((node) => ({ node, after_options: true }));
   let parsed: { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] };
+  let stemLines: string[];
   if (table) {
     const tableParsed = parseTable(table);
     if (tableParsed.options.length === 0) {
@@ -376,6 +402,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
       const afterTable = body.slice(body.indexOf(table) + 1).filter((n) => tagOf(n) === "w:p" && isContent(n));
       const listParsed = parseListShape(afterTable);
       parsed = { stem_text: tableParsed.stem_text, stem_image_rid: tableParsed.stem_image_rid, options: listParsed.options };
+      stemLines = tableParsed.stem_text.split("\n");
       // Anything before the table, and anything between or after the options, went nowhere: the
       // stem came from the table and only ListParagraphs became options.
       const beforeTable = body.slice(0, body.indexOf(table)).filter((n) => tagOf(n) === "w:p" && isContent(n));
@@ -388,6 +415,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
       );
     } else {
       parsed = tableParsed;
+      stemLines = tableParsed.stem_text.split("\n");
       // Every paragraph of a table question is unused by definition: the stem and all four
       // options come from the table's own cells. "After the options" here means after the table.
       const tableAt = body.indexOf(table);
@@ -399,6 +427,7 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   } else {
     const listParsed = parseListShape(paragraphs.filter(isContent));
     parsed = listParsed;
+    stemLines = listParsed.stem_lines;
     unused.push(...after(listParsed.trailing));
   }
 
@@ -431,6 +460,12 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     } else if (declared_correct !== null && markedIndexes[0] !== declared_correct) {
       errors.push(`answer label says option ${declared_correct}, but option ${markedIndexes[0]} is underlined`);
     }
+  }
+
+  // The stem's own lines: a table cell joins its paragraphs with a newline, the list shape keeps
+  // them separately (see `parseListShape`).
+  for (const line of commandLikeStemLines(stemLines)) {
+    warnings.push(`a line of the stem reads like an instruction; if it is this question's question line, prefix it with "HỎI: ": "${line}"`);
   }
 
   const ignored = unused

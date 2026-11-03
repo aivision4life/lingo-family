@@ -2,7 +2,7 @@
 // (data/topik/ is gitignored); see scripts/topikImport for the read-only dry-run against them.
 import { describe, expect, it } from "vitest";
 import { pointsFromInstruction } from "../../shared/topik";
-import { parseTopikDocument } from "./topikParse";
+import { commandLikeStemLines, parseTopikDocument } from "./topikParse";
 
 const doc = (body: string) => `<w:document><w:body>${body}</w:body></w:document>`;
 const heading = (style: string, text: string) =>
@@ -473,6 +473,66 @@ describe("parseTopikDocument", () => {
         "listening",
       ).exams[0]!.items;
       expect(items[1]!.stem_text).toBeNull();
+    });
+  });
+
+  // M7.3: the one way a question line can still go missing. In the listening layout the transcript
+  // is plain paragraphs, so a line typed without its "HỎI: " prefix is absorbed into it — and the
+  // server withholds the transcript while the question is being answered, so it is invisible
+  // exactly when it matters.
+  describe("commandLikeStemLines", () => {
+    it("spots a line that reads like the question's own instruction", () => {
+      expect(commandLikeStemLines(["남자의 중심 생각으로 맞는 것을 고르십시오."])).toEqual(["남자의 중심 생각으로 맞는 것을 고르십시오."]);
+      expect(commandLikeStemLines(["다음을 듣고 물음에 답하십시오"])).toHaveLength(1);
+    });
+
+    it("leaves a line of the recording alone", () => {
+      expect(commandLikeStemLines(["남자 : 현아 씨가 세계여행을 간대요.", "여자 : 저도 들었어요."])).toEqual([]);
+    });
+
+    // Reading questions 5-8 quote notices and medicine labels, which are written as orders. The
+    // broad rule ("anything ending in 십시오") flagged 11 real stems, every one a false alarm.
+    it("leaves a stem that is itself a notice alone", () => {
+      expect(
+        commandLikeStemLines(["1회 2정 이상 복용하지 마십시오.", "포장지를 뜯지 말고 냉장고에 두십시오.", "감기에 걸리지 않도록 조심하십시오."]),
+      ).toEqual([]);
+    });
+
+    it("still spots one even when a speaker says it, since it cannot tell", () => {
+      // Deliberately a warning and never an error: the file may be right and we cannot know.
+      expect(commandLikeStemLines(["알맞은 것을 고르십시오"])).toHaveLength(1);
+    });
+  });
+
+  describe("an unprefixed question line in a listening transcript", () => {
+    const listening = (first: string) =>
+      parseTopikDocument(
+        doc(
+          heading("Heading2", "35회") +
+            plain("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)") +
+            heading("Heading3", "21") +
+            answer(1) +
+            plain(first) +
+            plain("남자 : 현아 씨가 세계여행을 간대요.") +
+            listOption("가", true) +
+            listOption("나") +
+            listOption("다") +
+            listOption("라"),
+        ),
+        "listening",
+      ).exams[0]!.items[0]!;
+
+    it("warns, quotes the line, and still imports the question", () => {
+      const item = listening("남자의 중심 생각으로 맞는 것을 고르십시오.");
+      expect(item.errors).toEqual([]);
+      expect(item.warnings).toEqual([expect.stringContaining('HỎI: ')]);
+      expect(item.warnings[0]).toContain("남자의 중심 생각으로 맞는 것을 고르십시오.");
+    });
+
+    it("says nothing when the line carries its prefix", () => {
+      const item = listening("HỎI: 남자의 중심 생각으로 맞는 것을 고르십시오.");
+      expect(item.warnings).toEqual([]);
+      expect(item.stem_text).toBe("남자 : 현아 씨가 세계여행을 간대요.");
     });
   });
 
