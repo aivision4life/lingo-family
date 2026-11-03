@@ -14,8 +14,13 @@
   "workers_dev": true,
   "preview_urls": false,
   "assets": {
-    // Unknown paths return index.html so React Router can handle them.
-    "not_found_handling": "single-page-application",
+    // `not_found_handling` is deliberately NOT "single-page-application" (M7.4). That setting
+    // answered *every* unmatched path with index.html, including a missing /assets/x.css — so the
+    // service worker was handed an HTML page where a stylesheet belonged, called the response bad,
+    // and failed to install, leaving a phone stuck on the previous build with no way to recover.
+    // With no setting, an unmatched path falls through to the Worker, which answers a real 404 for
+    // anything that looks like a file and index.html for an app route (see `spaFallback`).
+    "binding": "ASSETS",
     // /api/* always goes to the Worker, never to static assets.
     "run_worker_first": ["/api/*"]
   },

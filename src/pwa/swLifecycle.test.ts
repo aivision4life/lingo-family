@@ -21,6 +21,26 @@ describe("service worker update lifecycle", () => {
     expect(swSource).toContain("cleanupOutdatedCaches()");
   });
 
+  // M7.4, the second time a phone was stuck on an old build — the first was a worker left in
+  // `waiting`, this one a single stylesheet that answered 500. The principle both come down to:
+  // activation may not depend on anything that can fail.
+  it("never hands the build manifest to precacheAndRoute, whose install fails on one bad file", () => {
+    // The call, not the word: the comment above it explains why it is gone.
+    expect(swSource).not.toMatch(/precacheAndRoute\(/);
+  });
+
+  it("swallows every failure in install and activate", () => {
+    // One `catch` per handler, and `allSettled` inside, so no single file can reject the install.
+    expect(swSource).toMatch(/addEventListener\("install", \(event\) => void event\.waitUntil\(cacheShell\(\)\.catch\(/);
+    expect(swSource).toMatch(/Promise\.allSettled/);
+  });
+
+  it("caches only the shell at install, and lets the rest be cached when it is used", () => {
+    // index.html + icons: small, and the only files the app cannot start without.
+    expect(swSource).toContain("isShellPath(p)");
+    expect(swSource).toContain("isHashedAsset({ url, origin })");
+  });
+
   it("registers the worker in autoUpdate mode (activation is not gated on a button)", () => {
     expect(viteConfigSource).toContain('registerType: "autoUpdate"');
   });
