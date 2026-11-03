@@ -150,8 +150,9 @@ export function TopikSession({
         })}
       </div>
       {!question.vocab_ready && <p className="text-xs text-muted-foreground">{t("topik.practice.vocabLoading")}</p>}
+      {/* Two lines since M7.3: the block instruction, then this question's own question line. */}
       {question.instruction && (
-        <p className="font-medium">
+        <p className="font-medium whitespace-pre-line">
           <TappableText text={question.instruction} vocab={question.vocab} />
         </p>
       )}

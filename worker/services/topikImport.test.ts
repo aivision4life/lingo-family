@@ -277,3 +277,48 @@ describe("buildImportDraft", () => {
     expect(draft.questions).toEqual([]);
   });
 });
+
+// M7.3: the parser must never throw typed-up content away in silence. Where the stray paragraph
+// sits decides whether the question is refused or the line is only reported.
+describe("buildImportDraft and paragraphs nothing used", () => {
+  const draftWith = (extra: string, afterTable = "") =>
+    buildImportDraft(
+      "TOPIK_Listening_Cau21_22_OfficialTest_VERSION1.docx",
+      doc(
+        heading("Heading1", "문항 21~22") +
+          heading("Heading2", "연습1 (35회)") +
+          plain("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)") +
+          heading("Heading3", "1-21") +
+          answer(2) +
+          extra +
+          table("남자: 안녕하세요.", ["a", "b", "c", "d"], 2) +
+          afterTable,
+      ),
+    );
+
+  it("refuses the question and quotes the line, naming the question", () => {
+    const draft = draftWith(plain("남자의 중심 생각으로 맞는 것을 고르십시오."));
+    expect(draft.questions).toEqual([]);
+    expect(draft.errors).toHaveLength(1);
+    expect(draft.errors[0]).toContain("#21");
+    expect(draft.errors[0]).toContain('"남자의 중심 생각으로 맞는 것을 고르십시오."');
+    expect(draft.errors[0]).toContain("HỎI: ");
+  });
+
+  // The file author's own glossary under a question (20 of them across the real reading files):
+  // never part of the question, but still said out loud rather than dropped in silence.
+  it("imports the question and reports a note written after the options", () => {
+    const draft = draftWith("", plain("관람료: phí, tiền vé"));
+    expect(draft.errors).toEqual([]);
+    expect(draft.questions).toHaveLength(1);
+    expect(draft.warnings).toEqual([expect.stringContaining('note after the options, not imported: "관람료: phí, tiền vé"')]);
+  });
+
+  it("imports a marked question line as part of the instruction", () => {
+    const draft = draftWith(plain("HỎI: 남자의 중심 생각으로 맞는 것을 고르십시오."));
+    expect(draft.errors).toEqual([]);
+    expect(draft.questions[0]!.instruction).toBe("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)\n남자의 중심 생각으로 맞는 것을 고르십시오.");
+    // The points still come from the block's own line.
+    expect(draft.questions[0]!.points).toBe(2);
+  });
+});

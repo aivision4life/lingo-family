@@ -32,8 +32,9 @@ export function TopikQuestionView({ question, onEdit, onBack }: { question: Topi
         {question.warning && <p className="text-sm text-amber-700 dark:text-amber-500">⚠ {question.warning}</p>}
       </div>
 
+      {/* Two lines since M7.3: the block instruction, then this question's own question line. */}
       {question.instruction && (
-        <p className="font-medium">
+        <p className="font-medium whitespace-pre-line">
           <KoreanText text={question.instruction} />
         </p>
       )}

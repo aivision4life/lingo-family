@@ -120,6 +120,26 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       const warning = notes.length > 0 ? notes.join("; ") : null;
       const instruction = (readingFix ? FIXED_NUMBER_INSTRUCTION[number] : undefined) ?? item.instruction;
       for (const note of notes) warnings.push(`${examLabel} #${number}: ${note}`);
+
+      // Nothing typed into a question may be thrown away in silence (M7.3). Three separate losses
+      // of real work went unnoticed exactly that way, so an unaccounted-for paragraph is reported
+      // verbatim, with the question it was in.
+      //
+      // Where it sits decides how loudly. Before or between the question's own parts, it is
+      // content meant to be read and the question is refused rather than imported incomplete —
+      // the fix is to mark the line ("HỎI: …") or to move it. After the four options is the file
+      // author's own note area (Vietnamese glosses, "관람료: phí, tiền vé"), which was never part
+      // of the question: it is listed in the report and left out, without failing the question.
+      const stray = item.ignored.filter((g) => !g.after_options);
+      const authorNotes = item.ignored.filter((g) => g.after_options);
+      for (const note of authorNotes) warnings.push(`${examLabel} #${number}: note after the options, not imported: "${note.text}"`);
+      if (stray.length > 0) {
+        errors.push(
+          `${examLabel} #${number}: ${stray.length} paragraph(s) belong to no part of the question — ` +
+            `mark a question line with "HỎI: " or move it: ${stray.map((g) => `"${g.text}"`).join(", ")}`,
+        );
+        continue;
+      }
       if (item.errors.length > 0) {
         errors.push(`${examLabel} #${number}: ${item.errors.join("; ")}`);
         continue;

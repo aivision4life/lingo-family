@@ -93,6 +93,12 @@ export type ParsedItem = {
   instruction: string | null;
   /** Listening (M7.1): the file marked this question as sharing the previous one's audio clip. */
   same_segment: boolean;
+  /**
+   * A block instruction ("[3~4] …") this question carried itself, when the file starts a new block
+   * part way through a group instead of between the heading and the first question. It applies to
+   * this question and to the rest of the group, which is what the "[3~4]" in it says.
+   */
+  block_instruction: string | null;
   stem_text: string | null;
   stem_image_rid: string | null;
   options: ParsedOption[];
@@ -101,7 +107,28 @@ export type ParsedItem = {
   errors: string[];
   /** Worth a human's eye but not a reason to reject the question (e.g. the underline disagrees). */
   warnings: string[];
+  /**
+   * Paragraphs inside this question that nothing used, verbatim (M7.3).
+   *
+   * The parser must never throw content away without saying so. Three separate losses of typed-up
+   * work went unnoticed because it did exactly that (a stem cell split in two, an image path
+   * missing its `word/` prefix, and a per-question question line), so anything unaccounted for is
+   * collected here and the caller turns it into a hard error.
+   */
+  ignored: IgnoredParagraph[];
 };
+
+/**
+ * A paragraph inside a question that nothing used.
+ *
+ * `after_options` separates the two very different cases. Before or between the question's own
+ * parts, a stray paragraph is content that was meant to be read and is being lost — that is how a
+ * per-question question line disappeared. After the four options is the file author's own note
+ * area (Vietnamese vocabulary glosses, "관람료: phí, tiền vé"), which is deliberately not part of
+ * the question; it is still reported, never dropped in silence, but it does not reject the
+ * question.
+ */
+export type IgnoredParagraph = { text: string; after_options: boolean };
 
 /**
  * `groupIndex` is a 1-based counter of the file's Heading2 groups that actually hold questions,
@@ -144,6 +171,23 @@ const ANSWER_LABEL = /^(\d+)\s*\((\d+)\)$/;
  * Written with or without Vietnamese diacritics, in any case.
  */
 const SAME_SEGMENT = /^chung\s*(đoạn|doan)$/i;
+/**
+ * This question's own question line (M7.3): "HỎI: 남자의 중심 생각으로 맞는 것을 고르십시오."
+ *
+ * From question 21 on, one clip is followed by two questions that ask different things, so the
+ * block-wide instruction ("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)") is no longer the whole
+ * prompt. It cannot go in the stem cell — that cell is the transcript and is hidden while the
+ * question is being answered — so it is its own marked paragraph, like `CHUNG ĐOẠN`.
+ */
+const OWN_INSTRUCTION = /^(hỏi|hoi)\s*:\s*(.+)$/is;
+/**
+ * A block instruction, "[3~4] 다음 밑줄 친 부분과…". It normally sits between the group heading and
+ * the first question, but a file can leave the group without one and type it inside a question
+ * instead (Cau03_04_MasterTopik 연습6 #3). Recognising the shape lets that line be *used* as the
+ * question's instruction rather than silently dropped, which is what happened until M7.3 — the
+ * reading import only hid it by overriding the instruction per question number.
+ */
+const BLOCK_INSTRUCTION = /^\[\s*\d+\s*(~\s*\d+)?\s*\]/;
 /** A real exam round anywhere in a heading: "35회", "(35회)", "연습1 (35회)". */
 const ROUND_IN_TEXT = /(\d+회)/;
 /** "유형1: 문항 1~2" / "문항 9" — the block is always the trailing number(s). */
@@ -241,13 +285,26 @@ function parseTable(tbl: OrderedNode): { stem_text: string; stem_image_rid: stri
   return { stem_text, stem_image_rid, options };
 }
 
-/** The "list" shape (Cau09/Cau10 style): an optional stem image, then exactly 4 ListParagraph options. */
-function parseListShape(paras: OrderedNode[]): { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] } {
+/**
+ * The "list" shape (Cau09/Cau10 style): an optional stem image, then exactly 4 ListParagraph
+ * options. `trailing` holds the paragraphs that came after the four options — the file's author
+ * sometimes writes a Vietnamese vocabulary note there, and it must not become a fifth option.
+ */
+function parseListShape(paras: OrderedNode[]): {
+  stem_text: string;
+  stem_image_rid: string | null;
+  options: ParsedOption[];
+  trailing: OrderedNode[];
+} {
   let stem_image_rid: string | null = null;
   const stemTexts: string[] = [];
   const options: ParsedOption[] = [];
+  const trailing: OrderedNode[] = [];
   for (const p of paras) {
-    if (options.length >= TOPIK_OPTION_COUNT) break;
+    if (options.length >= TOPIK_OPTION_COUNT) {
+      if (textOf(p).trim() !== "" || embedIdOf(p) !== null) trailing.push(p);
+      continue;
+    }
     if (headingStyle(p) === "ListParagraph") {
       options.push({ text: textOf(p).trim(), marked: hasUnderline(p), image_rid: embedIdOf(p) });
       continue;
@@ -257,7 +314,7 @@ function parseListShape(paras: OrderedNode[]): { stem_text: string; stem_image_r
     const text = textOf(p).trim();
     if (text) stemTexts.push(text);
   }
-  return { stem_text: stemTexts.join(" "), stem_image_rid, options };
+  return { stem_text: stemTexts.join(" "), stem_image_rid, options, trailing };
 }
 
 /** Parses one question item starting right after its Heading3 label, consuming until the next heading. */
@@ -275,6 +332,13 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   const paragraphs = body.filter((n) => tagOf(n) === "w:p");
   const answerPara = paragraphs.find((n) => ANSWER_LABEL.test(textOf(n).trim()));
   const sameSegmentPara = paragraphs.find((n) => SAME_SEGMENT.test(textOf(n).trim()));
+  // This question's own question line, which is appended to the group's instruction.
+  const ownInstructionPara = paragraphs.find((n) => OWN_INSTRUCTION.test(textOf(n).trim()));
+  const ownInstruction = ownInstructionPara ? OWN_INSTRUCTION.exec(textOf(ownInstructionPara).trim())![2]!.trim() : null;
+  // A block instruction typed inside the question, used only when the group has none of its own.
+  const strayBlockPara = paragraphs.find((n) => BLOCK_INSTRUCTION.test(textOf(n).trim()));
+  const blockInstruction = strayBlockPara ? textOf(strayBlockPara).trim() : null;
+  const groupInstruction = blockInstruction ?? instruction;
   const answerMatch = answerPara ? ANSWER_LABEL.exec(textOf(answerPara).trim()) : null;
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -287,9 +351,17 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   /** The label, the "same clip" marker and a repeated instruction line are metadata, never part of
    * the stem or an option. */
   const isContent = (n: OrderedNode) =>
-    n !== answerPara && n !== sameSegmentPara && !(instruction !== null && textOf(n).trim() === instruction);
+    n !== answerPara &&
+    n !== sameSegmentPara &&
+    n !== ownInstructionPara &&
+    n !== strayBlockPara &&
+    !(instruction !== null && textOf(n).trim() === instruction);
 
   const table = body.find((n) => tagOf(n) === "w:tbl");
+  /** Paragraphs no part of the question used, with where they sat relative to the options. */
+  const unused: { node: OrderedNode; after_options: boolean }[] = [];
+  const before = (nodes: OrderedNode[]) => nodes.map((node) => ({ node, after_options: false }));
+  const after = (nodes: OrderedNode[]) => nodes.map((node) => ({ node, after_options: true }));
   let parsed: { stem_text: string; stem_image_rid: string | null; options: ParsedOption[] };
   if (table) {
     const tableParsed = parseTable(table);
@@ -304,11 +376,30 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
       const afterTable = body.slice(body.indexOf(table) + 1).filter((n) => tagOf(n) === "w:p" && isContent(n));
       const listParsed = parseListShape(afterTable);
       parsed = { stem_text: tableParsed.stem_text, stem_image_rid: tableParsed.stem_image_rid, options: listParsed.options };
+      // Anything before the table, and anything between or after the options, went nowhere: the
+      // stem came from the table and only ListParagraphs became options.
+      const beforeTable = body.slice(0, body.indexOf(table)).filter((n) => tagOf(n) === "w:p" && isContent(n));
+      const lastOption = afterTable.map((n) => headingStyle(n)).lastIndexOf("ListParagraph");
+      const strays = afterTable.filter((n) => headingStyle(n) !== "ListParagraph");
+      unused.push(
+        ...before(beforeTable),
+        ...before(strays.filter((n) => afterTable.indexOf(n) < lastOption)),
+        ...after(strays.filter((n) => afterTable.indexOf(n) > lastOption)),
+      );
     } else {
       parsed = tableParsed;
+      // Every paragraph of a table question is unused by definition: the stem and all four
+      // options come from the table's own cells. "After the options" here means after the table.
+      const tableAt = body.indexOf(table);
+      unused.push(
+        ...before(body.slice(0, tableAt).filter((n) => tagOf(n) === "w:p" && isContent(n))),
+        ...after(body.slice(tableAt + 1).filter((n) => tagOf(n) === "w:p" && isContent(n))),
+      );
     }
   } else {
-    parsed = parseListShape(paragraphs.filter(isContent));
+    const listParsed = parseListShape(paragraphs.filter(isContent));
+    parsed = listParsed;
+    unused.push(...after(listParsed.trailing));
   }
 
   // Reading questions 1~3 of a *listening* paper offer four pictures, and nothing can be
@@ -342,19 +433,47 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     }
   }
 
+  const ignored = unused
+    .map(({ node, after_options }) => ({ text: textOf(node).trim(), after_options }))
+    .filter((p) => p.text !== "");
+
   return {
     position,
     labelNumber,
     round,
-    instruction,
+    // The group's line first, then this question's own: "[21~22] 다음을 듣고… (각 2점)" still holds
+    // the points, and the question line is what actually has to be read before answering.
+    instruction: ownInstruction ? [groupInstruction, ownInstruction].filter((x) => x).join("\n") : groupInstruction,
     same_segment: sameSegmentPara !== undefined,
+    block_instruction: blockInstruction,
     stem_text: parsed.stem_text || null,
     stem_image_rid: parsed.stem_image_rid,
     options: parsed.options,
     declared_correct,
     errors,
     warnings,
+    ignored,
   };
+}
+
+/**
+ * A question marked `CHUNG ĐOẠN` is asked about the clip the one before it already carries, so it
+ * is the same recording and therefore the same transcript. Rather than have it typed twice — two
+ * copies nothing compares, which drift the first time one of them is corrected — the stem cell is
+ * left empty and the transcript is taken from the question before.
+ *
+ * A second question that does have its own stem keeps it, but a stem that differs from the one it
+ * shares a clip with is a contradiction worth reading: one recording cannot have two transcripts.
+ */
+function inheritStem(item: ParsedItem, previous: ParsedItem | undefined): void {
+  if (!item.same_segment || !previous) return;
+  if (item.stem_text === null) {
+    item.stem_text = previous.stem_text;
+    return;
+  }
+  if (previous.stem_text !== null && item.stem_text !== previous.stem_text) {
+    item.warnings.push("marked CHUNG ĐOẠN but its stem differs from the question it shares the clip with (its own is used)");
+  }
 }
 
 /** Parses `word/document.xml`'s text content into exam groups of questions (no image bytes here). */
@@ -411,7 +530,13 @@ export function parseTopikDocument(documentXml: string, section: TopikSection = 
         if (tagOf(n) === "w:p" && /^Heading[123]$/.test(headingStyle(n) ?? "")) break;
         rest.push(n);
       }
-      currentExam.items.push(parseItem(currentExam.items.length + 1, text, rest, currentInstruction, section));
+      const item = parseItem(currentExam.items.length + 1, text, rest, currentInstruction, section);
+      inheritStem(item, currentExam.items[currentExam.items.length - 1]);
+      currentExam.items.push(item);
+      // "[3~4] …" typed inside question 3 of a group headed "[1~2] …" starts a new block there,
+      // so it is this question's instruction and the following ones' too — until M7.3 it was
+      // dropped on the floor, and only the reading import's per-number override hid the loss.
+      if (item.block_instruction) currentInstruction = item.block_instruction;
       i = j - 1;
       continue;
     }

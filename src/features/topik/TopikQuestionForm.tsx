@@ -174,7 +174,9 @@ export function TopikQuestionForm({ profileId, initial, submitting, serverError,
         />
       </FormField>
       <FormField id="tq-instruction" label={t("topik.manage.form.instruction")}>
-        <Input id="tq-instruction" value={values.instruction} onChange={(e) => set("instruction", e.target.value)} />
+        {/* A textarea, not an input: since M7.3 an instruction can hold a second line (the
+            question's own "HỎI:" line), and a single-line input would silently flatten it. */}
+        <Textarea id="tq-instruction" rows={2} value={values.instruction} onChange={(e) => set("instruction", e.target.value)} />
       </FormField>
       <ContentField
         id="tq-stem"

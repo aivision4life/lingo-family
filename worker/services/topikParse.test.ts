@@ -1,6 +1,7 @@
 // Synthetic XML fixtures only — the real exam files are copyrighted and never committed
 // (data/topik/ is gitignored); see scripts/topikImport for the read-only dry-run against them.
 import { describe, expect, it } from "vitest";
+import { pointsFromInstruction } from "../../shared/topik";
 import { parseTopikDocument } from "./topikParse";
 
 const doc = (body: string) => `<w:document><w:body>${body}</w:body></w:document>`;
@@ -383,6 +384,157 @@ describe("parseTopikDocument", () => {
       expect(parsed.stem_text).toBe("대화를 듣고");
       expect(parsed.options.map((o) => o.text)).toEqual(["가", "나", "다", "라"]);
       expect(parsed.errors).toEqual([]);
+    });
+  });
+
+  // M7.3: a pair of questions on one clip. Each asks something different, so the block-wide
+  // instruction is no longer the whole prompt — and the per-question line cannot live in the stem
+  // cell, which is the transcript and is hidden while the question is being answered.
+  describe("a question's own question line (HỎI:)", () => {
+    const pair = (secondStem: string, extra = "") =>
+      parseTopikDocument(
+        doc(
+          heading("Heading1", "문항 21~22") +
+            heading("Heading2", "연습1 (35회)") +
+            plain("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)") +
+            heading("Heading3", "1-21") +
+            answer(2) +
+            plain("HỎI: 남자의 중심 생각으로 맞는 것을 고르십시오.") +
+            table("남자: 요즘 자전거로 출근해요.", ["가", "나", "다", "라"], 2) +
+            heading("Heading3", "1-22") +
+            answer(3) +
+            plain("CHUNG ĐOẠN") +
+            plain("HỎI: 들은 내용과 같은 것을 고르십시오.") +
+            extra +
+            table(secondStem, ["마", "바", "사", "아"], 3),
+        ),
+        "listening",
+      ).exams[0]!.items;
+
+    it("appends the question's own line under the block's, keeping the block's points", () => {
+      const [first] = pair("");
+      expect(first!.instruction).toBe("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)\n남자의 중심 생각으로 맞는 것을 고르십시오.");
+      expect(pointsFromInstruction(first!.instruction!)).toBe(2);
+    });
+
+    it("never lets the line reach the stem or an option", () => {
+      const [first] = pair("");
+      expect(first!.stem_text).toBe("남자: 요즘 자전거로 출근해요.");
+      expect(first!.options.map((o) => o.text)).toEqual(["가", "나", "다", "라"]);
+      expect(first!.ignored).toEqual([]);
+      expect(first!.errors).toEqual([]);
+    });
+
+    it("is read without diacritics and in any case", () => {
+      for (const marker of ["HỎI:", "hỏi:", "HOI:", "Hoi :"]) {
+        const items = parseTopikDocument(
+          doc(
+            heading("Heading2", "연습1") +
+              heading("Heading3", "1-21") +
+              answer(2) +
+              plain(`${marker} 중심 생각을 고르십시오.`) +
+              table("남자: 안녕", ["가", "나", "다", "라"], 2),
+          ),
+          "listening",
+        ).exams[0]!.items;
+        expect(items[0]!.instruction).toBe("중심 생각을 고르십시오.");
+      }
+    });
+
+    // The second question is about the same recording, so it is the same transcript. Typing it
+    // twice means two copies nothing compares, which drift the first time one is corrected.
+    it("takes the transcript from the question it shares the clip with", () => {
+      const [, second] = pair("");
+      expect(second!.stem_text).toBe("남자: 요즘 자전거로 출근해요.");
+      expect(second!.same_segment).toBe(true);
+      expect(second!.warnings).toEqual([]);
+      expect(second!.instruction).toBe("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)\n들은 내용과 같은 것을 고르십시오.");
+    });
+
+    it("keeps a second stem that is typed out, and warns when it contradicts the first", () => {
+      const [, same] = pair("남자: 요즘 자전거로 출근해요.");
+      expect(same!.warnings).toEqual([]);
+      const [, different] = pair("남자: 어제는 버스를 탔어요.");
+      expect(different!.stem_text).toBe("남자: 어제는 버스를 탔어요.");
+      expect(different!.warnings).toEqual([expect.stringContaining("CHUNG ĐOẠN")]);
+    });
+
+    it("does not inherit for a question that is not marked as sharing a clip", () => {
+      const items = parseTopikDocument(
+        doc(
+          heading("Heading2", "연습1") +
+            heading("Heading3", "1-21") +
+            answer(2) +
+            table("남자: 안녕", ["가", "나", "다", "라"], 2) +
+            heading("Heading3", "1-22") +
+            answer(3) +
+            table("", ["마", "바", "사", "아"], 3),
+        ),
+        "listening",
+      ).exams[0]!.items;
+      expect(items[1]!.stem_text).toBeNull();
+    });
+  });
+
+  // M7.3, the rule behind the other two: nothing typed into a question may be dropped in silence.
+  // Three separate losses of real work went unnoticed exactly that way.
+  describe("paragraphs nothing used", () => {
+    const withStray = (extra: string, afterTable = "") =>
+      parseTopikDocument(
+        doc(
+          heading("Heading2", "연습1") +
+            plain("[1~2] 가장 알맞은 것을 고르십시오.") +
+            heading("Heading3", "1-1") +
+            answer(2) +
+            extra +
+            table("문제", ["가", "나", "다", "라"], 2) +
+            afterTable,
+        ),
+      ).exams[0]!.items[0]!;
+
+    it("reports a stray paragraph before the question, verbatim", () => {
+      expect(withStray(plain("남자의 중심 생각으로 맞는 것을 고르십시오.")).ignored).toEqual([
+        { text: "남자의 중심 생각으로 맞는 것을 고르십시오.", after_options: false },
+      ]);
+    });
+
+    it("marks a paragraph after the options as the file author's own note", () => {
+      expect(withStray("", plain("관람료: phí, tiền vé")).ignored).toEqual([{ text: "관람료: phí, tiền vé", after_options: true }]);
+    });
+
+    it("says nothing about the metadata it is supposed to consume", () => {
+      expect(withStray(plain("CHUNG ĐOẠN") + plain("HỎI: 알맞은 것을 고르십시오.") + plain("[1~2] 가장 알맞은 것을 고르십시오.")).ignored).toEqual([]);
+    });
+
+    it("ignores an empty paragraph", () => {
+      expect(withStray(plain("")).ignored).toEqual([]);
+    });
+
+    // A file can start a new block part way through a group: "[3~4] …" typed inside question 3 of
+    // a group headed "[1~2] …" (Cau03_04_MasterTopik). That line was dropped until M7.3.
+    it("uses a block instruction typed inside a question, for it and the rest of the group", () => {
+      const items = parseTopikDocument(
+        doc(
+          heading("Heading2", "연습1") +
+            plain("[1~2] (   )에 들어갈 것을 고르십시오.") +
+            heading("Heading3", "1-1") +
+            answer(1) +
+            table("문제1", ["가", "나", "다", "라"], 1) +
+            heading("Heading3", "1-3") +
+            answer(2) +
+            plain("[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.") +
+            table("문제3", ["가", "나", "다", "라"], 2) +
+            heading("Heading3", "1-4") +
+            answer(3) +
+            table("문제4", ["가", "나", "다", "라"], 3),
+        ),
+      ).exams[0]!.items;
+      expect(items.map((i) => i.instruction)).toEqual([
+        "[1~2] (   )에 들어갈 것을 고르십시오.",
+        "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.",
+        "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.",
+      ]);
+      expect(items.every((i) => i.ignored.length === 0)).toBe(true);
     });
   });
 

@@ -146,8 +146,9 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </p>
       )}
 
+      {/* Two lines since M7.3: the block instruction, then this question's own question line. */}
       {question.instruction && (
-        <p className="font-medium" lang="ko">
+        <p className="font-medium whitespace-pre-line" lang="ko">
           {question.instruction}
         </p>
       )}
