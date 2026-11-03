@@ -25,6 +25,7 @@ import {
 import { topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments, topik_test_items, topik_tests } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
+import { requireAdult } from "../lib/access";
 import { zv } from "../lib/validate";
 import { readInD1Chunks, writeInD1Chunks } from "../lib/d1Chunk";
 import { audioSpan, isContiguousFromOne, lengthOptions, lengthQuestionCount, pointsOf, scoreTest } from "../services/topikTest";
@@ -85,6 +86,49 @@ export const topikTestRoutes = () =>
           };
         }),
       );
+    })
+
+    /**
+     * Clips for the mixed-tape spike (M6.5): a handful of real clips taken from *different* exams,
+     * in question order, so the two-element playback can be tried on a real phone before the rest
+     * of the mixed mode exists. Read-only, writes nothing, creates no sitting. It will go once the
+     * real draw endpoint lands — the point of it is to answer one question early: can a phone play
+     * the second `<audio>` element at all.
+     */
+    .get("/topik/tests/probe-clips", zv("query", z.object({ profile_id: z.string().min(1), count: z.coerce.number().int().min(2).max(8).default(4) })), async (c) => {
+      const { profile_id, count } = c.req.valid("query");
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const db = getDb(c.env);
+
+      const rows = await db
+        .select({
+          exam: topik_questions.exam,
+          number: topik_questions.number,
+          segment_id: topik_questions.segment_id,
+        })
+        .from(topik_questions)
+        .where(and(eq(topik_questions.section, "listening"), readyQuestions("listening")))
+        .orderBy(asc(topik_questions.number), asc(topik_questions.exam));
+
+      // Alternate exams on purpose: a run that happens to stay in one file would prove nothing.
+      const exams = [...new Set(rows.map((r) => r.exam))].sort();
+      const picked = rows.filter((r, _i, all) => {
+        const sameNumber = all.filter((x) => x.number === r.number);
+        const wanted = exams[(r.number - 1) % exams.length];
+        return sameNumber.length > 0 && r.exam === wanted;
+      });
+
+      const chosen = picked.slice(0, count);
+      const clips = await clipsFor(db, chosen.map((r) => r.segment_id).filter((s): s is string => s !== null));
+      return c.json({
+        clips: chosen
+          .map((r) => {
+            const clip = r.segment_id ? clips.get(r.segment_id) : undefined;
+            return clip ? { exam: r.exam, number: r.number, ...clip } : null;
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null),
+      });
     })
 
     // --- Sitting one ---------------------------------------------------------------------------
