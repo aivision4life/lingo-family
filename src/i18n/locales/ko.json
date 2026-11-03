@@ -553,7 +553,8 @@
       "status": {
         "answered": "완료",
         "skipped": "건너뜀",
-        "unanswered": "미완료"
+        "unanswered": "미완료",
+        "given_up": "포기하고 대본을 봄"
       },
       "word": {
         "loadError": "뜻을 불러올 수 없습니다.",
@@ -603,7 +604,15 @@
       "extraBanner": "추가 연습 — 이번 회차는 복습 일정에 반영되지 않습니다.",
       "practiseAnyway": "복습 시점이 아니어도 연습하기",
       "practiseAnywayHint": "답은 기록되지만 복습 일정은 그대로 유지됩니다.",
-      "chosenOption": "{{n}}번 선택됨"
+      "chosenOption": "{{n}}번 선택됨",
+      "groupQuestions": "{{from}}–{{to}}번",
+      "examQuestions": "{{exam}} · {{from}}–{{to}}번",
+      "answeredCount": "{{total}}문항 중 {{answered}}문항 완료",
+      "pairNote": "같은 음원에 대한 두 문항입니다. 순서는 자유이며, 대본은 두 문항을 모두 푼 뒤에 보입니다.",
+      "giveUp": "포기하고 대본 보기",
+      "giveUpHint": "풀지 않은 문항은 잠기고 채점되지 않습니다.",
+      "givenUp": "대본을 보기 위해 이 문항을 포기했습니다.",
+      "giveUpError": "대본을 불러오지 못했습니다. 다시 시도하세요."
     },
     "manage": {
       "title": "TOPIK 문제 관리",

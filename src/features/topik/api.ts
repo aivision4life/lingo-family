@@ -2,6 +2,7 @@ import { z } from "zod";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   topikAttemptResultSchema,
+  topikGroupRevealSchema,
   topikAudioListSchema,
   topikAudioSchema,
   topikBlockListSchema,
@@ -63,7 +64,17 @@ export const useSubmitTopikAttempt = () =>
       duration_ms: number;
       /** false in a practise-anyway session: recorded, but the FSRS schedule is left alone. */
       schedule?: boolean;
+      /** True while another question about the same recording is unanswered: the server then
+       * withholds the transcript and the explanation, which would answer that one too (M7.5). */
+      group_pending?: boolean;
     }) => api("POST", "/topik/attempts", topikAttemptResultSchema, body),
+  });
+
+/** Giving up on a group to read its transcript instead (M7.5). Writes nothing on the server. */
+export const useRevealTopikGroup = () =>
+  useMutation({
+    mutationFn: ({ question_id, profile_id }: { question_id: string; profile_id: string }) =>
+      api("GET", `/topik/questions/${question_id}/reveal?profile_id=${profile_id}`, topikGroupRevealSchema),
   });
 
 /** Polls one question's current vocab/explanation (M6.4-ish): used while a practice session's

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TopikAttemptResult } from "@shared/topik";
-import { markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplanation } from "./sessionState";
+import { allAnswered, anyGivenUp, giveUp, markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplanation } from "./sessionState";
 
 const result = (over: Partial<TopikAttemptResult> = {}): TopikAttemptResult => ({
   is_correct: true,
@@ -86,5 +86,48 @@ describe("summarize", () => {
 
   it("is all zero for an empty session state", () => {
     expect(summarize(["q1", "q2"], {})).toEqual({ total: 2, answered: 0, correct: 0, skipped: 0 });
+  });
+});
+
+// M7.5: reading the recording's words is paid for with the right to answer the questions about it.
+describe("giving up on a group", () => {
+  it("locks every unanswered question of the group", () => {
+    const states = giveUp({}, ["q21", "q22"]);
+    expect([statusOf(states, "q21"), statusOf(states, "q22")]).toEqual(["given_up", "given_up"]);
+  });
+
+  it("leaves a question that was already answered alone", () => {
+    const answered = recordAnswer({}, "q21", 2, result());
+    const states = giveUp(answered, ["q21", "q22"]);
+    expect([statusOf(states, "q21"), statusOf(states, "q22")]).toEqual(["answered", "given_up"]);
+  });
+
+  // The hole this closes: without it, "Câu trước" after reading the transcript would still take an
+  // answer, and FSRS would record recall that never happened.
+  it("refuses an answer afterwards", () => {
+    const states = recordAnswer(giveUp({}, ["q21"]), "q21", 3, result());
+    expect(statusOf(states, "q21")).toBe("given_up");
+  });
+
+  it("still lets an ordinary skip be answered later", () => {
+    const states = recordAnswer(markSkippedIfUnanswered({}, "q21"), "q21", 3, result());
+    expect(statusOf(states, "q21")).toBe("answered");
+  });
+
+  it("counts as skipped in the tally, never as answered", () => {
+    expect(summarize(["q21", "q22"], giveUp({}, ["q21", "q22"]))).toMatchObject({ answered: 0, correct: 0, skipped: 2 });
+  });
+});
+
+describe("when a group may be read", () => {
+  it("only once every question in it has been answered", () => {
+    const one = recordAnswer({}, "q21", 1, result());
+    expect(allAnswered(one, ["q21", "q22"])).toBe(false);
+    expect(allAnswered(recordAnswer(one, "q22", 1, result()), ["q21", "q22"])).toBe(true);
+  });
+
+  it("or once it has been given up on", () => {
+    expect(anyGivenUp(giveUp({}, ["q22"]), ["q21", "q22"])).toBe(true);
+    expect(anyGivenUp(markSkippedIfUnanswered({}, "q22"), ["q21", "q22"])).toBe(false);
   });
 });

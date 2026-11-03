@@ -553,7 +553,8 @@
       "status": {
         "answered": "Answered",
         "skipped": "Skipped",
-        "unanswered": "Not done"
+        "unanswered": "Not done",
+        "given_up": "given up to read the transcript"
       },
       "word": {
         "loadError": "Could not load the meaning.",
@@ -603,7 +604,15 @@
       "extraBanner": "Extra practice — this session does not change the review schedule.",
       "practiseAnyway": "Practise anyway",
       "practiseAnywayHint": "Your answers are still recorded, but the review schedule stays as it is.",
-      "chosenOption": "Chose {{n}}"
+      "chosenOption": "Chose {{n}}",
+      "groupQuestions": "Questions {{from}}–{{to}}",
+      "examQuestions": "{{exam}} · questions {{from}}–{{to}}",
+      "answeredCount": "{{answered}}/{{total}} questions answered",
+      "pairNote": "Both questions are about the same recording. Answer them in any order; the transcript appears once both are done.",
+      "giveUp": "Give up and read the transcript",
+      "giveUpHint": "The unanswered questions are locked and not scored.",
+      "givenUp": "You gave this question up to read the transcript.",
+      "giveUpError": "Could not load the transcript. Try again."
     },
     "manage": {
       "title": "Manage TOPIK questions",
