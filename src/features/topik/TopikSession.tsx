@@ -176,7 +176,7 @@ export function TopikSession({
       </div>
 
       {/* One player for the whole screen: a pair is one recording, played once. */}
-      {group.questions[0]?.audio && <TopikClipPlayer clip={group.questions[0].audio} questionId={group.group_id} questionCount={group.questions.length} />}
+      {group.questions[0]?.audio && <TopikClipPlayer clip={group.questions[0].audio} questionId={group.group_id} />}
       {group.questions.length > 1 && <p className="text-sm text-muted-foreground">{t("topik.practice.pairNote")}</p>}
 
       {group.questions.map((question) => (
