@@ -12,16 +12,17 @@ import { practiceEnd } from "./segmentEdit";
  *
  * Playback stops shortly after the talking rather than at the exam's own boundary: the paper leaves
  * ~18 seconds to answer, and in self-paced practice that is 18 seconds of dead air — the learner
- * takes as long as they like anyway. The real boundary is kept for the timed mock test.
+ * takes as long as they like anyway. The real boundary is kept for the timed mock test. A clip that
+ * carries two questions is the exception and plays whole; `practiceEnd` says why.
  *
  * Replays are unlimited on purpose. This is practice, not the exam; a learner who needs to hear a
  * dialogue four times is doing exactly what practice is for.
  */
-export function TopikClipPlayer({ clip, questionId }: { clip: TopikClip; questionId: string }) {
+export function TopikClipPlayer({ clip, questionId, questionCount = 1 }: { clip: TopikClip; questionId: string; questionCount?: number }) {
   const { t } = useTranslation();
   const { playingKey, rate, setRate } = useAudioPlayer();
   const playing = playingKey !== null;
-  const play = () => playSegment(clip.audio_key, clip.start_ms, practiceEnd(clip));
+  const play = () => playSegment(clip.audio_key, clip.start_ms, practiceEnd(clip, questionCount));
 
   // Each question starts by playing its clip once, and leaving the question stops the sound —
   // otherwise the previous clip keeps talking over the next question.

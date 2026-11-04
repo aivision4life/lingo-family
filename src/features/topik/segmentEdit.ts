@@ -64,9 +64,18 @@ export const canApprove = (segments: readonly TopikSegment[], durationMs: number
  * Where "play this clip" should stop in practice: at the end of the talking plus a short pause, so
  * a paper that leaves 18 seconds for answering does not play 18 seconds of silence. The real
  * boundary is kept in the data for the timed mock test, which must replay the paper's own pacing.
+ *
+ * **A clip that carries more than one question is played whole** (M7.6). From question 21 the
+ * narrator announces the second question — "이십이 번" — *after* the first one's ~20 second answer
+ * pause, and the detector that wrote `speech_end_ms` skipped that one-second announcement as too
+ * short to be speech (`mergeShortSegments`). Stopping at `speech_end_ms + 5s` therefore cut every
+ * pair ~15 seconds before its second question was ever announced: all 15 pairs of the measured
+ * paper, and nothing else. Playing to the exam's own boundary costs some silence at the end and
+ * cannot cut anything off.
  */
 export const PRACTICE_TAIL_MS = 5_000;
-export const practiceEnd = (s: Pick<TopikSegment, "speech_end_ms" | "end_ms">) => Math.min(s.speech_end_ms + PRACTICE_TAIL_MS, s.end_ms);
+export const practiceEnd = (s: Pick<TopikSegment, "speech_end_ms" | "end_ms">, questionCount = 1) =>
+  questionCount > 1 ? s.end_ms : Math.min(s.speech_end_ms + PRACTICE_TAIL_MS, s.end_ms);
 
 /** `m:ss.s` — one decimal, which is as precise as a boundary can be judged by ear. */
 export function formatDuration(ms: number): string {

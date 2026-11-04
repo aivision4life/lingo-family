@@ -102,6 +102,17 @@ describe("practiceEnd", () => {
   it("never plays past the clip's own end", () => {
     expect(practiceEnd({ speech_end_ms: 30_000, end_ms: 31_000 })).toBe(31_000);
   });
+
+  // M7.6: a clip carrying two questions announces the second one ("이십이 번") only after the
+  // first question's ~20 second answer pause, and the detector skipped that one-second
+  // announcement when it wrote `speech_end_ms` (see `mergeShortSegments`). Stopping at
+  // speech_end + 5s cut it off in all 15 pairs of the measured paper — the learner waited for a
+  // question 22 that was never announced.
+  it("plays a clip that carries two questions whole", () => {
+    const pair = { speech_end_ms: 127_900, end_ms: 174_500 };
+    expect(practiceEnd(pair, 2)).toBe(174_500);
+    expect(practiceEnd(pair, 1)).toBe(132_900);
+  });
 });
 
 describe("formatDuration", () => {
