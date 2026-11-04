@@ -5,6 +5,7 @@ import {
   examFromAudioName,
   expectedSegmentCount,
   formatMs,
+  lastSpeechEnd,
   mergeShortSegments,
   parseSilenceLog,
   pickIntroEnd,
@@ -139,9 +140,10 @@ describe("mergeShortSegments", () => {
     const { segments: out, merged } = mergeShortSegments(segments, 5_000);
     expect(merged).toBe(1);
     expect(out).toEqual([
-      // The dialogue's own speech end is kept, so practice replays the talking and not the gap;
-      // end_ms stretches over the announcement, which the timed mock test needs.
-      { idx: 1, start_ms: 0, speech_end_ms: 30_000, end_ms: 64_000 },
+      // M7.6: speech_end moves to the end of the announcement (46.1s), not the dialogue's own
+      // 30s — the announcement is talking, and practice plays to speech_end + 5s. end_ms
+      // stretches over it either way, which the timed mock test needs.
+      { idx: 1, start_ms: 0, speech_end_ms: 46_100, end_ms: 64_000 },
       { idx: 2, start_ms: 64_000, speech_end_ms: 100_000, end_ms: 115_000 },
     ]);
   });
@@ -412,5 +414,30 @@ describe("planLinks", () => {
   });
   it("refuses an exam with no questions in the Word files at all", () => {
     expect(planLinks({ questions: [], segmentIdxs: idxs(36), linked: new Map(), existing: new Set() }).ok).toBe(false);
+  });
+});
+
+describe("lastSpeechEnd", () => {
+  // The shape of a real pair clip: dialogue, 20s answer pause, 1.1s announcement, 25s pause.
+  const silences = [
+    { start_ms: 1_008_000, end_ms: 1_009_200 },
+    { start_ms: 1_136_100, end_ms: 1_156_200 },
+    { start_ms: 1_157_300, end_ms: 1_182_700 },
+  ];
+
+  it("finds the announcement after the long pause, not the dialogue before it", () => {
+    expect(lastSpeechEnd(silences, 1_008_158, 1_182_682)).toBe(1_157_300);
+  });
+
+  it("returns the clip's end when the talking runs right up to it", () => {
+    expect(lastSpeechEnd([{ start_ms: 0, end_ms: 500 }], 0, 10_000)).toBe(10_000);
+  });
+
+  it("ignores silence outside the clip", () => {
+    expect(lastSpeechEnd([{ start_ms: 0, end_ms: 20_000 }], 5_000, 30_000)).toBe(30_000);
+  });
+
+  it("is null for a clip that is silent throughout", () => {
+    expect(lastSpeechEnd([{ start_ms: 0, end_ms: 60_000 }], 10_000, 50_000)).toBeNull();
   });
 });

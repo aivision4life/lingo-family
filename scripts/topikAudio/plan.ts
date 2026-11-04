@@ -108,9 +108,15 @@ export function silenceHistogram(silences: readonly Silence[]): { label: string;
  * clips of 14s or more. Replaying "오십 번" to a learner is useless — both questions of a pair are
  * asked about the same dialogue.
  *
- * The merged clip keeps the dialogue's own `start_ms`/`speech_end_ms`, so practice still plays the
- * talking and nothing else, while `end_ms` stretches to where the next real clip begins, which is
- * what the timed mock test needs. The merge is always reported, and the exam stays unverified.
+ * The merged clip keeps the dialogue's own `start_ms`, while `end_ms` stretches to where the next
+ * real clip begins (what the timed mock test needs) and **`speech_end_ms` moves to the end of the
+ * announcement** — because the announcement is talking, and it is the only thing that tells the
+ * learner question 22 has begun (M7.6).
+ *
+ * Keeping the dialogue's own `speech_end_ms` here was the original rule, and it was wrong: practice
+ * plays to `speech_end_ms + 5s`, so every pair stopped ~15 seconds before "이십이 번" was said and
+ * the second question was never announced at all. Measured on 35회: all 15 pair clips, none of the
+ * 20 single ones. The merge is always reported, and the exam stays unverified.
  */
 export function mergeShortSegments(segments: readonly Segment[], minSpeechMs: number): { segments: Segment[]; merged: number } {
   const out: Segment[] = [];
@@ -120,12 +126,42 @@ export function mergeShortSegments(segments: readonly Segment[], minSpeechMs: nu
     // A short *first* segment has nothing to merge into; it is kept so it surfaces as a mismatch.
     if (previous && s.speech_end_ms - s.start_ms < minSpeechMs) {
       previous.end_ms = s.end_ms;
+      previous.speech_end_ms = s.speech_end_ms;
       merged += 1;
       continue;
     }
     out.push({ ...s, idx: out.length + 1 });
   }
   return { segments: out, merged };
+}
+
+/**
+ * Where the talking really stops inside an existing clip: the end of the **last** speech run in
+ * `[start_ms, end_ms)`, however short it is (M7.6).
+ *
+ * Used to repair clips that were cut before `mergeShortSegments` carried the announcement's
+ * `speech_end_ms` over. It works from the clip's own boundaries rather than re-cutting the file,
+ * so boundaries a human has reviewed and adjusted by hand are never touched.
+ *
+ * Returns null when the clip holds no speech at all (a silence-only clip, which should not exist)
+ * — the caller leaves such a clip alone rather than guessing.
+ */
+export function lastSpeechEnd(silences: readonly Silence[], startMs: number, endMs: number): number | null {
+  // Silence inside the clip, clipped to it: the gaps between these are the speech.
+  const inside = silences
+    .map((s) => ({ start_ms: Math.max(s.start_ms, startMs), end_ms: Math.min(s.end_ms, endMs) }))
+    .filter((s) => s.end_ms > s.start_ms && s.start_ms < endMs && s.end_ms > startMs)
+    .sort((a, b) => a.start_ms - b.start_ms);
+
+  let speechEnd: number | null = null;
+  let cursor = startMs;
+  for (const silence of inside) {
+    if (silence.start_ms > cursor) speechEnd = silence.start_ms;
+    cursor = Math.max(cursor, silence.end_ms);
+  }
+  // Speech that runs to the clip's own end (no trailing silence).
+  if (endMs > cursor) speechEnd = endMs;
+  return speechEnd;
 }
 
 /**
