@@ -63,6 +63,59 @@ export function verifiedAfterOverwrite(existingVerified: boolean, keepVerified: 
   return keepVerified ? existingVerified : false;
 }
 
+export type CoverageQuestion = { exam: string; number: number };
+
+/**
+ * Groups that hold fewer questions than the file's own name asks for (M7.8).
+ *
+ * The parser counts `Heading3` labels and nothing else: it has no idea that a file called
+ * `Cau16_18` promises three questions per exam, so a group that was only typed up to question 17
+ * parses cleanly, imports cleanly and goes unnoticed — until something else trips over the hole
+ * (the mock test needs numbers running from 1, and simply offers a shorter paper). The file name
+ * is the one place that states the intent, so this compares the two and says so out loud.
+ *
+ * A **warning**, never an error: typing up a paper over several evenings is the normal way to work,
+ * and a half-finished group must still import.
+ */
+export function shortGroups(
+  questions: readonly CoverageQuestion[],
+  start: number,
+  end: number,
+): { exam: string; have: number; want: number; missing: number[] }[] {
+  const want = end - start + 1;
+  const byExam = new Map<string, Set<number>>();
+  for (const q of questions) byExam.set(q.exam, (byExam.get(q.exam) ?? new Set()).add(q.number));
+
+  const out: { exam: string; have: number; want: number; missing: number[] }[] = [];
+  for (const [exam, numbers] of byExam) {
+    if (numbers.size >= want) continue;
+    const missing = [];
+    for (let n = start; n <= end; n += 1) if (!numbers.has(n)) missing.push(n);
+    out.push({ exam, have: numbers.size, want, missing });
+  }
+  return out;
+}
+
+/**
+ * Per exam: how many questions exist, and **how far the numbering runs unbroken from 1** — which
+ * is exactly how many a mock test of that paper can use (`isContiguousFromOne`). A hole at question
+ * 5 makes a 14-question paper a 4-question one, and nothing else in the pipeline says so.
+ *
+ * This also catches what `shortGroups` cannot: a whole exam missing from one file leaves no short
+ * group to find, because the group is not there at all.
+ */
+export function examCoverage(questions: readonly CoverageQuestion[]): { exam: string; count: number; usable: number }[] {
+  const byExam = new Map<string, Set<number>>();
+  for (const q of questions) byExam.set(q.exam, (byExam.get(q.exam) ?? new Set()).add(q.number));
+  return [...byExam.entries()]
+    .map(([exam, numbers]) => {
+      let usable = 0;
+      while (numbers.has(usable + 1)) usable += 1;
+      return { exam, count: numbers.size, usable };
+    })
+    .sort((a, b) => a.exam.localeCompare(b.exam));
+}
+
 /** Which source files a run is limited to; `null` means "no limit on this axis". */
 export type ImportFilter = { section: TopikSection | null; source: string | null };
 

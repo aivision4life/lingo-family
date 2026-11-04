@@ -46,15 +46,17 @@ import { getPlatformProxy } from "wrangler";
 import type { TopikSection } from "../../shared/enums";
 import { stripUnderline, type TopikOptions } from "../../shared/topik";
 import { imageInfo } from "../../worker/lib/imageInfo";
-import { buildImportDraft, type DraftQuestion } from "../../worker/services/topikImport";
+import { buildImportDraft, parseTopikFileName, type DraftQuestion } from "../../worker/services/topikImport";
 import {
   checkImageBytes,
   checkQuestionImages,
+  examCoverage,
   fileMatchesFilter,
   filterLabel,
   forceScopeProblem,
   imageRefsOf,
   parseSectionFlag,
+  shortGroups,
   verifiedAfterOverwrite,
   type ImportFilter,
   type MediaByRid,
@@ -253,6 +255,29 @@ async function main() {
   }
   console.log(`\nTotal (${filterLabel(filter)}): ${totalOk} question(s) ready to import, ${totalErrors} error(s) (not imported).`);
   console.log(`${totalWithImage} question(s) have at least one image (${totalImageRefs} image reference(s) will be uploaded to R2).`);
+
+  // M7.8: what parses cleanly can still be half a paper. Gathered after every file, because one
+  // exam's questions are spread over several of them.
+  const holes = parsed.flatMap((f) => {
+    const fn = parseTopikFileName(f.fileName);
+    if (!fn) return [];
+    return shortGroups(f.questions, fn.start, fn.end).map((g) => ({ file: f.fileName, ...g }));
+  });
+  console.log(`\n=== Nhóm thiếu câu (${holes.length}) ===`);
+  if (holes.length === 0) console.log("  (không có — mọi nhóm đủ số câu mà dải trong tên file đòi)");
+  for (const h of holes) {
+    console.log(`  ${h.file} — nhóm ${h.exam}: có ${h.have} câu, dải đòi ${h.want}; thiếu câu ${h.missing.join(", ")}`);
+  }
+
+  // Per exam, across every file of this run: how much of it a mock test of the original paper can
+  // use, which is the numbering running unbroken from 1 (`isContiguousFromOne`).
+  const coverage = examCoverage(parsed.flatMap((f) => f.questions));
+  console.log(`\n=== Độ phủ theo đề (${coverage.length}) ===`);
+  console.log("  đề                       có    mini test dùng được (chạy liền từ 1)");
+  for (const c of coverage) {
+    const note = c.usable < c.count ? `   ← hổng sau câu ${c.usable}` : "";
+    console.log(`  ${c.exam.padEnd(24)} ${String(c.count).padStart(3)}    ${String(c.usable).padStart(3)}${note}`);
+  }
 
   if (!apply) {
     console.log("\nDry run only. Check the report above, then run again with --apply.");

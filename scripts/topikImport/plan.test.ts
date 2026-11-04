@@ -5,6 +5,8 @@ import { FAKE_WEBP } from "../../worker/test/fakeUpload";
 import {
   checkImageBytes,
   checkQuestionImages,
+  examCoverage,
+  shortGroups,
   fileMatchesFilter,
   filterLabel,
   forceScopeProblem,
@@ -223,5 +225,51 @@ describe("filterLabel", () => {
 
   it("names both axes when both are set", () => {
     expect(filterLabel({ section: "listening", source: "OfficialTest" })).toBe("section=listening, source=OfficialTest");
+  });
+});
+
+// M7.8: the parser counts Heading3 labels and nothing else, so a group typed up only as far as
+// question 17 of a 16-18 file parses cleanly and the hole goes unnoticed. The file name is the only
+// place the intent is written down.
+describe("shortGroups", () => {
+  const q = (exam: string, number: number) => ({ exam, number });
+
+  it("names the group, what it has, what the file name asks for, and which number is missing", () => {
+    const questions = [q("A-60회", 16), q("A-60회", 17), q("A-64회", 16), q("A-64회", 17), q("A-64회", 18)];
+    expect(shortGroups(questions, 16, 18)).toEqual([{ exam: "A-60회", have: 2, want: 3, missing: [18] }]);
+  });
+
+  it("says nothing when every group is complete", () => {
+    expect(shortGroups([q("A", 1), q("A", 2), q("B", 1), q("B", 2)], 1, 2)).toEqual([]);
+  });
+
+  it("handles a single-number file, where a group is one question", () => {
+    expect(shortGroups([q("A", 9)], 9, 9)).toEqual([]);
+  });
+
+  it("lists every missing number, not just the last", () => {
+    expect(shortGroups([q("A", 2)], 1, 4)).toEqual([{ exam: "A", have: 1, want: 4, missing: [1, 3, 4] }]);
+  });
+});
+
+describe("examCoverage", () => {
+  const q = (exam: string, number: number) => ({ exam, number });
+
+  it("reports how far the numbering runs unbroken from 1 — what a mock test can use", () => {
+    // 12 questions, but a hole at 5 means a paper of this exam can only be sat as 4 questions.
+    const questions = [1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15, 16].map((n) => q("A", n));
+    expect(examCoverage(questions)).toEqual([{ exam: "A", count: 12, usable: 4 }]);
+  });
+
+  it("is zero when question 1 itself is missing", () => {
+    expect(examCoverage([q("A", 2), q("A", 3)])).toEqual([{ exam: "A", count: 2, usable: 0 }]);
+  });
+
+  it("counts a complete paper in full", () => {
+    expect(examCoverage([q("A", 1), q("A", 2), q("A", 3)])).toEqual([{ exam: "A", count: 3, usable: 3 }]);
+  });
+
+  it("keeps the exams apart and in a stable order", () => {
+    expect(examCoverage([q("B", 1), q("A", 1), q("A", 2)]).map((e) => e.exam)).toEqual(["A", "B"]);
   });
 });
