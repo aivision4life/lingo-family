@@ -39,25 +39,20 @@ export type DraftQuestion = {
 };
 
 /**
- * TOPIK II reading's question numbers 1-4 are a fixed, standardized format across every real exam
- * and every practice-sheet source (1-2: fill in the blank; 3-4: choose the closest meaning to an
- * underlined phrase) — the block and instruction text never actually vary by file. Overriding both
- * from the number alone, instead of trusting whatever the source file's heading/instruction
- * paragraph says, fixes two real problems at once: a legacy merged "Cau01_04" file (one file
- * covering both pairs at once, `block` would otherwise be the file-wide "1~4" for all four) needs
- * to split into "1~2"/"3~4" like every other file; and the "[3~4] ..." instruction, when the file
- * has it at all, is written once per *file* (not once per round) in the middle of question 3's own
- * body, which this parser does not otherwise recognize as an instruction — and at least one real
- * source file (Yonsei) never has the right text in the first place (a leftover copy-paste of the
- * "[1~2]..." instruction). A no-op for a properly single-pair file: its own number/block already
- * agree with these constants.
+ * Reading questions 1-4 are two different tasks (1-2: fill in the blank; 3-4: choose the closest
+ * meaning to an underlined phrase), so they are two different blocks — but one real source file
+ * covers all four at once ("Cau01_04_8DeOfficial"), and `block` otherwise comes from the file name
+ * and would be the file-wide "1~4" for every one of them. The number decides it instead.
+ *
+ * There used to be a twin of this for the instruction text (M7.3-era), because several files
+ * carried the wrong "[1~2] …" line on their 3-4 questions or no line at all. That is now fixed in
+ * the Word files themselves (M7.7), so the patch is gone: the instruction comes from the file, and
+ * the file alone. Verified against production before removing it — every question 1-12 carried the
+ * instruction of its own block, and a re-import changed nothing.
+ *
+ * Reading only: in the listening paper those same numbers are a completely different task.
  */
-// Reading only: in the listening paper those same numbers are a completely different task.
 const FIXED_NUMBER_BLOCK: Record<number, string> = { 1: "1~2", 2: "1~2", 3: "3~4", 4: "3~4" };
-const FIXED_NUMBER_INSTRUCTION: Record<number, string> = {
-  3: "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.",
-  4: "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.",
-};
 
 export type ImportDraft = {
   fileName: string;
@@ -118,7 +113,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       // answer label on a listening question, where the label is what counts).
       notes.push(...item.warnings);
       const warning = notes.length > 0 ? notes.join("; ") : null;
-      const instruction = (readingFix ? FIXED_NUMBER_INSTRUCTION[number] : undefined) ?? item.instruction;
+      const instruction = item.instruction;
       for (const note of notes) warnings.push(`${examLabel} #${number}: ${note}`);
 
       // Nothing typed into a question may be thrown away in silence (M7.3). Three separate losses

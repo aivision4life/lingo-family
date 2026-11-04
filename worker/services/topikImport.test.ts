@@ -239,14 +239,21 @@ describe("buildImportDraft", () => {
     expect(draft.questions[0]!.correct_option).toBe(3);
   });
 
-  it("splits a legacy merged block ('1~4', one file covering both pairs) into '1~2'/'3~4' by question number, and gives 3/4 the fixed 문항3-4 instruction regardless of whatever the file itself says (M6.5-ish: real files either never repeat it per round, or — Yonsei — never have the right text at all)", () => {
+  // The block still comes from the question number: one real file covers questions 1-4 at once, so
+  // its file name says "1~4" while the two pairs are two different tasks and two different blocks.
+  it("splits a legacy merged block ('1~4', one file covering both pairs) into '1~2'/'3~4' by question number", () => {
     const xml = doc(
       heading("Heading1", "유형1: 문항 1~4") +
         heading("Heading2", "연습1") +
         plain("[1~2] (   )에 들어갈 가장 알맞은 것을 고르십시오.") +
         question("1-1", 1) +
         question("1-2", 2) +
-        question("1-3", 3) +
+        // Inside question 3's own body, which is where it has to go: a paragraph between two
+        // questions belongs to the one before it, and the line would then apply from question 2.
+        heading("Heading3", "1-3") +
+        answer(3) +
+        plain("[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오.") +
+        table("stem 1-3", ["a", "b", "c", "d"], 3) +
         question("1-4", 4),
     );
     const draft = buildImportDraft("TOPIK_Reading_Cau01_04_8DeOfficial_VERSION1.docx", xml);
@@ -254,15 +261,23 @@ describe("buildImportDraft", () => {
     expect(draft.questions.map((q) => [q.number, q.block, q.instruction])).toEqual([
       [1, "1~2", "[1~2] (   )에 들어갈 가장 알맞은 것을 고르십시오."],
       [2, "1~2", "[1~2] (   )에 들어갈 가장 알맞은 것을 고르십시오."],
+      // M7.7: the instruction is the file's own, not a patch keyed on the number. The "[3~4] …"
+      // line typed inside question 3 applies to it and the rest of the group (M7.3's rule), which
+      // is exactly how the real files are now written.
       [3, "3~4", "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오."],
       [4, "3~4", "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오."],
     ]);
   });
 
-  it("the fixed 3-4 instruction applies the same way to an already-single-pair file (future imports), not just the legacy merged one", () => {
+  // M7.7: the patch that used to force this text is gone, so a file that says nothing gets nothing
+  // — silence in the file is now visible in the app instead of being papered over.
+  it("leaves 3-4 without an instruction when the file carries none", () => {
     const xml = doc(heading("Heading1", "유형1: 문항 3~4") + heading("Heading2", "연습1") + question("1-3", 1) + question("1-4", 2));
     const draft = buildImportDraft("TOPIK_Reading_Cau03_04_Yonsei_VERSION1.docx", xml);
-    expect(draft.questions.every((q) => q.instruction === "[3~4] 다음 밑줄 친 부분과 의미가 비슷한 것을 고르십시오." && q.block === "3~4")).toBe(true);
+    expect(draft.questions.map((q) => [q.number, q.block, q.instruction])).toEqual([
+      [3, "3~4", null],
+      [4, "3~4", null],
+    ]);
   });
 
   it("does not touch the block/instruction of a question outside 1-4 (e.g. 문항 9)", () => {
