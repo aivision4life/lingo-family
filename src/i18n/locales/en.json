@@ -735,6 +735,7 @@
     "blockWaiting": "{{count}} waiting to come back · the first one {{when}}",
     "test": {
       "title": "Mock test",
+      "sectionLabel": "Section",
       "intro": "Sit a whole paper as in the real exam: the tape runs straight through, no replay, no seeking.",
       "noPapers": "No paper has both its questions and its clips approved yet.",
       "readyCount": "{{count}} question(s) ready",
@@ -787,7 +788,20 @@
       "errorBankShort": "The bank has no question {{position}}, so a mixed paper cannot be filled. Add more questions and try again.",
       "atQuestions": "Questions {{from}}–{{to}} of {{total}}",
       "groupQuestions": "Questions {{from}}–{{to}}",
-      "pairNote": "Both questions are about the same recording, which plays once."
+      "pairNote": "Both questions are about the same recording, which plays once.",
+      "gridLabel": "Question list",
+      "gridAnswered": "Question {{number}}, answered",
+      "gridUnanswered": "Question {{number}}, not answered",
+      "readyTitle": "Ready to start?",
+      "readyBody": "{{count}} questions · {{time}}. The clock starts only when you press Start.",
+      "startPaper": "Start the paper",
+      "lastMinutes": "Less than {{minutes}} minutes left.",
+      "submit": "Submit",
+      "submitTitle": "Submit the paper?",
+      "submitBody": "It is marked straight away and cannot be changed.",
+      "submitUnanswered": "{{count}} questions are still blank. Submit anyway?",
+      "submitConfirm": "Submit",
+      "submitCancel": "Keep working"
     }
   }
 }

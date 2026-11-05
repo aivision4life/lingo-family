@@ -735,6 +735,7 @@
     "blockWaiting": "{{count}}문항 복습 대기 · 가장 빠른 문항 {{when}}",
     "test": {
       "title": "모의고사",
+      "sectionLabel": "영역",
       "intro": "실제 시험처럼 한 세트를 끝까지: 음원은 계속 재생되고 다시 듣기도 되감기도 없습니다.",
       "noPapers": "문항과 구간이 모두 승인된 시험이 아직 없습니다.",
       "readyCount": "{{count}}문항 준비됨",
@@ -787,7 +788,20 @@
       "errorBankShort": "{{position}}번 문항이 없어 세트를 만들 수 없습니다. 문항을 더 넣고 다시 시도하세요.",
       "atQuestions": "{{from}}–{{to}}번 / 총 {{total}}문항",
       "groupQuestions": "{{from}}–{{to}}번",
-      "pairNote": "같은 음원에 대한 두 문항이며, 음원은 한 번만 재생됩니다."
+      "pairNote": "같은 음원에 대한 두 문항이며, 음원은 한 번만 재생됩니다.",
+      "gridLabel": "문항 목록",
+      "gridAnswered": "{{number}}번, 완료",
+      "gridUnanswered": "{{number}}번, 미완료",
+      "readyTitle": "시작할 준비가 되었습니까?",
+      "readyBody": "{{count}}문항 · {{time}}. 시작을 누른 뒤에 시간이 흐릅니다.",
+      "startPaper": "시험 시작",
+      "lastMinutes": "{{minutes}}분 미만 남았습니다.",
+      "submit": "제출",
+      "submitTitle": "제출할까요?",
+      "submitBody": "바로 채점되며 다시 고칠 수 없습니다.",
+      "submitUnanswered": "{{count}}문항이 비어 있습니다. 그대로 제출할까요?",
+      "submitConfirm": "제출",
+      "submitCancel": "계속 풀기"
     }
   }
 }

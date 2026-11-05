@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { useAbandonTopikTest, useFinishTopikTest, useSaveTopikTestAnswer } from "./api";
 import { answerAcknowledged, answerGiven, answeredCount, emptyQueue, unsentAnswers, type AnswerQueue } from "./answerQueue";
 import { groupNumbers, groupQuestions } from "./groups";
+import { isInLastMinutes, READING_WARNING_MS } from "./readingClock";
+import { TopikTestGrid } from "./TopikTestGrid";
 import { formatRemaining, isParked, positionAt, progressFraction, remainingMs, shownPosition, type ParkedAt } from "./testClock";
 import { TopikTestQuestionCard } from "./TopikTestQuestionCard";
 import { useSittingTape } from "./useSittingTape";
@@ -48,6 +50,7 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   // Where the learner went back to, and where the tape was when they did (see `shownPosition`).
   const [park, setPark] = useState<ParkedAt>(null);
   const [confirmExit, setConfirmExit] = useState(false);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
   const submitted = useRef(false);
   /** Set the moment the learner confirms leaving, so the blocker stops blocking that very exit. */
   const leaving = useRef(false);
@@ -129,6 +132,10 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   const answered = answeredCount(queue);
   const left = remainingMs(tape.positionMs, tape.endMs);
   const mixed = test.kind === "mixed";
+  // A reading paper is flipped through freely and ends by its own clock, so it gets the question
+  // grid and a Submit button; the listening paper keeps exactly what it had (M7.11).
+  const reading = test.section === "reading";
+  const unanswered = test.question_count - answered;
 
   return (
     <div className="flex flex-col gap-4">
@@ -146,6 +153,22 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </div>
         <span className="text-xs text-muted-foreground">{t("topik.test.answeredCount", { answered, total: test.question_count })}</span>
       </div>
+
+      {reading && (
+        <TopikTestGrid
+          positions={test.questions.map((q) => q.position)}
+          current={current}
+          isAnswered={(position) => queue.answers[position] !== undefined}
+          onJump={goTo}
+        />
+      )}
+
+      {/* The clock is nearly out: a banner that stays, not a toast that flashes past. */}
+      {reading && !tape.needsStart && isInLastMinutes(left) && (
+        <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm font-medium dark:bg-amber-950/40">
+          {t("topik.test.lastMinutes", { minutes: READING_WARNING_MS / 60_000 })}
+        </p>
+      )}
 
       {/* Which paper this question came from. Only in a mixed sitting, where it is genuinely new
           information — on an original paper it is the same label on all 50 and just noise. */}
@@ -176,7 +199,9 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </Button>
         {/* Always an outline button, never a ghost one: this is the way back to the paper, and on a
             phone a ghost button between two outlined ones reads as decoration. */}
-        {parked && (
+        {/* Reading has no tape to follow: the grid is how you move, and there is nothing to come
+            back to. */}
+        {parked && !reading && (
           <Button variant="outline" onClick={() => setPark(null)}>
             {t("topik.test.followTape")}
           </Button>
@@ -194,9 +219,18 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
           gesture asked for, and the second `<audio>` element is unlocked in that same tap. */}
       {tape.needsStart && (
         <div className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-accent/40 p-3">
-          <p className="text-sm">{t("topik.test.startNote")}</p>
+          {reading ? (
+            <>
+              <p className="font-medium">{t("topik.test.readyTitle")}</p>
+              <p className="text-sm">
+                {t("topik.test.readyBody", { count: test.question_count, time: formatRemaining(tape.endMs) })}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm">{t("topik.test.startNote")}</p>
+          )}
           <Button type="button" onClick={tape.start}>
-            {t("topik.test.startTape")}
+            {t(reading ? "topik.test.startPaper" : "topik.test.startTape")}
           </Button>
         </div>
       )}
@@ -207,6 +241,12 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
           {tape.playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
           {t(tape.playing ? "topik.test.pause" : "topik.test.resume")}
         </Button>
+        {/* Sitting at home, there is no reason to wait out the clock once the paper is done. */}
+        {reading && !tape.needsStart && (
+          <Button onClick={() => setConfirmSubmit(true)} disabled={finish.isPending}>
+            {t("topik.test.submit")}
+          </Button>
+        )}
         <Button variant="ghost" onClick={() => setConfirmExit(true)}>
           {t("topik.test.exit")}
         </Button>
@@ -221,6 +261,21 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
           <pre className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 whitespace-pre-wrap">{tape.log.join("\n")}</pre>
         </details>
       )}
+
+      <AlertDialog open={confirmSubmit} onOpenChange={(open) => !open && setConfirmSubmit(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("topik.test.submitTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {unanswered > 0 ? t("topik.test.submitUnanswered", { count: unanswered }) : t("topik.test.submitBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("topik.test.submitCancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={submit}>{t("topik.test.submitConfirm")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={showExitDialog}

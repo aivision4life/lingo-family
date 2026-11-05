@@ -735,6 +735,7 @@
     "blockWaiting": "{{count}} câu đang chờ ôn lại · câu gần nhất {{when}}",
     "test": {
       "title": "Thi thử",
+      "sectionLabel": "Phần thi",
       "intro": "Làm trọn một đề như thi thật: băng chạy liên tục, không nghe lại, không tua.",
       "noPapers": "Chưa có đề nào duyệt xong cả câu hỏi lẫn mốc đoạn.",
       "readyCount": "{{count}} câu sẵn sàng",
@@ -787,7 +788,20 @@
       "errorBankShort": "Ngân hàng chưa có câu {{position}} nên chưa trộn đủ. Nhập thêm câu rồi thử lại.",
       "atQuestions": "Câu {{from}}–{{to}} / {{total}}",
       "groupQuestions": "Câu {{from}}–{{to}}",
-      "pairNote": "Hai câu này hỏi về cùng một đoạn, băng chỉ phát một lần."
+      "pairNote": "Hai câu này hỏi về cùng một đoạn, băng chỉ phát một lần.",
+      "gridLabel": "Danh sách câu hỏi",
+      "gridAnswered": "Câu {{number}}, đã trả lời",
+      "gridUnanswered": "Câu {{number}}, chưa trả lời",
+      "readyTitle": "Sẵn sàng làm bài?",
+      "readyBody": "{{count}} câu · {{time}}. Đồng hồ chỉ chạy sau khi bạn bấm Bắt đầu.",
+      "startPaper": "Bắt đầu làm bài",
+      "lastMinutes": "Còn dưới {{minutes}} phút.",
+      "submit": "Nộp bài",
+      "submitTitle": "Nộp bài?",
+      "submitBody": "Bài sẽ được chấm ngay và không sửa được nữa.",
+      "submitUnanswered": "Còn {{count}} câu chưa làm. Nộp luôn?",
+      "submitConfirm": "Nộp bài",
+      "submitCancel": "Làm tiếp"
     }
   }
 }

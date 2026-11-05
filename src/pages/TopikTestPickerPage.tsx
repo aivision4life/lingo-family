@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import type { TopikSection } from "@shared/enums";
 import type { TopikMixedOption, TopikTestCreate, TopikTestOption } from "@shared/topik";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,10 @@ import { cn } from "@/lib/utils";
 /**
  * Screen (M6.4, extended in M6.5) — `/topik/tests`: pick what to sit.
  *
+ * Which section is on offer lives in the URL (`?section=reading`), so a chosen section survives a
+ * reload and can be bookmarked. Listening is the default: it is the section that needs a real
+ * sitting most, since its tape cannot be paused in the exam (M7.11).
+ *
  * The mixed paper sits above the original ones, because it is the mode to reach for once a paper
  * has been sat: it draws every question from the whole bank and prefers what has not been asked
  * lately. A length the bank cannot fill is shown greyed with the reason rather than hidden —
@@ -20,13 +24,28 @@ import { cn } from "@/lib/utils";
 export function TopikTestPickerPage() {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
-  const section: TopikSection = "listening";
+  const [params, setParams] = useSearchParams();
+  const section: TopikSection = params.get("section") === "reading" ? "reading" : "listening";
   const options = useTopikTestOptions(profile?.id ?? "", section);
 
   return (
     <section className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4">
       <h1 className="text-xl font-bold">{t("topik.test.title")}</h1>
       <p className="text-sm text-muted-foreground">{t("topik.test.intro")}</p>
+
+      <div className="flex gap-2" role="group" aria-label={t("topik.test.sectionLabel")}>
+        {(["listening", "reading"] as const).map((value) => (
+          <Button
+            key={value}
+            type="button"
+            variant={section === value ? "default" : "outline"}
+            aria-pressed={section === value}
+            onClick={() => setParams(value === "listening" ? {} : { section: value }, { replace: true })}
+          >
+            {t(`topik.section.${value}`)}
+          </Button>
+        ))}
+      </div>
       {!profile ? null : options.isPending ? (
         <p className="text-muted-foreground">{t("common.loading")}</p>
       ) : options.isError ? (
