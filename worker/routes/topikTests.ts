@@ -89,8 +89,8 @@ export const topikTestRoutes = () =>
         };
       });
 
-      // The mixed card draws clips, so a section with no clips (reading) has no mixed mode at all.
-      const candidates = section === "listening" ? await mixedCandidates(db) : [];
+      // Both sections have a mixed mode now (M7.11); the groups are just different (clip vs question).
+      const candidates = await mixedCandidates(db, section);
       const mixed =
         candidates.length === 0
           ? null
@@ -363,7 +363,7 @@ async function takePaper(db: Db, section: "reading" | "listening", exam: string,
  * out at — "the bank has nothing for question 23" is actionable; "too short" is not.
  */
 async function drawMixed(db: Db, profileId: string, section: "reading" | "listening", length: TopikTestLength): Promise<Picked> {
-  const candidates = await mixedCandidates(db);
+  const candidates = await mixedCandidates(db, section);
   const wanted = lengthQuestionCount(length, reachableLength(candidates));
   if (wanted <= 0) return { error: { ...err("topik_test_bank_short"), missing_position: 1 } };
 
@@ -376,23 +376,32 @@ async function drawMixed(db: Db, profileId: string, section: "reading" | "listen
   return { questions: questions.sort((a, b) => a.number - b.number) };
 }
 
-/** Every approved listening clip in the bank, with the questions asked about it. */
-async function mixedCandidates(db: Db): Promise<MixedCandidate[]> {
+/**
+ * What a mixed draw may take, as groups (M7.11).
+ *
+ * Listening groups by the clip: two questions about one recording are one unit, because the tape
+ * plays once. Reading has no clip and, in this bank, no shared passage either — every question
+ * carries its own text — so each one is a group of itself and the draw is per question.
+ */
+async function mixedCandidates(db: Db, section: "reading" | "listening"): Promise<MixedCandidate[]> {
   const rows = await db
     .select({ id: topik_questions.id, exam: topik_questions.exam, number: topik_questions.number, segment_id: topik_questions.segment_id })
     .from(topik_questions)
-    .where(and(eq(topik_questions.section, "listening"), readyQuestions("listening")))
+    .where(and(eq(topik_questions.section, section), readyQuestions(section)))
     .orderBy(asc(topik_questions.number));
 
-  const byClip = new Map<string, MixedCandidate>();
+  const byGroup = new Map<string, MixedCandidate>();
   for (const r of rows) {
-    if (!r.segment_id) continue;
-    const found = byClip.get(r.segment_id) ?? { segment_id: r.segment_id, exam: r.exam, numbers: [], question_ids: [] };
+    // A listening question with no clip never passes `readyQuestions`, so the fallback here is
+    // reading's own rule rather than a silent repair of missing data.
+    const groupId = section === "listening" ? r.segment_id : r.id;
+    if (!groupId) continue;
+    const found = byGroup.get(groupId) ?? { group_id: groupId, exam: r.exam, numbers: [], question_ids: [] };
     found.numbers.push(r.number);
     found.question_ids.push(r.id);
-    byClip.set(r.segment_id, found);
+    byGroup.set(groupId, found);
   }
-  return [...byClip.values()];
+  return [...byGroup.values()];
 }
 
 /**

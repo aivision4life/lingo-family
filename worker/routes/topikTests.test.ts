@@ -465,3 +465,78 @@ describe("a pair sharing one clip in a sitting", () => {
     expect(byNumber.get(1)).not.toBe(segment!.s);
   });
 });
+
+// M7.11: the reading section gets its own mock test. Its draw has no clips to group by — each
+// question stands alone — so a mixed reading paper is one question per position.
+describe("reading mock test", () => {
+  const readingQuestion = async (number: number, exam = "Read-60회") =>
+    ((await t.api("POST", "/topik/questions", { ...input({ section: "reading", exam, number, block: `${number}` }), profile_id: adult })).body as { id: string }).id;
+
+  const options = async (profile = adult) =>
+    (await t.api("GET", `/topik/tests/options?profile_id=${profile}&section=reading`)).body as {
+      papers: { exam: string; ready_questions: number; lengths: { length: number | string; available: boolean }[] }[];
+      mixed: { ready_questions: number; reachable: number } | null;
+    };
+
+  it("lists a reading paper without needing any audio", async () => {
+    for (const n of [1, 2, 3]) await readingQuestion(n);
+    const body = await options();
+    expect(body.papers).toHaveLength(1);
+    expect(body.papers[0]).toMatchObject({ exam: "Read-60회", ready_questions: 3 });
+    expect(body.papers[0]!.lengths.at(-1)).toMatchObject({ length: "full", available: true });
+  });
+
+  it("offers a mixed reading paper, one question per position", async () => {
+    for (const n of [1, 2, 3]) await readingQuestion(n, "Read-60회");
+    for (const n of [1, 2, 3]) await readingQuestion(n, "Read-64회");
+    const body = await options();
+    expect(body.mixed).toMatchObject({ ready_questions: 6, reachable: 3 });
+  });
+
+  it("creates a reading sitting with no audio and no clips", async () => {
+    for (const n of [1, 2, 3]) await readingQuestion(n);
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", length: "full" })).body as {
+      section: string;
+      audio: unknown;
+      question_count: number;
+      questions: { number: number; clip: unknown; group_id: string; stem: { text: string | null } }[];
+    };
+    expect(run).toMatchObject({ section: "reading", audio: null, question_count: 3 });
+    expect(run.questions.every((q) => q.clip === null)).toBe(true);
+    // Every reading question is its own group, so a screen holds exactly one of them.
+    expect(new Set(run.questions.map((q) => q.group_id)).size).toBe(3);
+    // Unlike listening, a reading stem is the question itself and is never withheld.
+    expect(run.questions.every((q) => q.stem.text !== null)).toBe(true);
+  });
+
+  it("draws a mixed reading paper from more than one exam", async () => {
+    for (const n of [1, 2, 3]) await readingQuestion(n, "Read-60회");
+    for (const n of [1, 2, 3]) await readingQuestion(n, "Read-64회");
+    const first = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", kind: "mixed", length: "full" })).body as {
+      id: string;
+      source_exam: string | null;
+      questions: { number: number; exam: string }[];
+    };
+    expect(first.source_exam).toBeNull();
+    expect(first.questions.map((q) => q.number)).toEqual([1, 2, 3]);
+    await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+
+    // Every position has one alternative, and the first sitting used all of them up.
+    const second = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", kind: "mixed", length: "full" })).body as {
+      questions: { number: number; exam: string }[];
+    };
+    for (const q of second.questions) {
+      expect(q.exam).not.toBe(first.questions.find((f) => f.number === q.number)!.exam);
+    }
+  });
+
+  it("keeps a reading sitting out of the listening history", async () => {
+    for (const n of [1, 2, 3]) await readingQuestion(n);
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", length: "full" })).body as { id: string };
+    await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+
+    expect((await options()).papers[0]!.ready_questions).toBe(3);
+    const listening = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=listening`)).body as OptionsBody;
+    expect(listening.papers.every((p) => p.history.length === 0)).toBe(true);
+  });
+});

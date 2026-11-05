@@ -12,7 +12,9 @@ import type { TestLengthOption } from "./topikTest";
  * already in the data and cannot be got wrong here.
  */
 export type MixedCandidate = {
-  segment_id: string;
+  /** What the questions of this group share: a clip for listening, the question itself for
+   * reading, where every question stands alone (M7.11). */
+  group_id: string;
   exam: string;
   /** Question numbers on this clip, ascending. */
   numbers: number[];
@@ -20,7 +22,7 @@ export type MixedCandidate = {
   question_ids: string[];
 };
 
-export type MixedPick = { position: number; question_id: string; segment_id: string; exam: string };
+export type MixedPick = { position: number; question_id: string; group_id: string; exam: string };
 
 /**
  * How recently each question was put in front of this profile: 1 = the most recent sitting, 2 = the
@@ -100,7 +102,7 @@ export function planMixedTest(args: {
     const chosen = pickCandidate(here, args.seen, args.random);
     const ordered = [...chosen.numbers.keys()].sort((a, b) => chosen.numbers[a]! - chosen.numbers[b]!);
     for (const i of ordered) {
-      picks.push({ position: chosen.numbers[i]!, question_id: chosen.question_ids[i]!, segment_id: chosen.segment_id, exam: chosen.exam });
+      picks.push({ position: chosen.numbers[i]!, question_id: chosen.question_ids[i]!, group_id: chosen.group_id, exam: chosen.exam });
     }
     position = lastNumber(chosen) + 1;
   }

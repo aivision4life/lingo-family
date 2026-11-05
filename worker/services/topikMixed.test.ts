@@ -3,7 +3,7 @@ import { mixedLengthOptions, planMixedTest, reachableLength, type MixedCandidate
 
 /** A clip of `exam` carrying the questions `numbers`, with ids like "36-21". */
 const clip = (exam: string, numbers: number[]): MixedCandidate => ({
-  segment_id: `${exam}-s${numbers[0]}`,
+  group_id: `${exam}-s${numbers[0]}`,
   exam,
   numbers,
   question_ids: numbers.map((n) => `${exam}-${n}`),
@@ -82,7 +82,7 @@ describe("planMixedTest", () => {
     if (!plan.ok) throw new Error("expected a plan");
     const pair = plan.picks.filter((p) => p.position === 21 || p.position === 22);
     expect(pair).toHaveLength(2);
-    expect(new Set(pair.map((p) => p.segment_id)).size).toBe(1);
+    expect(new Set(pair.map((p) => p.group_id)).size).toBe(1);
     expect(new Set(pair.map((p) => p.exam)).size).toBe(1);
   });
 
