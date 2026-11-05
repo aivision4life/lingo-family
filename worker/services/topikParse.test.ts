@@ -99,7 +99,8 @@ describe("parseTopikDocument", () => {
     expect(item.options.map((o) => o.marked)).toEqual([false, false, true, false]);
   });
 
-  it("flags a mismatch between the declared answer and the underlined option, without guessing", () => {
+  // M7.9: the label is the answer in both sections; a disagreeing underline is reported, not fatal.
+  it("warns about a mismatch between the label and the underlined option, naming both", () => {
     const xml = doc(
       heading("Heading1", "문항 1") +
         heading("Heading2", "연습1") +
@@ -108,7 +109,9 @@ describe("parseTopikDocument", () => {
         table("stem", ["a", "b", "c", "d"], 2),
     );
     const item = parseTopikDocument(xml).exams[0]!.items[0]!;
-    expect(item.errors).toEqual(["answer label says option 3, but option 2 is underlined"]);
+    expect(item.errors).toEqual([]);
+    expect(item.warnings).toEqual(["answer label says option 3, but option 2 is underlined (the label was used)"]);
+    expect(item.declared_correct).toBe(3);
   });
 
   it("flags a malformed answer label instead of guessing", () => {
@@ -123,9 +126,11 @@ describe("parseTopikDocument", () => {
     expect(item.errors).toContain('answer label not found or malformed (got "2/2(2)")');
   });
 
-  it("flags zero or more than one underlined option", () => {
+  it("warns about zero or more than one underlined option, and still imports", () => {
     const none = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1") + heading("Heading3", "1-1") + answer(1) + table("s", ["a", "b", "c", "d"], 0));
-    expect(parseTopikDocument(none).exams[0]!.items[0]!.errors).toEqual(["expected exactly one underlined option, found 0 ()"]);
+    const noneItem = parseTopikDocument(none).exams[0]!.items[0]!;
+    expect(noneItem.errors).toEqual([]);
+    expect(noneItem.warnings).toEqual(["answer label says option 1, but no option is underlined (the label was used)"]);
 
     const both = doc(
       heading("Heading1", "문항 1") +
@@ -134,7 +139,9 @@ describe("parseTopikDocument", () => {
         answer(1) +
         `<w:tbl><w:tr>${cell("s")}</w:tr><w:tr>${cell("a", true)}${cell("b", true)}</w:tr><w:tr>${cell("c")}${cell("d")}</w:tr></w:tbl>`,
     );
-    expect(parseTopikDocument(both).exams[0]!.items[0]!.errors).toEqual(["expected exactly one underlined option, found 2 (1,2)"]);
+    const bothItem = parseTopikDocument(both).exams[0]!.items[0]!;
+    expect(bothItem.errors).toEqual([]);
+    expect(bothItem.warnings).toEqual(["answer label says option 1, but 2 options are underlined (1, 2) (the label was used)"]);
   });
 
   it("parses a stem-only table (1 row) + ListParagraph options after it (문항11-12/16-18 shape)", () => {
@@ -408,7 +415,6 @@ describe("parseTopikDocument", () => {
             extra +
             table(secondStem, ["마", "바", "사", "아"], 3),
         ),
-        "listening",
       ).exams[0]!.items;
 
     it("appends the question's own line under the block's, keeping the block's points", () => {
@@ -435,7 +441,6 @@ describe("parseTopikDocument", () => {
               plain(`${marker} 중심 생각을 고르십시오.`) +
               table("남자: 안녕", ["가", "나", "다", "라"], 2),
           ),
-          "listening",
         ).exams[0]!.items;
         expect(items[0]!.instruction).toBe("중심 생각을 고르십시오.");
       }
@@ -470,7 +475,6 @@ describe("parseTopikDocument", () => {
             answer(3) +
             table("", ["마", "바", "사", "아"], 3),
         ),
-        "listening",
       ).exams[0]!.items;
       expect(items[1]!.stem_text).toBeNull();
     });
@@ -519,7 +523,6 @@ describe("parseTopikDocument", () => {
             listOption("다") +
             listOption("라"),
         ),
-        "listening",
       ).exams[0]!.items[0]!;
 
     it("warns, quotes the line, and still imports the question", () => {
@@ -626,13 +629,16 @@ describe("parseTopikDocument", () => {
       expect(parsed.errors.join(" ")).toContain("not between 1 and 4");
     });
 
-    // One option with words means an underline is possible again, so the cross-check comes back.
-    it("goes back to requiring an underline as soon as one option has text", () => {
+    // One option with words means an underline is possible again, so its absence is worth a word
+    // — a word, not a refusal (M7.9).
+    it("mentions the missing underline as soon as one option has text", () => {
       const mixed =
         `<w:tbl><w:tr>${cell("지문")}</w:tr>` +
         `<w:tr>${cell("", false, "rId1")}${cell("", false, "rId2")}</w:tr>` +
         `<w:tr>${cell("", false, "rId3")}${cell("사진 아님", false, "rId4")}</w:tr></w:tbl>`;
-      expect(item(answer(2) + mixed).errors.join(" ")).toContain("expected exactly one underlined option");
+      const parsed = item(answer(2) + mixed);
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.warnings.join(" ")).toContain("no option is underlined");
     });
 
     it("still rejects a picture question that does not have exactly four options", () => {
@@ -641,23 +647,22 @@ describe("parseTopikDocument", () => {
     });
   });
 
-  // M7.1: in a listening paper the N(N) label is the answer, full stop. Those files are typed up
-  // from a PDF and the underline bleeds across options constantly; treating it as authoritative
-  // rejected more good questions than it caught bad ones. Reading is untouched.
-  describe("listening answers come from the label, not the underline", () => {
+  // The N(N) label is the answer in both sections (M7.1 for listening, M7.9 everywhere). These
+  // files are typed up from a PDF and the underline bleeds across options constantly; treating it
+  // as authoritative rejected more good questions than it caught bad ones.
+  describe("the answer comes from the label, not the underline", () => {
     const listening = (body: string) =>
       parseTopikDocument(
         doc(heading("Heading1", "문항 4~8") + heading("Heading2", "35회") + heading("Heading3", "4") + body),
-        "listening",
       ).exams[0]!.items[0]!;
     const reading = (body: string) =>
       parseTopikDocument(doc(heading("Heading1", "문항 1~2") + heading("Heading2", "연습1") + heading("Heading3", "1-1") + body)).exams[0]!.items[0]!;
     const opts: [string, string, string, string] = ["가", "나", "다", "라"];
 
-    it("accepts a question with no underline at all", () => {
+    it("imports a question with no underline at all, saying so", () => {
       const parsed = listening(answer(2) + table("지문", opts, 0));
       expect(parsed.errors).toEqual([]);
-      expect(parsed.warnings).toEqual([]);
+      expect(parsed.warnings).toEqual(["answer label says option 2, but no option is underlined (the label was used)"]);
       expect(parsed.declared_correct).toBe(2);
     });
 
@@ -665,7 +670,7 @@ describe("parseTopikDocument", () => {
       const bleed = `<w:tbl><w:tr>${cell("지문")}</w:tr><w:tr>${cell("가", true)}${cell("나", true)}</w:tr><w:tr>${cell("다", true)}${cell("라", true)}</w:tr></w:tbl>`;
       const parsed = listening(answer(3) + bleed);
       expect(parsed.errors).toEqual([]);
-      expect(parsed.warnings).toEqual([]);
+      expect(parsed.warnings).toEqual(["answer label says option 3, but 4 options are underlined (1, 2, 3, 4) (the label was used)"]);
       expect(parsed.declared_correct).toBe(3);
     });
 
@@ -673,7 +678,7 @@ describe("parseTopikDocument", () => {
     it("warns — without rejecting — when the single underline disagrees with the label", () => {
       const parsed = listening(answer(2) + table("지문", opts, 4));
       expect(parsed.errors).toEqual([]);
-      expect(parsed.warnings.join(" ")).toContain("option 4 is the underlined one");
+      expect(parsed.warnings.join(" ")).toContain("option 4 is underlined");
       expect(parsed.declared_correct).toBe(2);
     });
 
@@ -688,10 +693,20 @@ describe("parseTopikDocument", () => {
       expect(listening(answer(2) + three).errors.join(" ")).toContain("expected 4 options, found 3");
     });
 
-    // The reading rules must not move: there the underline is the answer and the label checks it.
-    it("leaves reading alone: no underline is still an error there", () => {
-      expect(reading(answer(2) + table("지문", opts, 0)).errors.join(" ")).toContain("expected exactly one underlined option");
-      expect(reading(answer(2) + table("지문", opts, 4)).errors.join(" ")).toContain("but option 4 is underlined");
+    // The point of M7.9: reading now follows the very same rule instead of its own stricter one.
+    it("treats reading exactly the same way", () => {
+      const noUnderline = reading(answer(2) + table("지문", opts, 0));
+      expect(noUnderline.errors).toEqual([]);
+      expect(noUnderline.warnings.join(" ")).toContain("no option is underlined");
+      const disagreeing = reading(answer(2) + table("지문", opts, 4));
+      expect(disagreeing.errors).toEqual([]);
+      expect(disagreeing.warnings.join(" ")).toContain("answer label says option 2, but option 4 is underlined");
+    });
+
+    // The one hard error left: no label, no answer. Nothing is ever inferred from an underline.
+    it("still refuses a question with no label, in either section", () => {
+      expect(reading(table("지문", opts, 2)).errors.join(" ")).toContain("no answer label");
+      expect(listening(table("지문", opts, 2)).errors.join(" ")).toContain("no answer label");
     });
   });
 

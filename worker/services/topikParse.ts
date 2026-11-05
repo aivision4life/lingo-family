@@ -13,7 +13,6 @@
 //     - or: an optional stem image (drawing), then exactly 4 "ListParagraph" options
 //   The one option whose runs are underlined is the model's own answer; it must agree with Y.
 import { XMLParser } from "fast-xml-parser";
-import type { TopikSection } from "../../shared/enums";
 import { TOPIK_OPTION_COUNT } from "../../shared/topik";
 
 // --- Generic helpers for fast-xml-parser's `preserveOrder: true` shape ---------------------------
@@ -343,7 +342,7 @@ export function commandLikeStemLines(lines: readonly string[]): string[] {
 }
 
 /** Parses one question item starting right after its Heading3 label, consuming until the next heading. */
-function parseItem(position: number, labelText: string, body: OrderedNode[], instruction: string | null, section: TopikSection): ParsedItem {
+function parseItem(position: number, labelText: string, body: OrderedNode[], instruction: string | null): ParsedItem {
   // "1-1", "1-9 (36회)", "1-10(36회)" — the number right after the (first) dash.
   const labelMatch = /-\s*(\d+)/.exec(labelText);
   const labelNumber = labelMatch ? Number(labelMatch[1]) : null;
@@ -431,35 +430,30 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
     unused.push(...after(listParsed.trailing));
   }
 
-  // Reading questions 1~3 of a *listening* paper offer four pictures, and nothing can be
-  // underlined on a picture; see the note on parseTopikDocument for why the whole listening
-  // section follows the label instead of the underline.
+  // One rule for both sections (M7.9): the "N(N)" label **is** the answer, and the underline is
+  // only read back to it. Reading used to treat the underline as authoritative and refuse the
+  // question when the two disagreed, which meant a stray underline — formatting bleed from a
+  // paper typed up out of a PDF — threw away a question whose answer was perfectly legible.
+  // Nothing is guessed, though: with no label there is no answer, and that stays a hard error.
+  const markedIndexes = parsed.options.flatMap((o, i) => (o.marked ? [i + 1] : []));
+  /** Four pictures cannot carry an underline, so their having none is the shape, not a problem. */
   const allPictureOptions =
     parsed.options.length === TOPIK_OPTION_COUNT && parsed.options.every((o) => o.image_rid !== null && o.text.trim() === "");
-  const markedIndexes = parsed.options.flatMap((o, i) => (o.marked ? [i + 1] : []));
-  const labelIsTheAnswer = section === "listening" || allPictureOptions;
 
   if (parsed.options.length !== TOPIK_OPTION_COUNT) {
     errors.push(`expected ${TOPIK_OPTION_COUNT} options, found ${parsed.options.length}`);
-  } else if (labelIsTheAnswer) {
-    // Nothing is assumed: without a usable label the question is rejected rather than imported
-    // with a guessed answer, which would be indistinguishable from a correct one.
-    if (declared_correct === null) {
-      errors.push(`no answer label like "2(2)" was found, and the underline is not used as the answer here`);
-    } else if (declared_correct < 1 || declared_correct > TOPIK_OPTION_COUNT) {
-      errors.push(`answer label says option ${declared_correct}, which is not between 1 and ${TOPIK_OPTION_COUNT}`);
-    } else if (markedIndexes.length === 1 && markedIndexes[0] !== declared_correct) {
-      // Exactly one underline that disagrees with the label is a real contradiction, worth
-      // reading. Several underlines (or none) say nothing — in these files that is formatting
-      // bleed, not an opinion about the answer — so they pass without a word.
-      warnings.push(`answer label says option ${declared_correct}, but option ${markedIndexes[0]} is the underlined one (label was used)`);
-    }
-  } else {
-    if (markedIndexes.length !== 1) {
-      errors.push(`expected exactly one underlined option, found ${markedIndexes.length} (${markedIndexes.join(",")})`);
-    } else if (declared_correct !== null && markedIndexes[0] !== declared_correct) {
-      errors.push(`answer label says option ${declared_correct}, but option ${markedIndexes[0]} is underlined`);
-    }
+  } else if (declared_correct === null) {
+    errors.push(`no answer label like "2(2)" was found; the answer is never guessed from the underline`);
+  } else if (declared_correct < 1 || declared_correct > TOPIK_OPTION_COUNT) {
+    errors.push(`answer label says option ${declared_correct}, which is not between 1 and ${TOPIK_OPTION_COUNT}`);
+  } else if (markedIndexes.length === 1 && markedIndexes[0] !== declared_correct) {
+    warnings.push(`answer label says option ${declared_correct}, but option ${markedIndexes[0]} is underlined (the label was used)`);
+  } else if (markedIndexes.length > 1) {
+    warnings.push(
+      `answer label says option ${declared_correct}, but ${markedIndexes.length} options are underlined (${markedIndexes.join(", ")}) (the label was used)`,
+    );
+  } else if (markedIndexes.length === 0 && !allPictureOptions) {
+    warnings.push(`answer label says option ${declared_correct}, but no option is underlined (the label was used)`);
   }
 
   // The stem's own lines: a table cell joins its paragraphs with a newline, the list shape keeps
@@ -513,14 +507,12 @@ function inheritStem(item: ParsedItem, previous: ParsedItem | undefined): void {
 
 /** Parses `word/document.xml`'s text content into exam groups of questions (no image bytes here). */
 /**
- * `section` decides how the correct answer is established. Reading marks it by underlining the
- * option, with the `N(N)` label as a cross-check. Listening takes the label as the single source
- * of truth: its questions 1~3 offer four pictures (nothing to underline), and in a paper typed up
- * from a PDF the underline bleeds across options often enough that treating it as authoritative
- * rejected more good questions than it caught bad ones. A disagreement is still worth seeing, so
- * it becomes a warning rather than vanishing.
+ * Since M7.9 nothing in the parse depends on which section the paper is: the "N(N)" label is the
+ * answer in both, and the underline is only compared against it. The parameter is gone rather than
+ * kept and ignored — a signature that still asks for something it does not use is a lie the next
+ * reader has to disprove.
  */
-export function parseTopikDocument(documentXml: string, section: TopikSection = "reading"): ParseDocumentResult {
+export function parseTopikDocument(documentXml: string): ParseDocumentResult {
   const root = parser.parse(documentXml) as OrderedNode[];
   const doc = root.find((n) => tagOf(n) === "w:document");
   const body = doc ? childrenOf(doc).find((n) => tagOf(n) === "w:body") : undefined;
@@ -565,7 +557,7 @@ export function parseTopikDocument(documentXml: string, section: TopikSection = 
         if (tagOf(n) === "w:p" && /^Heading[123]$/.test(headingStyle(n) ?? "")) break;
         rest.push(n);
       }
-      const item = parseItem(currentExam.items.length + 1, text, rest, currentInstruction, section);
+      const item = parseItem(currentExam.items.length + 1, text, rest, currentInstruction);
       inheritStem(item, currentExam.items[currentExam.items.length - 1]);
       currentExam.items.push(item);
       // "[3~4] …" typed inside question 3 of a group headed "[1~2] …" starts a new block there,

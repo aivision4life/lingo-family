@@ -77,7 +77,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
 
   const blockSize = fn.end - fn.start + 1;
   const block = fn.start === fn.end ? String(fn.start) : `${fn.start}~${fn.end}`;
-  const parsed = parseTopikDocument(documentXml, fn.section);
+  const parsed = parseTopikDocument(documentXml);
   warnings.push(...parsed.warnings);
   if (parsed.headingBlock && (parsed.headingBlock.start !== fn.start || parsed.headingBlock.end !== fn.end)) {
     warnings.push(
