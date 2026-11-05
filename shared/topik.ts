@@ -650,6 +650,12 @@ export const topikTestResultItemSchema = z.object({
   /** For the per-question review inside the result: listen again, read, see the explanation. */
   clip: topikClipSchema.nullable(),
   transcript: z.string().nullable(),
+  /** The question as it was asked. A listening paper could do without it — its transcript and its
+   * clip are the content — but a reading paper reviewed without the passage, the gap and the four
+   * options says only "you chose 2, the answer was 3", which teaches nothing. */
+  instruction: z.string().nullable(),
+  stem: topikContentSchema.nullable(),
+  options: z.array(topikContentSchema).nullable(),
 });
 
 export const topikTestResultSchema = z.object({

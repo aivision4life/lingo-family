@@ -509,6 +509,33 @@ describe("reading mock test", () => {
     expect(run.questions.every((q) => q.stem.text !== null)).toBe(true);
   });
 
+  it("keeps a reading stem — text and image — through a reload of the sitting", async () => {
+    // 26 reading questions on production have an image for a stem (a notice, a chart, a form), and
+    // for some of them the image is the whole question: losing either half leaves nothing to read.
+    const created = (await t.api("POST", "/topik/questions", {
+      ...input({
+        section: "reading",
+        exam: "Read-60회",
+        number: 1,
+        block: "1",
+        stem: { text: "다음 안내를 보고 물음에 답하십시오.", image_key: "topik/stem/notice.png" },
+      }),
+      profile_id: adult,
+    })).body as { id: string };
+    expect(created.id).toBeTruthy();
+
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", length: "full" })).body as {
+      id: string;
+      questions: { stem: { text: string | null; image_key: string | null } }[];
+    };
+    expect(run.questions[0]!.stem).toEqual({ text: "다음 안내를 보고 물음에 답하십시오.", image_key: "topik/stem/notice.png" });
+
+    const reopened = (await t.api("GET", `/topik/tests/${run.id}?profile_id=${adult}`)).body as {
+      questions: { stem: { text: string | null; image_key: string | null } }[];
+    };
+    expect(reopened.questions[0]!.stem).toEqual({ text: "다음 안내를 보고 물음에 답하십시오.", image_key: "topik/stem/notice.png" });
+  });
+
   it("draws a mixed reading paper from more than one exam", async () => {
     for (const n of [1, 2, 3]) await readingQuestion(n, "Read-60회");
     for (const n of [1, 2, 3]) await readingQuestion(n, "Read-64회");

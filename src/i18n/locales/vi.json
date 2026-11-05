@@ -736,6 +736,8 @@
     "test": {
       "title": "Thi thử",
       "sectionLabel": "Phần thi",
+      "introReading": "Làm trọn một đề như thi thật: đồng hồ chạy liên tục, hết giờ là tự nộp.",
+      "mixedIntroReading": "Mỗi câu lấy từ một đề khác nhau, ưu tiên câu bạn chưa gặp.",
       "intro": "Làm trọn một đề như thi thật: băng chạy liên tục, không nghe lại, không tua.",
       "noPapers": "Chưa có đề nào duyệt xong cả câu hỏi lẫn mốc đoạn.",
       "readyCount": "{{count}} câu sẵn sàng",

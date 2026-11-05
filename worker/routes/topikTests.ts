@@ -532,6 +532,10 @@ function resultPayload(test: TestRow, items: readonly ItemRow[], questions: Map<
         is_correct: !!i.is_correct,
         clip: clip ? { audio_key: clip.audio_key, start_ms: clip.start_ms, speech_end_ms: clip.speech_end_ms, end_ms: clip.end_ms } : null,
         transcript: q && q.section === "listening" ? q.stem_text : null,
+        instruction: q?.instruction ?? null,
+        // A listening stem is the transcript, which already has its own field above.
+        stem: q && q.section === "reading" ? { text: q.stem_text, image_key: q.stem_image_key } : null,
+        options: q?.options ?? null,
       };
     }),
   };

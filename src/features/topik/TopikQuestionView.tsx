@@ -1,10 +1,11 @@
 import { Pause, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { splitUnderline, TOPIK_OPTION_COUNT, type TopikClip, type TopikQuestion } from "@shared/topik";
+import { TOPIK_OPTION_COUNT, type TopikClip, type TopikQuestion } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { playSegment, stopAudio, useAudioPlayer } from "@/features/audio/player";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
+import { KoreanText } from "./KoreanText";
 import { keyTermRows } from "./questionPreview";
 import { formatTimeInput, practiceEnd } from "./segmentEdit";
 
@@ -111,27 +112,6 @@ export function TopikQuestionView({ question, onEdit, onBack }: { question: Topi
         </Button>
       </div>
     </div>
-  );
-}
-
-/**
- * Korean text with its line breaks kept and any `<u>…</u>`-marked phrase shown bold+underlined
- * (문항 3-4 asks about exactly that phrase, so it must stay visible while reviewing). Built as React
- * elements from parsed data — never `dangerouslySetInnerHTML`; `<보기>` and friends stay literal.
- */
-function KoreanText({ text }: { text: string }) {
-  return (
-    <span lang="ko" className="whitespace-pre-wrap">
-      {splitUnderline(text).map((run, i) =>
-        run.underlined ? (
-          <strong key={i} className="underline">
-            {run.text}
-          </strong>
-        ) : (
-          <span key={i}>{run.text}</span>
-        ),
-      )}
-    </span>
   );
 }
 

@@ -5,8 +5,11 @@ import type { TopikTestResult } from "@shared/topik";
 import { LinkButton } from "@/components/LinkButton";
 import { Button } from "@/components/ui/button";
 import { playSegment, stopAudio, useAudioPlayer } from "@/features/audio/player";
+import { KoreanText } from "./KoreanText";
 import { formatDuration } from "./segmentEdit";
 import { useTopikQuestionContent } from "./api";
+import { TOPIK_OPTION_COUNT } from "@shared/topik";
+import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
 
 /** Full marks for a real TOPIK II paper; only then does a /100 score mean what it says. */
@@ -106,6 +109,36 @@ function ItemReview({ item, profileId }: { item: TopikTestResult["items"][number
         >
           {t("topik.test.listenAgain")}
         </Button>
+      )}
+      {/* The question as it was asked. A reading paper is unreviewable without it: its stem *is*
+          the question, and "bạn chọn 2 · đúng 3" on its own teaches nothing (M7.11). */}
+      {item.instruction && <p className="font-medium whitespace-pre-line" lang="ko">{item.instruction}</p>}
+      {item.stem && (item.stem.text || item.stem.image_key) && (
+        <div className="flex flex-col gap-2 rounded-lg border bg-background p-3">
+          {item.stem.image_key && <img src={imageUrl(item.stem.image_key)} alt="" className="w-full rounded-md object-contain" />}
+          {item.stem.text && <KoreanText text={item.stem.text} />}
+        </div>
+      )}
+      {item.options && (
+        <ul className="flex flex-col gap-1">
+          {Array.from({ length: TOPIK_OPTION_COUNT }, (_, i) => i + 1).map((n) => {
+            const opt = item.options![n - 1];
+            return (
+              <li
+                key={n}
+                className={cn(
+                  "flex items-start gap-2 rounded-md border p-2 text-sm",
+                  n === item.correct_option && "border-green-600 bg-green-50 dark:bg-green-950/40",
+                  n === item.selected_option && n !== item.correct_option && "border-destructive bg-destructive/10",
+                )}
+              >
+                <span className="font-medium">{n})</span>
+                {opt?.image_key && <img src={imageUrl(opt.image_key)} alt="" className="w-24 rounded object-contain" />}
+                {opt?.text && <KoreanText text={opt.text} />}
+              </li>
+            );
+          })}
+        </ul>
       )}
       {item.transcript && (
         <p className="text-sm whitespace-pre-wrap" lang="ko">

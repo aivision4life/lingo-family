@@ -736,6 +736,8 @@
     "test": {
       "title": "Mock test",
       "sectionLabel": "Section",
+      "introReading": "A whole paper as in the real exam: the clock runs on, and time up means submitted.",
+      "mixedIntroReading": "Every question from a different paper, preferring the ones you have not met yet.",
       "intro": "Sit a whole paper as in the real exam: the tape runs straight through, no replay, no seeking.",
       "noPapers": "No paper has both its questions and its clips approved yet.",
       "readyCount": "{{count}} question(s) ready",

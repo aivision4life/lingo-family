@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { TOPIK_OPTION_COUNT, type TopikPracticeQuestion, type TopikRevealEntry, type TopikVocabEntry } from "@shared/topik";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
+import { stemView } from "./questionStem";
 import { allPictureOptions } from "./optionLayout";
 import { TopikPictureOptions } from "./TopikPictureOptions";
 import { useTopikQuestionContent, useTopikQuestionStats } from "./api";
@@ -57,6 +58,7 @@ export function TopikQuestionCard({
   // question 21 was wrong says nothing about what question 22 asks.
   const correctOption = answered?.result.correct_option ?? reveal?.correct_option ?? null;
   const locked = answered !== null || givenUp;
+  const stem = stemView(question.stem, { hasClip: question.audio !== null });
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-3">
@@ -67,13 +69,13 @@ export function TopikQuestionCard({
         </p>
       )}
       {/* A listening question's stem is its transcript and is withheld; its clip is on the screen
-          above. Everything else reads its stem here as usual. */}
-      {!question.audio && (question.stem.image_key || question.stem.text) && (
+          above. Everything else reads its stem here as usual (`stemView`). */}
+      {stem && (
         <div className="flex flex-col gap-2 rounded-lg border p-3">
-          {question.stem.image_key && <img src={imageUrl(question.stem.image_key)} alt="" className="w-full rounded-md object-contain" />}
-          {question.stem.text && (
+          {stem.image_key && <img src={imageUrl(stem.image_key)} alt="" className="w-full rounded-md object-contain" />}
+          {stem.text && (
             <p className="text-lg">
-              <TappableText text={question.stem.text} vocab={vocab} />
+              <TappableText text={stem.text} vocab={vocab} />
             </p>
           )}
         </div>

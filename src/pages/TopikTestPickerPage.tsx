@@ -31,7 +31,9 @@ export function TopikTestPickerPage() {
   return (
     <section className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4">
       <h1 className="text-xl font-bold">{t("topik.test.title")}</h1>
-      <p className="text-sm text-muted-foreground">{t("topik.test.intro")}</p>
+      {/* The tape is the listening paper's clock and the reading paper has none, so even the
+          blurb has to follow the section. */}
+      <p className="text-sm text-muted-foreground">{t(section === "reading" ? "topik.test.introReading" : "topik.test.intro")}</p>
 
       <div className="flex gap-2" role="group" aria-label={t("topik.test.sectionLabel")}>
         {(["listening", "reading"] as const).map((value) => (
@@ -111,7 +113,7 @@ function MixedCard({ mixed, profileId, section }: { mixed: TopikMixedOption; pro
         <h2 className="font-semibold">{t("topik.test.mixedTitle")}</h2>
         <span className="text-sm text-muted-foreground">{t("topik.test.readyCount", { count: mixed.ready_questions })}</span>
       </div>
-      <p className="text-sm text-muted-foreground">{t("topik.test.mixedIntro")}</p>
+      <p className="text-sm text-muted-foreground">{t(section === "reading" ? "topik.test.mixedIntroReading" : "topik.test.mixedIntro")}</p>
 
       <div className="flex flex-wrap gap-2">
         {mixed.lengths.map((option) => (
