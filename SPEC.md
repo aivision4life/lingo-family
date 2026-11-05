@@ -579,6 +579,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M6.11 | TOPIK: mastered split | Two-segment block bar (known / answered-not-known) + "thuộc N" count, one query | [x] |
 | M7.1 | TOPIK listening (groundwork) | One mp3 per exam + clip timestamps + byte-range playback + boundary review screen | [x] |
 | M6.12 | Review only my own words | Per-profile switch; hides other people's cards from the queue and Home counts, never resets them | [x] |
+| M7.11 | TOPIK: the reading section can be sat | Section chips, a countdown instead of the tape (70min/50 questions, pausable, auto-submit), free navigation by question grid, Submit, and a mixed reading paper | [x] |
 | M7.10 | TOPIK: underline on real text only | An underline on the paragraph mark is invisible in Word and was being counted | [x] |
 | M7.9 | TOPIK: one answer rule | The N(N) label decides in both sections; every underline anomaly is a warning naming both numbers | [x] |
 | M7.8 | TOPIK: import says what is missing | Short groups vs the file name's range, and per-exam coverage (how much a mock test can use) | [x] |
