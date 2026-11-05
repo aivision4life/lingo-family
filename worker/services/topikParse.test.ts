@@ -647,6 +647,41 @@ describe("parseTopikDocument", () => {
     });
   });
 
+  // M7.10: Word keeps the formatting of a paragraph's own end mark in <w:pPr><w:rPr>, and an
+  // underline there is invisible on screen — there is nothing to draw a line under. Counting it
+  // reported all four options of a question as underlined (measured on 36회 #5: option 1 had 10
+  // underlined runs, options 2-4 had none, and every one of them carried that mark).
+  describe("an underline on the paragraph mark is not a mark on the answer", () => {
+    /** A cell whose paragraph mark is underlined, but whose text is not. */
+    const markOnlyCell = (text: string) =>
+      `<w:tc><w:p><w:pPr><w:rPr><w:u w:val="single"/></w:rPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`;
+    const item = (optionCells: string) =>
+      parseTopikDocument(
+        doc(
+          heading("Heading1", "문항 1") +
+            heading("Heading2", "연습1") +
+            heading("Heading3", "1-1") +
+            answer(1) +
+            `<w:tbl><w:tr>${cell("지문")}</w:tr><w:tr>${optionCells}</w:tr></w:tbl>`,
+        ),
+      ).exams[0]!.items[0]!;
+
+    it("ignores it, so a question is not reported as having every option underlined", () => {
+      const parsed = item(cell("가", true) + markOnlyCell("나") + markOnlyCell("다") + markOnlyCell("라"));
+      expect(parsed.options.map((o) => o.marked)).toEqual([true, false, false, false]);
+      expect(parsed.warnings).toEqual([]);
+    });
+
+    it("reads a real underline on the text as before", () => {
+      expect(item(cell("가") + cell("나", true) + cell("다") + cell("라")).options.map((o) => o.marked)).toEqual([false, true, false, false]);
+    });
+
+    it("does not count an underlined run that holds only spaces", () => {
+      const spaceOnly = `<w:tc><w:p><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">  </w:t></w:r><w:r><w:t>나</w:t></w:r></w:p></w:tc>`;
+      expect(item(cell("가", true) + spaceOnly + cell("다") + cell("라")).options.map((o) => o.marked)).toEqual([true, false, false, false]);
+    });
+  });
+
   // The N(N) label is the answer in both sections (M7.1 for listening, M7.9 everywhere). These
   // files are typed up from a PDF and the underline bleeds across options constantly; treating it
   // as authoritative rejected more good questions than it caught bad ones.

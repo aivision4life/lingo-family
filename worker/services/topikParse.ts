@@ -53,10 +53,30 @@ function embedIdOf(node: OrderedNode): string | null {
   return null;
 }
 
-/** True when any run anywhere under `node` is underlined (the convention marking the correct option). */
+/**
+ * True when a run **with actual text** under `node` is underlined — the convention that marks the
+ * correct option.
+ *
+ * Only a run counts (M7.10). A paragraph carries its own end-of-paragraph mark, whose formatting
+ * lives in `<w:pPr><w:rPr>`, and Word stores an underline there as readily as on real text —
+ * invisible on screen, since there is nothing to draw a line under. Walking the whole subtree
+ * therefore reported every option of a question as underlined: measured on 36회 #5, option 1 had
+ * 10 underlined runs and options 2-4 had none, yet all four carried that invisible mark.
+ *
+ * A run of only spaces does not count either: the underline under a trailing space is not a mark
+ * anyone made on purpose.
+ */
 function hasUnderline(node: OrderedNode): boolean {
-  if (tagOf(node) === "w:u" && attrsOf(node)["@_w:val"] !== "none") return true;
+  if (tagOf(node) === "w:r") return runIsUnderlined(node);
   return childrenOf(node).some(hasUnderline);
+}
+
+/** Underlined, and carrying text that is not just whitespace. */
+function runIsUnderlined(run: OrderedNode): boolean {
+  if (textOf(run).trim() === "") return false;
+  const properties = childrenOf(run).find((c) => tagOf(c) === "w:rPr");
+  if (!properties) return false;
+  return childrenOf(properties).some((c) => tagOf(c) === "w:u" && attrsOf(c)["@_w:val"] !== "none");
 }
 
 const headingStyle = (p: OrderedNode): string | null => {
