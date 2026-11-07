@@ -34,7 +34,7 @@ export function TopikTestQuestionCard({
       {showNumber && <p className="text-sm font-semibold">{t("topik.test.itemNumber", { number: question.number })}</p>}
       {/* Two lines since M7.3: the block instruction, then this question's own question line. */}
       {question.instruction && (
-        <p className="font-medium whitespace-pre-line" lang="ko">
+        <p className="font-bold whitespace-pre-line" lang="ko">
           {question.instruction}
         </p>
       )}

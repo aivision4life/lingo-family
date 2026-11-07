@@ -112,7 +112,7 @@ function ItemReview({ item, profileId }: { item: TopikTestResult["items"][number
       )}
       {/* The question as it was asked. A reading paper is unreviewable without it: its stem *is*
           the question, and "bạn chọn 2 · đúng 3" on its own teaches nothing (M7.11). */}
-      {item.instruction && <p className="font-medium whitespace-pre-line" lang="ko">{item.instruction}</p>}
+      {item.instruction && <p className="font-bold whitespace-pre-line" lang="ko">{item.instruction}</p>}
       {item.stem && (item.stem.text || item.stem.image_key) && (
         <div className="flex flex-col gap-2 rounded-lg border bg-background p-3">
           {item.stem.image_key && <img src={imageUrl(item.stem.image_key)} alt="" className="w-full rounded-md object-contain" />}

@@ -64,7 +64,7 @@ export function TopikQuestionCard({
     <div className="flex flex-col gap-3 rounded-lg border p-3">
       {showNumber && <p className="text-sm font-semibold">{t("topik.practice.examQuestion", { exam: question.exam, number: question.number })}</p>}
       {question.instruction && (
-        <p className="font-medium whitespace-pre-line">
+        <p className="font-bold whitespace-pre-line">
           <TappableText text={question.instruction} vocab={vocab} />
         </p>
       )}
