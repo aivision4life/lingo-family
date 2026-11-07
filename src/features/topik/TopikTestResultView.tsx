@@ -1,11 +1,14 @@
 import { Check, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { ExampleLevel, TopikSection } from "@shared/enums";
 import type { TopikTestResult } from "@shared/topik";
 import { LinkButton } from "@/components/LinkButton";
 import { Button } from "@/components/ui/button";
 import { playSegment, stopAudio, useAudioPlayer } from "@/features/audio/player";
-import { KoreanText } from "./KoreanText";
+import { MarkedTermsCard } from "./MarkedTermsCard";
+import { MarkSourceContext } from "./markSource";
+import { TappableText } from "./TopikQuestionCard";
 import { formatDuration } from "./segmentEdit";
 import { useTopikQuestionContent } from "./api";
 import { TOPIK_OPTION_COUNT } from "@shared/topik";
@@ -22,7 +25,7 @@ const FULL_PAPER_QUESTIONS = 50;
  * 50-question paper. A number that looks like a real TOPIK score but was scaled up from 12
  * questions would be worse than no number at all.
  */
-export function TopikTestResultView({ result, profileId }: { result: TopikTestResult; profileId: string }) {
+export function TopikTestResultView({ result, profileId, level }: { result: TopikTestResult; profileId: string; level: ExampleLevel }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<number | null>(null);
   const fullPaper = result.question_count === FULL_PAPER_QUESTIONS;
@@ -79,10 +82,14 @@ export function TopikTestResultView({ result, profileId }: { result: TopikTestRe
                 {t("topik.test.itemAnswers", { chosen: item.selected_option ?? "–", correct: item.correct_option })}
               </span>
             </button>
-            {open === item.position && <ItemReview item={item} profileId={profileId} />}
+            {open === item.position && <ItemReview item={item} profileId={profileId} section={result.section} />}
           </li>
         ))}
       </ul>
+
+      {/* Looking at the paper afterwards is when an unknown word is actually noticed — the sitting
+          itself is a race against the tape or the clock (M7.12). */}
+      <MarkedTermsCard profileId={profileId} level={level} />
 
       <LinkButton to="/topik/tests" variant="outline">
         {t("topik.test.backToPicker")}
@@ -91,13 +98,18 @@ export function TopikTestResultView({ result, profileId }: { result: TopikTestRe
   );
 }
 
-/** Now that the paper is over, everything is allowed: the clip, the transcript, the explanation. */
-function ItemReview({ item, profileId }: { item: TopikTestResult["items"][number]; profileId: string }) {
+/** Now that the paper is over, everything is allowed: the clip, the transcript, the explanation —
+ * and the words are tappable, so one met in the exam can be marked for the library (M7.12). */
+function ItemReview({ item, profileId, section }: { item: TopikTestResult["items"][number]; profileId: string; section: TopikSection }) {
   const { t } = useTranslation();
   const { playingKey } = useAudioPlayer();
-  const content = useTopikQuestionContent(item.question_id ?? "", profileId, false);
+  const content = useTopikQuestionContent(item.question_id ?? "", profileId);
+  const vocab = content.data?.vocab ?? [];
+  // A question deleted since the sitting has no exam label left, and a mark could not say where
+  // the word was met — so that row keeps the plain text it had before.
+  const source = item.exam === null ? null : { section, exam: item.exam, number: item.number };
 
-  return (
+  const body = (
     <div className="flex flex-col gap-3 border-t bg-muted/30 p-3">
       {item.clip && (
         <Button
@@ -112,11 +124,15 @@ function ItemReview({ item, profileId }: { item: TopikTestResult["items"][number
       )}
       {/* The question as it was asked. A reading paper is unreviewable without it: its stem *is*
           the question, and "bạn chọn 2 · đúng 3" on its own teaches nothing (M7.11). */}
-      {item.instruction && <p className="font-bold whitespace-pre-line" lang="ko">{item.instruction}</p>}
+      {item.instruction && (
+        <p className="font-bold whitespace-pre-line">
+          <TappableText text={item.instruction} vocab={vocab} />
+        </p>
+      )}
       {item.stem && (item.stem.text || item.stem.image_key) && (
         <div className="flex flex-col gap-2 rounded-lg border bg-background p-3">
           {item.stem.image_key && <img src={imageUrl(item.stem.image_key)} alt="" className="w-full rounded-md object-contain" />}
-          {item.stem.text && <KoreanText text={item.stem.text} />}
+          {item.stem.text && <TappableText text={item.stem.text} vocab={vocab} />}
         </div>
       )}
       {item.options && (
@@ -134,7 +150,7 @@ function ItemReview({ item, profileId }: { item: TopikTestResult["items"][number
               >
                 <span className="font-medium">{n})</span>
                 {opt?.image_key && <img src={imageUrl(opt.image_key)} alt="" className="w-24 rounded object-contain" />}
-                {opt?.text && <KoreanText text={opt.text} />}
+                {opt?.text && <TappableText text={opt.text} vocab={vocab} />}
               </li>
             );
           })}
@@ -148,4 +164,6 @@ function ItemReview({ item, profileId }: { item: TopikTestResult["items"][number
       {content.data?.explanation_vi && <p className="text-sm text-muted-foreground">{content.data.explanation_vi}</p>}
     </div>
   );
+
+  return source ? <MarkSourceContext.Provider value={source}>{body}</MarkSourceContext.Provider> : body;
 }

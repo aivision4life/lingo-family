@@ -248,7 +248,7 @@ function AiStatus({ question, profileId }: { question: TopikQuestion; profileId:
   const generate = useGenerateTopikContent();
   const [triggered, setTriggered] = useState(false);
   const needsGeneration = !question.vocab_ready || !question.explain_ready;
-  const poll = useTopikQuestionContent(question.id, profileId, triggered && needsGeneration);
+  const poll = useTopikQuestionContent(question.id, profileId, { enabled: triggered && needsGeneration, poll: true });
   const polledReady = poll.data?.vocab_ready && poll.data?.explain_ready;
 
   useEffect(() => {

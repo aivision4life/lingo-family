@@ -49,11 +49,7 @@ export function TopikQuestionCard({
   const selectedOption = answered?.selected ?? null;
 
   // The explanation may still be generating when the group is revealed; poll until it lands.
-  const explainPoll = useTopikQuestionContent(
-    question.id,
-    profileId,
-    reveal !== null && !reveal.explain_ready,
-  );
+  const explainPoll = useTopikQuestionContent(question.id, profileId, { enabled: reveal !== null && !reveal.explain_ready, poll: true });
   const explanation =
     reveal && !reveal.explain_ready && explainPoll.data?.explain_ready
       ? {
@@ -65,11 +61,7 @@ export function TopikQuestionCard({
       : reveal;
 
   // Same for the tappable words, which are what makes a question readable before it is answered.
-  const vocabPoll = useTopikQuestionContent(
-    question.id,
-    profileId,
-    !question.vocab_ready,
-  );
+  const vocabPoll = useTopikQuestionContent(question.id, profileId, { enabled: !question.vocab_ready, poll: true });
   const vocab =
     !question.vocab_ready && vocabPoll.data?.vocab_ready
       ? vocabPoll.data.vocab

@@ -80,13 +80,20 @@ export const useRevealTopikGroup = () =>
 /** Polls one question's current vocab/explanation (M6.4-ish): used while a practice session's
  * background generation hasn't finished yet, or after the review screen's "Tạo dữ liệu AI". Stops
  * polling as soon as the caller passes `enabled: false` (typically once both are ready). */
-export const useTopikQuestionContent = (questionId: string, profileId: string, enabled: boolean) =>
+/**
+ * A question's vocabulary and explanation.
+ *
+ * `poll` is what a screen waiting for generation needs (practice, the review list): it asks again
+ * every few seconds until the data lands. Reading a finished paper only needs the data once, so
+ * it passes `poll: false` — fetching it, but not every three seconds for fifty questions.
+ */
+export const useTopikQuestionContent = (questionId: string, profileId: string, { enabled = true, poll = false } = {}) =>
   useQuery({
     queryKey: ["topik", "content", questionId, profileId],
     queryFn: () =>
       api("GET", `/topik/questions/${questionId}/content?profile_id=${encodeURIComponent(profileId)}`, topikQuestionContentSchema),
-    enabled,
-    refetchInterval: enabled ? CONTENT_POLL_MS : false,
+    enabled: enabled && questionId !== "",
+    refetchInterval: enabled && poll ? CONTENT_POLL_MS : false,
   });
 
 /** Review screen's per-question "Tạo dữ liệu AI": starts background generation for whichever of

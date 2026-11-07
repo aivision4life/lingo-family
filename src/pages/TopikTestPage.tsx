@@ -5,6 +5,8 @@ import type { TopikTestResult, TopikTestRun as TopikTestRunData } from "@shared/
 import { LinkButton } from "@/components/LinkButton";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useTopikTest } from "@/features/topik/api";
+import { MarkedWordsProvider } from "@/features/topik/MarkedWordsProvider";
+import { UnsavedMarksGuard } from "@/features/topik/UnsavedMarksGuard";
 import { TopikTestResultView } from "@/features/topik/TopikTestResultView";
 import { TopikTestRun } from "@/features/topik/TopikTestRun";
 
@@ -23,7 +25,18 @@ export function TopikTestPage() {
   const [justFinished, setJustFinished] = useState<TopikTestResult | null>(null);
 
   if (!profile) return null;
-  if (justFinished) return <Shell title={t("topik.test.resultTitle")}>{<TopikTestResultView result={justFinished} profileId={profile.id} />}</Shell>;
+  const level = profile.is_kid ? "kid" : "beginner";
+  // Words are marked on the result screen and added from it (M7.12), so the list of marks lives
+  // around that screen — never inside it, or re-rendering a row would drop them.
+  if (justFinished)
+    return (
+      <Shell title={t("topik.test.resultTitle")}>
+        <MarkedWordsProvider>
+          <TopikTestResultView result={justFinished} profileId={profile.id} level={level} />
+          <UnsavedMarksGuard />
+        </MarkedWordsProvider>
+      </Shell>
+    );
   if (test.isPending) return <Shell title={t("topik.test.title")}>{<p className="text-muted-foreground">{t("common.loading")}</p>}</Shell>;
   // A cancelled sitting answers 410 on purpose (it must not hand over the answer key), so an
   // error here is the normal way to land on one — by reloading a tab left open on it, say.
@@ -48,7 +61,10 @@ export function TopikTestPage() {
   }
   return (
     <Shell title={t("topik.test.resultTitle")}>
-      <TopikTestResultView result={test.data as TopikTestResult} profileId={profile.id} />
+      <MarkedWordsProvider>
+        <TopikTestResultView result={test.data as TopikTestResult} profileId={profile.id} level={level} />
+        <UnsavedMarksGuard />
+      </MarkedWordsProvider>
     </Shell>
   );
 }

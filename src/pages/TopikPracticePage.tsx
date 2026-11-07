@@ -1,25 +1,14 @@
 import { X } from "lucide-react";
-import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useBlocker, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import type { TopikSection } from "@shared/enums";
 import type { TopikSessionMode } from "@shared/topik";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { LinkButton } from "@/components/LinkButton";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useTopikBlocks, useTopikSession } from "@/features/topik/api";
 import { formatDueFromNow } from "@/features/topik/dueIn";
-import { useMarkedWords } from "@/features/topik/markedWords";
 import { MarkedWordsProvider } from "@/features/topik/MarkedWordsProvider";
+import { UnsavedMarksGuard } from "@/features/topik/UnsavedMarksGuard";
 import { TopikSession } from "@/features/topik/TopikSession";
 
 /** Screen (M6.1; explanation + key terms M6.3) — `/topik/practice?from=&to=`: one TOPIK question at
@@ -111,45 +100,17 @@ function NothingDue({
   );
 }
 
-/** "Thoát": confirms first when there are still marked-but-not-yet-added words (M6.3), so a
- * careless exit doesn't silently drop them (the list lives only in memory for this session). Also
- * warns on an actual tab close/reload via `beforeunload`. */
+/** "Thoát": the confirmation when words are still marked lives in `UnsavedMarksGuard`, which the
+ * sitting's result screen uses too (M7.12). */
 function ExitButton() {
   const { t } = useTranslation();
-  const { marked } = useMarkedWords();
-  const hasUnsaved = marked.length > 0;
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => hasUnsaved && currentLocation.pathname !== nextLocation.pathname);
-
-  useEffect(() => {
-    if (!hasUnsaved) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [hasUnsaved]);
-
   return (
     <>
       <LinkButton to="/topik" variant="outline">
         <X aria-hidden />
         {t("topik.practice.exit")}
       </LinkButton>
-      <AlertDialog open={blocker.state === "blocked"} onOpenChange={(open) => !open && blocker.reset?.()}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("topik.practice.exitConfirm.title")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("topik.practice.exitConfirm.description", { count: marked.length })}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => blocker.reset?.()}>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => blocker.proceed?.()}>
-              {t("topik.practice.exitConfirm.leave")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <UnsavedMarksGuard />
     </>
   );
 }
