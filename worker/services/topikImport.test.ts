@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockRangeOf, buildImportDraft, parseTopikFileName } from "./topikImport";
+import { blockRangeOf, buildImportDraft, mergeWrappedTranscript, parseTopikFileName, wrappedTranscriptLines } from "./topikImport";
 
 describe("parseTopikFileName", () => {
   it("parses a range file name", () => {
@@ -454,5 +454,42 @@ describe("buildImportDraft, whole paper", () => {
       [1, "1~4"],
       [3, "1~4"],
     ]);
+  });
+});
+
+describe("a transcript wrapped by Word (M7.16)", () => {
+  const wrapped = "여자 : 이거 좀 봐 주실래요?\n남자 : 어디 좀 볼까요? 언제까지 해\n드리면 돼요?\n여자 : 내일까지 해 주세요.";
+
+  it("spots the lines that do not start a turn", () => {
+    expect(wrappedTranscriptLines(wrapped)).toEqual(["드리면 돼요?"]);
+  });
+
+  it("says nothing about a transcript with one line per turn", () => {
+    expect(wrappedTranscriptLines("여자 : 네.\n남자 : 알겠습니다.")).toEqual([]);
+  });
+
+  it("judges nothing when there is no speaker label to judge against", () => {
+    expect(wrappedTranscriptLines("안내 말씀 드리겠습니다.\n잠시 후 영화 촬영이")).toEqual([]);
+    expect(wrappedTranscriptLines(null)).toEqual([]);
+  });
+
+  it("joins a continuation back onto its turn, with the space the wrap replaced", () => {
+    expect(mergeWrappedTranscript(wrapped)).toBe(
+      "여자 : 이거 좀 봐 주실래요?\n남자 : 어디 좀 볼까요? 언제까지 해 드리면 돼요?\n여자 : 내일까지 해 주세요.",
+    );
+  });
+
+  it("leaves a well-typed transcript exactly as it is", () => {
+    const clean = "여자 : 네.\n남자 : 알겠습니다.";
+    expect(mergeWrappedTranscript(clean)).toBe(clean);
+  });
+
+  it("does not touch text it cannot judge, nor a missing stem", () => {
+    expect(mergeWrappedTranscript("안내 말씀\n드리겠습니다.")).toBe("안내 말씀\n드리겠습니다.");
+    expect(mergeWrappedTranscript(null)).toBeNull();
+  });
+
+  it("handles a turn broken into several lines", () => {
+    expect(mergeWrappedTranscript("남자 : 하나\n둘\n셋\n여자 : 넷")).toBe("남자 : 하나 둘 셋\n여자 : 넷");
   });
 });

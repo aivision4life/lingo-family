@@ -581,6 +581,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M7.1 | TOPIK listening (groundwork) | One mp3 per exam + clip timestamps + byte-range playback + boundary review screen | [x] |
 | M6.12 | Review only my own words | Per-profile switch; hides other people's cards from the queue and Home counts, never resets them | [x] |
 | M7.14 | A mock test covers a range of questions | `from_number`/`to_number` on `topik_tests`; the three lengths become shortcuts that fill a range, a range that would cut a pair in half is widened, a hole in it refuses the sitting, and the preview that says so writes nothing | [x] |
+| M7.16 | A whole exam paper as one file | Second file-name shape, block taken from each question's own `[N~M]` line, `<w:br/>` no longer dropped (it was gluing words together), and `--diff` reports missing recordings | [x] |
 | M7.13 | The mock test's clock belongs to the server | `ends_at` in `topik_tests`; the countdown and the tape's position are derived from it, reopening a paper resumes where the time got to, a pause costs nothing, and a paper nobody came back to is submitted and graded instead of staying `running` | [x] |
 | M7.12 | TOPIK words into their own album | A word added from a TOPIK question joins "TOPIK II Reading"/"Listening", gets exam-style example sentences and remembers which question it was met in; markable from a sitting's result too | [x] |
 | M7.11 | TOPIK: the reading section can be sat | Section chips, a countdown instead of the tape (70min/50 questions, pausable, auto-submit), free navigation by question grid, Submit, and a mixed reading paper | [x] |
@@ -649,6 +650,41 @@ Vá bằng hai mục in ra ở cuối dry-run (`shortGroups`, `examCoverage` tro
 - **Nhóm thiếu câu** — so số câu thật với dải trong tên file: *"nhóm 8DeOfficial-60회: có 2 câu, dải đòi 3; thiếu câu 18"*. Là **cảnh báo**, không chặn nhập: soạn dở là cách làm việc bình thường.
 - **Độ phủ theo đề** — mỗi đề có bao nhiêu câu và **chạy liền từ 1 được bao nhiêu**, tức đúng số câu mini test đề gốc dùng được. Chính mục này phát hiện cái `shortGroups` không thấy nổi: cả 8 đề 8DeOfficial có 12-14 câu nhưng chỉ dùng được **4**, vì chưa đề nào có câu 5-8; và một đề vắng mặt hẳn khỏi một file thì không để lại "nhóm thiếu" nào để mà tìm.
 
+
+### M7.16 — Một đề trọn vẹn trong một file, và dấu ngắt dòng bị nuốt (2026-11-08)
+
+Đề hoàn chỉnh tới dưới dạng **một file 50 câu, 20 khối** — ngược hẳn hình dạng cũ (một *khối câu*,
+nhiều đề bên trong). Quy ước tên cũ không có chỗ cho nó: khối nằm trong tên file, mà 20 khối thì
+không dải nào đúng. Nên có **dạng tên thứ hai**, và với nó **khối lấy từ dòng `[N~M]` của chính câu
+hỏi** — nguồn đúng hơn tên file vốn chỉ là vật thay thế.
+
+Không nhét số đề vào tên: `Heading2` đã nói `35회`, luật nhãn đề sẵn có biến nó thành
+`OfficialTest-35회` — đúng nhãn production đang dùng. `Test35` trong tên **chỉ để đối chiếu** và
+cảnh báo khi lệch; dùng nó để suy ra nhãn là tạo nguồn sự thật thứ hai cho cùng một thông tin.
+
+Hai cái bẫy, cả hai đều im lặng:
+
+- **Dòng `[N~M]` nằm giữa hai câu.** Nó đứng sau bảng của câu 3, trước tiêu đề câu 4, mà một đoạn
+  giữa hai câu thuộc về câu *trước* nó (M7.3) — nên khối 4~8 rơi vào câu 3. Thay vì phụ thuộc vị
+  trí, dòng được khớp theo **dải nó tự khai**: nó ghi 4~8 thì thuộc về câu 4 đến 8, câu 3 giữ khối
+  1~3 và đề bài của nó. Không sửa thì lệch khối **và** lệch đề bài ở câu cuối của cả 20 khối.
+- **`textOf` bỏ `<w:br/>`,** và bỏ nghĩa là **nối hai dòng không có gì ở giữa**. File cũ xuống dòng
+  bằng đoạn riêng nên không lộ; file đề trọn vẹn để cả lượt thoại trong một ô, ngăn bằng `<w:br/>`,
+  nên ba lượt dính thành một dòng, và một ngắt gõ tại chỗ Word tự xuống dòng thì **dán liền hai
+  chữ**: `나타났으며` + `10대가` → `나타났으며10대가`. Thứ này đầu độc hai lần — nó là cái người học
+  đọc, và là đầu vào sinh vocab/giải thích, nên model được đưa những từ không tồn tại.
+
+Quy mô: **178/200 câu, 1003 dòng** — quá nhiều để nhờ sửa tay. Nên sửa luôn khi nhập, một cách xác
+định: dòng không mở đầu bằng nhãn người nói là phần tiếp của dòng trên, và chỗ ngắt vốn là một dấu
+cách, nên nối lại bằng dấu cách. **Kiểm được**: 22 câu trong số đó đã có bản gõ tay trên production,
+và sau khi nối, văn bản trùng khít từng ký tự (chỉ còn khác `남자:` với `남자 :`). Đó là cách duy
+nhất tin được một phép sửa tự động trên dữ liệu học: so với bản người làm.
+
+Bài học chung: lỗi lộ ra **chỉ vì** có bản cũ để đối chiếu. Nếu nhập thẳng 4 đề mới thì 156 câu
+chưa từng có sẽ mang nguyên lỗi và không gì phát hiện. Vì vậy `buildImportDraft` giờ cảnh báo
+thường trực mỗi dòng không mở đầu một lượt thoại, ở **mọi** chế độ chạy, và `--diff` báo thêm đề
+nghe nào chưa có băng đã duyệt (câu không có băng vô hình ở cả luyện tập lẫn thi thử — an toàn,
+nhưng im lặng).
 
 ### M7.15 — Hàng rào tưởng có mà không có, và `--diff` (2026-11-08)
 

@@ -37,8 +37,19 @@ function attrsOf(node: OrderedNode): Attrs {
 }
 
 /** All text directly or indirectly under `node` (paragraph, table cell, run, …), in document order. */
+/**
+ * A paragraph's text, with Word's hard line breaks kept (M7.16).
+ *
+ * `<w:br/>` used to be dropped, and dropping it **joins the two lines with nothing between them**.
+ * In a file where each speaker turn is a `<w:br/>`-separated line inside one cell — which is how a
+ * whole exam paper is typed — that turned three turns into one run-on line, and a break typed at a
+ * visual wrap glued two words together ("나타났으며" + "10대가" → "나타났으며10대가"). Silent, and
+ * poisonous twice over: it is what the learner reads, and it is what the vocabulary and the
+ * explanation are generated from, so the model is handed words that do not exist.
+ */
 function textOf(node: OrderedNode): string {
   if (tagOf(node) === "#text") return (node["#text"] as string | undefined) ?? "";
+  if (tagOf(node) === "w:br") return "\n";
   return childrenOf(node).map(textOf).join("");
 }
 
