@@ -3,8 +3,14 @@ import { TOPIK_IMAGE_MAX_BYTES } from "../../shared/topik";
 import type { DraftQuestion } from "../../worker/services/topikImport";
 import { FAKE_WEBP } from "../../worker/test/fakeUpload";
 import {
+  changedLines,
   checkImageBytes,
   checkQuestionImages,
+  diffColumns,
+  refreshAiSql,
+  staleAiRows,
+  type DiffRow,
+  type QuestionSnapshot,
   examCoverage,
   shortGroups,
   fileMatchesFilter,
@@ -271,5 +277,121 @@ describe("examCoverage", () => {
 
   it("keeps the exams apart and in a stable order", () => {
     expect(examCoverage([q("B", 1), q("A", 1), q("A", 2)]).map((e) => e.exam)).toEqual(["A", "B"]);
+  });
+});
+
+// --- the comparison table (M7.15) ---------------------------------------------------------------
+
+const snap = (over: Partial<QuestionSnapshot> = {}): QuestionSnapshot => ({
+  block: "1~3",
+  instruction: "다음을 듣고 알맞은 것을 고르십시오.",
+  stem_text: "남자: 안녕하세요.\n여자: 네, 안녕하세요.",
+  stem_image_key: null,
+  options: '[{"text":"1","image_key":null}]',
+  correct_option: 2,
+  warning: null,
+  ...over,
+});
+
+const row = (over: Partial<DiffRow> = {}): DiffRow => ({
+  id: "q-1",
+  exam: "OfficialTest-35회",
+  number: 2,
+  verified: true,
+  has_vocab: false,
+  has_explain: false,
+  diffs: [],
+  ...over,
+});
+
+describe("diffColumns", () => {
+  it("finds nothing when the overwrite would write the same thing back", () => {
+    expect(diffColumns(snap(), snap())).toEqual([]);
+  });
+
+  it("names each column that differs, with both sides", () => {
+    const diffs = diffColumns(snap(), snap({ stem_text: "남자: 반갑습니다.\n여자: 네, 안녕하세요.", correct_option: 3 }));
+    expect(diffs.map((d) => d.column)).toEqual(["stem_text", "correct_option"]);
+    expect(diffs[1]).toEqual({ column: "correct_option", before: "2", after: "3" });
+  });
+
+  it("sees a null becoming a value, and the other way round", () => {
+    expect(diffColumns(snap({ warning: null }), snap({ warning: "answer label says 2" }))).toEqual([
+      { column: "warning", before: null, after: "answer label says 2" },
+    ]);
+    expect(diffColumns(snap({ stem_image_key: "images/upload/a.png" }), snap({ stem_image_key: null }))).toEqual([
+      { column: "stem_image_key", before: "images/upload/a.png", after: null },
+    ]);
+  });
+
+  it("does not compare anything the UPDATE does not write", () => {
+    // `verified`, the AI columns and the timestamps are reported separately or left alone; the
+    // table must not claim an overwrite "changes" something it never names.
+    expect(Object.keys(snap())).toEqual(["block", "instruction", "stem_text", "stem_image_key", "options", "correct_option", "warning"]);
+  });
+});
+
+describe("changedLines", () => {
+  it("returns only the lines that moved", () => {
+    expect(changedLines("a\nb\nc", "a\nB\nc")).toEqual([{ line: 2, before: "b", after: "B" }]);
+  });
+
+  it("is empty when the text is identical", () => {
+    expect(changedLines("a\nb", "a\nb")).toEqual([]);
+  });
+
+  it("gives up rather than guessing when a line was added or removed", () => {
+    expect(changedLines("a\nb", "a\nb\nc")).toBeNull();
+    expect(changedLines(null, "a")).toBeNull();
+    expect(changedLines("a", null)).toBeNull();
+  });
+
+  it("handles a one-line field", () => {
+    expect(changedLines("고동안", "그동안")).toEqual([{ line: 1, before: "고동안", after: "그동안" }]);
+  });
+});
+
+describe("staleAiRows", () => {
+  const textChanged = [{ column: "stem_text" as const, before: "a", after: "b" }];
+
+  it("picks a row whose source text changed and that has AI content", () => {
+    const rows = [row({ diffs: textChanged, has_vocab: true }), row({ id: "q-2", diffs: textChanged, has_explain: true })];
+    expect(staleAiRows(rows).map((r) => r.id)).toEqual(["q-1", "q-2"]);
+  });
+
+  it("leaves alone a row with no AI content yet — there is nothing stale to clear", () => {
+    expect(staleAiRows([row({ diffs: textChanged })])).toEqual([]);
+  });
+
+  it("leaves alone a row whose change cannot affect what the AI read", () => {
+    // `block` and `warning` are not part of the vocabulary or the explanation's input.
+    const rows = [row({ has_vocab: true, diffs: [{ column: "block", before: "1~3", after: "1~4" }] })];
+    expect(staleAiRows(rows)).toEqual([]);
+  });
+
+  it("counts a changed answer, which the explanation is built from", () => {
+    const rows = [row({ has_explain: true, diffs: [{ column: "correct_option", before: "2", after: "4" }] })];
+    expect(staleAiRows(rows)).toHaveLength(1);
+  });
+});
+
+describe("refreshAiSql", () => {
+  it("is null when nothing is stale, so the run says so instead of printing an empty statement", () => {
+    expect(refreshAiSql([row()])).toBeNull();
+  });
+
+  it("clears only the two timestamps, for exactly the stale ids", () => {
+    const rows = [
+      row({ id: "q-a", has_vocab: true, diffs: [{ column: "stem_text", before: "a", after: "b" }] }),
+      row({ id: "q-b" }),
+    ];
+    const sql = refreshAiSql(rows)!;
+    expect(sql).toContain("SET vocab_checked_at = NULL, explain_checked_at = NULL");
+    expect(sql).toContain("'q-a'");
+    expect(sql).not.toContain("'q-b'");
+    // The generated text itself is never deleted: until the new one lands the screen still has
+    // something to show.
+    expect(sql).not.toContain("vocab =");
+    expect(sql).not.toContain("explanation_vi");
   });
 });

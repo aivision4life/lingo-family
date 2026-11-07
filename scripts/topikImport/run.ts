@@ -6,6 +6,7 @@
 //   npm run topik-import -- --apply --local                       writes to the local dev D1/R2 instead (try a file out)
 //   npm run topik-import -- --apply --force                       also overwrites a question that was already edited/verified
 //   npm run topik-import -- --apply --force --keep-verified       same, but keeps the row's existing `verified` (see below)
+//   npm run topik-import -- --diff                                read-only: what --force WOULD change, column by column
 //   npm run topik-import -- --section listening                   only the listening files; --section reading for the others
 //   npm run topik-import -- --source Yonsei                       only files whose name's <source> is Yonsei
 //
@@ -28,11 +29,22 @@
 // Settings → TOPIK before they are used for practice (GET /api/topik/session only returns verified
 // questions).
 //
-// Safety net (M6.5-ish): before writing anything, if `--force` would overwrite an existing stem
+// **Before every `--apply --force`, run `--diff` and read the table** (SPEC §11, M7.15). It parses
+// the same files under the same filter, reads the rows that would be overwritten, and prints only
+// the questions whose columns actually differ — with each one's `verified`/vocab/explanation state,
+// since those decide which rows need their AI content regenerating afterwards. It writes nothing,
+// takes no backup, and is the only thing that will tell you an overwrite is about to change more
+// than you meant: the stem guard below is far narrower than it sounds.
+//
+// Safety net (M6.5-ish), and mind how narrow it is: before writing anything, if `--force` would
+// overwrite an existing stem
 // that had no `<u>…</u>` yet with a new one that does, the new stem with its tags stripped back out
 // MUST be byte-identical to the existing one — a touch-up that's "only adding formatting" must
 // never also silently drop or alter a character. A mismatch aborts the whole run before any write
 // (not just skips the offending row), prints every mismatch found, and does not even take a backup.
+// It checks **nothing else**: a stem rewritten with no `<u>` on either side (an ordinary content
+// correction, or a parser regression) passes straight through. It is a guard on one manoeuvre, not
+// on meaning — which is why `--diff` exists and why the SPEC makes it a required step.
 //
 // Needs `npx wrangler login`. Reaches production through wrangler "remote bindings" (a temporary
 // config; nothing in wrangler.jsonc changes), same as scripts/assignCreator.
@@ -48,18 +60,23 @@ import { stripUnderline, type TopikOptions } from "../../shared/topik";
 import { imageInfo } from "../../worker/lib/imageInfo";
 import { buildImportDraft, parseTopikFileName, type DraftQuestion } from "../../worker/services/topikImport";
 import {
+  changedLines,
   checkImageBytes,
   checkQuestionImages,
+  diffColumns,
   examCoverage,
   fileMatchesFilter,
   filterLabel,
   forceScopeProblem,
   imageRefsOf,
   parseSectionFlag,
+  refreshAiSql,
   shortGroups,
   verifiedAfterOverwrite,
+  type DiffRow,
   type ImportFilter,
   type MediaByRid,
+  type QuestionSnapshot,
 } from "./plan";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
@@ -77,10 +94,16 @@ async function storeImage(bucket: R2Like, bytes: Uint8Array, contentType: string
   const check = checkImageBytes(bytes, contentType);
   if (!check.ok) return null;
   const type = contentType.split(";")[0]!.trim();
-  const info = imageInfo(bytes);
-  const key = `images/upload/${hex(await crypto.subtle.digest("SHA-1", bytes.buffer as ArrayBuffer))}.${info.ext}`;
+  const key = await imageKeyFor(bytes);
   if (!(await bucket.head(key))) await bucket.put(key, bytes, { httpMetadata: { contentType: type } });
   return { key };
+}
+
+/** The content-addressed key those bytes would get. Pure arithmetic over the bytes, so `--diff`
+ * can compare image columns exactly without uploading anything. */
+async function imageKeyFor(bytes: Uint8Array): Promise<string> {
+  const info = imageInfo(bytes);
+  return `images/upload/${hex(await crypto.subtle.digest("SHA-1", bytes.buffer as ArrayBuffer))}.${info.ext}`;
 }
 
 const PROD_DB_NAME = "lingo-family";
@@ -91,6 +114,8 @@ const args = process.argv.slice(3);
 const apply = args.includes("--apply");
 const force = args.includes("--force");
 const keepVerified = args.includes("--keep-verified");
+/** Read-only: print what `--force` would change, and stop. Never writes, never backs up. */
+const diffOnly = args.includes("--diff");
 /** Write to the dev server's own D1/R2 (.wrangler/state) instead of production, to try a file out. */
 const local = args.includes("--local");
 /** Confirms that a `--force` run really is meant to overwrite questions in every section. */
@@ -144,7 +169,24 @@ type ParsedFile = {
 };
 
 /** The production/local row a draft would replace, as read once before any write. */
-type ExistingRow = { id: string; verified: number; stem_text: string | null };
+type ExistingRow = {
+  id: string;
+  verified: number;
+  block: string | null;
+  instruction: string | null;
+  stem_text: string | null;
+  stem_image_key: string | null;
+  options: string;
+  correct_option: number;
+  warning: string | null;
+  /** Whether the AI columns have ever been filled — what decides if an overwrite leaves them stale. */
+  vocab_done: number;
+  explain_done: number;
+};
+
+const EXISTING_COLUMNS =
+  "id, verified, block, instruction, stem_text, stem_image_key, options, correct_option, warning, " +
+  "(vocab_checked_at IS NOT NULL) AS vocab_done, (explain_checked_at IS NOT NULL) AS explain_done";
 /** One draft question paired with the row it matches (null = it will be inserted). */
 type ImportRow = { f: ParsedFile; q: DraftQuestion; existing: ExistingRow | null };
 
@@ -172,22 +214,108 @@ async function parseFile(filePath: string, fileName: string): Promise<ParsedFile
   return { fileName, questions: draft.questions, errors: draft.errors, warnings: draft.warnings, mediaByRid };
 }
 
-/** Resolves one `image_rid` (a docx relationship id) to a stored R2 key. Only called after
+/**
+ * How an image reference becomes a key. Two of them: the write path uploads the bytes, and
+ * `--diff` only hashes them — the key is content-addressed, so the comparison is exact without
+ * putting anything in R2.
+ */
+type KeyResolver = (media: { bytes: Uint8Array; contentType: string }) => Promise<string | null>;
+
+const uploadKeys = (bucket: R2Like): KeyResolver => async (media) => (await storeImage(bucket, media.bytes, media.contentType))?.key ?? null;
+const hashKeys: KeyResolver = async (media) => (checkImageBytes(media.bytes, media.contentType).ok ? imageKeyFor(media.bytes) : null);
+
+/** Resolves one `image_rid` (a docx relationship id) to its R2 key. Only called after
  * `checkQuestionImages` has already verified the rid resolves and passes validation, so a null
  * here would mean that guarantee was somehow broken — the caller treats it as a bug, not silence. */
-async function resolveImage(bucket: R2Like, rid: string | null, mediaByRid: ParsedFile["mediaByRid"]): Promise<string | null> {
+async function resolveImage(keys: KeyResolver, rid: string | null, mediaByRid: ParsedFile["mediaByRid"]): Promise<string | null> {
   if (!rid) return null;
   const media = mediaByRid.get(rid);
   if (!media) return null;
-  const stored = await storeImage(bucket, media.bytes, media.contentType);
-  return stored?.key ?? null;
+  return keys(media);
 }
 
-async function resolveOptions(bucket: R2Like, q: DraftQuestion, mediaByRid: MediaByRid): Promise<TopikOptions> {
+async function resolveOptions(keys: KeyResolver, q: DraftQuestion, mediaByRid: MediaByRid): Promise<TopikOptions> {
   const options = await Promise.all(
-    q.options.map(async (o) => ({ text: o.text, image_key: await resolveImage(bucket, o.image_rid, mediaByRid) })),
+    q.options.map(async (o) => ({ text: o.text, image_key: await resolveImage(keys, o.image_rid, mediaByRid) })),
   );
   return options as TopikOptions;
+}
+
+/** A parsed question in the shape the nine written columns have, ready to compare or to write. */
+async function snapshotOf(keys: KeyResolver, q: DraftQuestion, mediaByRid: MediaByRid): Promise<QuestionSnapshot> {
+  return {
+    block: q.block,
+    instruction: q.instruction,
+    stem_text: q.stem.text,
+    stem_image_key: await resolveImage(keys, q.stem.image_rid, mediaByRid),
+    options: JSON.stringify(await resolveOptions(keys, q, mediaByRid)),
+    correct_option: q.correct_option,
+    warning: q.warning,
+  };
+}
+
+const existingSnapshot = (row: ExistingRow): QuestionSnapshot => ({
+  block: row.block,
+  instruction: row.instruction,
+  stem_text: row.stem_text,
+  stem_image_key: row.stem_image_key,
+  options: row.options,
+  correct_option: row.correct_option,
+  warning: row.warning,
+});
+
+const tick = (on: boolean) => (on ? "có" : "chưa");
+
+/** Prints one changed column: only the lines that moved, when the two sides line up. */
+function printColumn(column: string, before: string | null, after: string | null) {
+  const lines = changedLines(before, after);
+  if (lines === null) {
+    console.log(`    ${column}:`);
+    console.log(`      - ${JSON.stringify(before)}`);
+    console.log(`      + ${JSON.stringify(after)}`);
+    return;
+  }
+  console.log(`    ${column} (${lines.length} dòng đổi):`);
+  for (const l of lines) {
+    console.log(`      dòng ${l.line}`);
+    console.log(`        - ${l.before}`);
+    console.log(`        + ${l.after}`);
+  }
+}
+
+/** The whole comparison table: only the questions that would change, and what they would lose. */
+function printDiff(rows: readonly DiffRow[], total: number) {
+  const changed = rows.filter((r) => r.diffs.length > 0);
+  console.log(`\n=== Đối chiếu với bản đang chạy (${changed.length}/${total} câu sẽ đổi) ===`);
+  if (changed.length === 0) {
+    console.log("  (không câu nào đổi — --force sẽ ghi lại y nguyên nội dung hiện có)");
+    return;
+  }
+  for (const r of changed) {
+    console.log(`\n  ${r.exam} #${r.number}  [đã duyệt: ${tick(r.verified)} · vocab: ${tick(r.has_vocab)} · giải thích: ${tick(r.has_explain)}]`);
+    for (const d of r.diffs) printColumn(d.column, d.before, d.after);
+  }
+
+  const byColumn = new Map<string, number>();
+  for (const r of changed) for (const d of r.diffs) byColumn.set(d.column, (byColumn.get(d.column) ?? 0) + 1);
+  console.log(`\n  Không đổi: ${total - changed.length} câu.`);
+  console.log(`  Cột bị đụng: ${[...byColumn].map(([c, n]) => `${c} (${n})`).join(", ")}`);
+}
+
+/**
+ * The statement that makes the stale rows generate their AI content again — printed for the owner
+ * to run, never run here. Nothing else will do it: both triggers require a null timestamp.
+ */
+function printAiRefresh(rows: readonly DiffRow[]) {
+  const sql = refreshAiSql(rows);
+  console.log("\n=== Sinh lại vocab/giải thích ===");
+  if (!sql) {
+    console.log("  (không cần — không câu nào vừa đổi nội dung vừa đã có dữ liệu AI)");
+    return;
+  }
+  console.log("  Dữ liệu AI cũ KHÔNG tự sinh lại: cả phiên luyện lẫn nút \"Tạo dữ liệu AI\" chỉ chạy khi dấu");
+  console.log("  thời gian còn trống. Chạy câu này rồi mở lại phiên (hoặc bấm nút) là nó sinh mới:\n");
+  for (const line of sql.split("\n")) console.log(`  ${line}`);
 }
 
 async function main() {
@@ -211,9 +339,11 @@ async function main() {
     return;
   }
   console.log(
-    apply
-      ? `APPLY${force ? " --force" : ""}${keepVerified ? " --keep-verified" : ""}: will write to ${local ? "the LOCAL dev database" : "production"}`
-      : "DRY RUN: nothing is written",
+    diffOnly
+      ? `DIFF (read-only): comparing against ${local ? "the LOCAL dev database" : "production"}; nothing is written`
+      : apply
+        ? `APPLY${force ? " --force" : ""}${keepVerified ? " --keep-verified" : ""}: will write to ${local ? "the LOCAL dev database" : "production"}`
+        : "DRY RUN: nothing is written",
   );
   console.log(`Scope: ${filterLabel(filter)} — ${fileNames.length} of ${allFiles.length} file(s) in ${DATA_DIR}`);
   if (force && filter.section === null && !allSections) {
@@ -279,8 +409,8 @@ async function main() {
     console.log(`  ${c.exam.padEnd(24)} ${String(c.count).padStart(3)}    ${String(c.usable).padStart(3)}${note}`);
   }
 
-  if (!apply) {
-    console.log("\nDry run only. Check the report above, then run again with --apply.");
+  if (!apply && !diffOnly) {
+    console.log("\nDry run only. Check the report above, then run again with --diff to compare, then --apply.");
     return;
   }
   if (totalOk === 0) {
@@ -303,11 +433,39 @@ async function main() {
     for (const f of parsed) {
       for (const q of f.questions) {
         const existing = await db
-          .prepare("SELECT id, verified, stem_text FROM topik_questions WHERE section = ?1 AND exam = ?2 AND number = ?3")
+          .prepare(`SELECT ${EXISTING_COLUMNS} FROM topik_questions WHERE section = ?1 AND exam = ?2 AND number = ?3`)
           .bind(q.section, q.exam, q.number)
           .first<ExistingRow>();
         rows.push({ f, q, existing });
       }
+    }
+
+    // --diff stops here: it has everything it needs, and it is the one mode that must be provably
+    // incapable of writing — no scope guard to pass, no backup, no UPDATE below it.
+    if (diffOnly) {
+      const diffRows: DiffRow[] = [];
+      let missing = 0;
+      for (const { f, q, existing } of rows) {
+        if (!existing) {
+          missing++;
+          continue;
+        }
+        const after = await snapshotOf(hashKeys, q, f.mediaByRid);
+        diffRows.push({
+          id: existing.id,
+          exam: q.exam,
+          number: q.number,
+          verified: existing.verified === 1,
+          has_vocab: existing.vocab_done === 1,
+          has_explain: existing.explain_done === 1,
+          diffs: diffColumns(existingSnapshot(existing), after),
+        });
+      }
+      printDiff(diffRows, diffRows.length);
+      if (missing > 0) console.log(`\n  (${missing} câu trong file chưa có trong cơ sở dữ liệu — --apply sẽ CHÈN MỚI, không nằm trong bảng trên)`);
+      printAiRefresh(diffRows);
+      console.log("\nKhông ghi gì cả. Xác nhận bảng trên rồi mới chạy --apply --force.");
+      return;
     }
 
     const existingBySection: Partial<Record<TopikSection, number>> = {};
@@ -343,6 +501,9 @@ async function main() {
 
     if (!local) backupProduction();
 
+    const keys = uploadKeys(bucket);
+    /** What the overwrites actually changed, so the run can end by naming the stale AI rows. */
+    const written: DiffRow[] = [];
     let inserted = 0;
     let skipped = 0;
     let overwritten = 0;
@@ -351,8 +512,8 @@ async function main() {
         skipped++;
         continue;
       }
-      const options = await resolveOptions(bucket, q, f.mediaByRid);
-      const stemImageKey = await resolveImage(bucket, q.stem.image_rid, f.mediaByRid);
+      const options = await resolveOptions(keys, q, f.mediaByRid);
+      const stemImageKey = await resolveImage(keys, q.stem.image_rid, f.mediaByRid);
       // checkQuestionImages() already verified every image reference resolves and validates;
       // a null key here would mean that guarantee broke between the check and now — stop loudly
       // instead of silently writing the row without its image.
@@ -362,6 +523,23 @@ async function main() {
       const optionsJson = JSON.stringify(options);
 
       if (existing) {
+        written.push({
+          id: existing.id,
+          exam: q.exam,
+          number: q.number,
+          verified: existing.verified === 1,
+          has_vocab: existing.vocab_done === 1,
+          has_explain: existing.explain_done === 1,
+          diffs: diffColumns(existingSnapshot(existing), {
+            block: q.block,
+            instruction: q.instruction,
+            stem_text: q.stem.text,
+            stem_image_key: stemImageKey,
+            options: optionsJson,
+            correct_option: q.correct_option,
+            warning: q.warning,
+          }),
+        });
         const verified = verifiedAfterOverwrite(existing.verified === 1, keepVerified);
         await db
           .prepare(
@@ -383,6 +561,9 @@ async function main() {
     }
     console.log(`\nInserted ${inserted}, skipped ${skipped} (already existed, not --force)${force ? `, overwrote ${overwritten}` : ""}.`);
     console.log('All imported rows are unverified — review them in Settings → TOPIK before they appear in practice.');
+    // An overwrite leaves the AI columns alone, which means it leaves them *stale*: the owner is
+    // told exactly which rows, and handed the statement, rather than finding out in a session.
+    if (written.length > 0) printAiRefresh(written);
   } finally {
     await proxy.dispose();
   }

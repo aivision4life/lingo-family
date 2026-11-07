@@ -175,3 +175,109 @@ export function forceScopeProblem(args: {
     `Add --section ${TOPIK_SECTIONS.join("|")} to limit the run, or --all-sections to confirm every section on purpose.`
   );
 }
+
+// --- comparing a parsed question with the row it would overwrite (M7.15) ------------------------
+//
+// `--force` rewrites nine columns at once, and until now the only way to find out what it changed
+// was to let it. These turn that into something readable *before* the write: every column that
+// differs, nothing that does not. The stem guard in `run.ts` is narrower than it looks — it fires
+// only when a stem gains its first `<u>` — so this table, not that guard, is what stands between a
+// mis-parsed file and 44 overwritten questions.
+
+/** The nine columns `--force` would write, as plain strings (image keys already resolved). */
+export type QuestionSnapshot = {
+  block: string | null;
+  instruction: string | null;
+  stem_text: string | null;
+  stem_image_key: string | null;
+  /** The `options` column as it is stored: a JSON array of `{text, image_key}`. */
+  options: string;
+  correct_option: number;
+  warning: string | null;
+};
+
+export type ColumnDiff = { column: keyof QuestionSnapshot; before: string | null; after: string | null };
+
+const COMPARED: (keyof QuestionSnapshot)[] = [
+  "block",
+  "instruction",
+  "stem_text",
+  "stem_image_key",
+  "options",
+  "correct_option",
+  "warning",
+];
+
+const asText = (value: string | number | null): string | null => (value === null ? null : String(value));
+
+/** Which of the written columns differ. Empty means the overwrite would change nothing at all. */
+export function diffColumns(before: QuestionSnapshot, after: QuestionSnapshot): ColumnDiff[] {
+  return COMPARED.flatMap((column) => {
+    const a = asText(before[column]);
+    const b = asText(after[column]);
+    return a === b ? [] : [{ column, before: a, after: b }];
+  });
+}
+
+export type LineChange = { line: number; before: string; after: string };
+
+/**
+ * The lines that actually changed inside a multi-line field.
+ *
+ * A listening transcript is a dozen speaker lines; printing both versions in full to show one
+ * corrected syllable hides the correction in the noise. When the two sides have the same number of
+ * lines — which a spelling fix does — only the differing lines are worth printing. Any other shape
+ * (a line added or removed) returns null, and the caller prints both versions whole rather than
+ * guessing at an alignment.
+ */
+export function changedLines(before: string | null, after: string | null): LineChange[] | null {
+  if (before === null || after === null) return null;
+  const a = before.split("\n");
+  const b = after.split("\n");
+  if (a.length !== b.length) return null;
+  return a.flatMap((line, i) => (line === b[i] ? [] : [{ line: i + 1, before: line, after: b[i]! }]));
+}
+
+/** One question's row in the comparison table, with what the AI columns already hold. */
+export type DiffRow = {
+  id: string;
+  exam: string;
+  number: number;
+  verified: boolean;
+  has_vocab: boolean;
+  has_explain: boolean;
+  diffs: ColumnDiff[];
+};
+
+/**
+ * The questions whose AI content is now stale: the text it was generated from changed, and there
+ * is generated content to be stale.
+ *
+ * This is the list that matters after an overwrite, because nothing regenerates by itself —
+ * `GET /topik/session` and the review screen's button both only act when `*_checked_at IS NULL`.
+ * Vocabulary is built from the stem plus the options; an explanation from those and the answer. So
+ * any of those four columns changing makes both stale.
+ */
+const AI_SOURCE_COLUMNS: (keyof QuestionSnapshot)[] = ["stem_text", "options", "correct_option", "instruction"];
+
+export function staleAiRows(rows: readonly DiffRow[]): DiffRow[] {
+  return rows.filter(
+    (r) => (r.has_vocab || r.has_explain) && r.diffs.some((d) => AI_SOURCE_COLUMNS.includes(d.column)),
+  );
+}
+
+/**
+ * The statement that makes those rows generate again — **printed, never run**. Clearing the two
+ * timestamps is the only trigger there is; the content columns are left in place so that, until
+ * the new ones land, the screen still has something to show.
+ */
+export function refreshAiSql(rows: readonly DiffRow[]): string | null {
+  const stale = staleAiRows(rows);
+  if (stale.length === 0) return null;
+  const ids = stale.map((r) => `'${r.id}'`).join(", ");
+  const names = stale.map((r) => `${r.exam} #${r.number}`).join(", ");
+  return (
+    `-- ${stale.length} question(s) whose AI content was generated from text that just changed: ${names}\n` +
+    `UPDATE topik_questions SET vocab_checked_at = NULL, explain_checked_at = NULL WHERE id IN (${ids});`
+  );
+}

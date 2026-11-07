@@ -650,6 +650,28 @@ Vá bằng hai mục in ra ở cuối dry-run (`shortGroups`, `examCoverage` tro
 - **Độ phủ theo đề** — mỗi đề có bao nhiêu câu và **chạy liền từ 1 được bao nhiêu**, tức đúng số câu mini test đề gốc dùng được. Chính mục này phát hiện cái `shortGroups` không thấy nổi: cả 8 đề 8DeOfficial có 12-14 câu nhưng chỉ dùng được **4**, vì chưa đề nào có câu 5-8; và một đề vắng mặt hẳn khỏi một file thì không để lại "nhóm thiếu" nào để mà tìm.
 
 
+### M7.15 — Hàng rào tưởng có mà không có, và `--diff` (2026-11-08)
+
+**Quy trình bắt buộc: trước mỗi `npm run topik-import -- --apply --force`, phải chạy
+`-- --diff` (cùng `--section`/`--source`) và xác nhận bảng đối chiếu.** `--diff` chỉ SELECT: nó
+dựng đúng chín cột mà `--force` sẽ ghi, so với hàng đang chạy, và chỉ in những câu thật sự đổi —
+kèm `verified` / có vocab chưa / có giải thích chưa của từng câu. Không ghi, không backup.
+
+Lý do có quy trình này: **chốt chặn stem hẹp hơn nhiều so với tên gọi của nó.** Nó chỉ bật khi stem
+mới có `<u>` mà stem cũ chưa có — đúng một thao tác "lần đầu thêm gạch chân" — và khi đó mới đòi bỏ
+thẻ ra phải giống từng byte. Một stem bị viết lại hoàn toàn, không bên nào có `<u>`, **đi thẳng qua
+không kiểm gì**. Tôi đã mô tả nó như thể nó canh "mọi thay đổi nội dung", chủ dự án tin theo, và
+suýt dựa vào một hàng rào không tồn tại. Nó là chốt cho một thao tác, không phải cho ý nghĩa — bảng
+`--diff` mới là thứ đứng giữa một file parse sai và 44 câu bị ghi đè.
+
+Thứ hai: **ghi đè để lại dữ liệu AI cũ, và không gì tự sinh lại.** Câu `UPDATE` không nêu `vocab`,
+`explanation_vi` hay hai dấu thời gian, nên chúng sống sót — *sai*. Cả `GET /topik/session` lẫn nút
+"Tạo dữ liệu AI" đều chỉ chạy khi `*_checked_at IS NULL`, nên một transcript vừa sửa chính tả vẫn
+mang nguyên phần giải thích dựng từ bản sai, im lặng. `--diff` (và cả `--apply`, sau khi ghi) vì thế
+in sẵn câu `UPDATE ... SET vocab_checked_at = NULL, explain_checked_at = NULL WHERE id IN (...)` cho
+đúng những câu vừa đổi nội dung **và** đã có dữ liệu AI — in ra để chủ dự án tự chạy, không bao giờ
+tự chạy.
+
 ### M7.14 — Thi theo khoảng câu: một hình dạng đầu vào (2026-11-08)
 
 Bài thi thử chỉ có ba cỡ (20 / 30 / cả đề), luôn đếm từ câu 1. Đúng cho việc thi nguyên bài, sai cho
