@@ -78,6 +78,13 @@ const SPEAKER_LABEL = /^[^\s:]{1,8}\s*:/;
  * it was worse than harmless: the two lines were joined with nothing between them and the words
  * either side were glued into one ("나타났으며" + "10대가").
  *
+ * **Reported, never repaired.** Joining the lines back up looks easy and is not: Korean wraps at
+ * any character, so a break falls at a space ("증가한" + "것으로" → one space) as readily as inside
+ * a word ("제품" + "인지도" → none), and the file keeps no trace of which. Measured against the 22
+ * of these questions that were also typed up by hand: joining with a space gets most of them right
+ * and silently invents a space inside a word in others ("중요하 다고"). A repair that is wrong in
+ * an unknown number of places is worse than a file that is visibly wrong everywhere.
+ *
  * Reported for every file, every run, so this is noticed on arrival instead of surfacing years
  * later as a word nobody can look up. Empty when the stem has no speaker label at all (an
  * announcement, an image-only question): there is nothing to judge against.
@@ -89,28 +96,21 @@ export function wrappedTranscriptLines(stemText: string | null): string[] {
 }
 
 /**
- * Puts a transcript's turns back on one line each (M7.16).
+ * An option typed with its own number in front of it: "1. 그래? 텐트만 사면 되겠네." (M7.16).
  *
- * Word wraps a long turn visually, and whoever typed these papers pressed Enter at each wrap, so a
- * single turn arrives as four or five lines — 1003 of them across the four papers, far too many to
- * ask anyone to undo by hand. The repair is deterministic rather than a guess: a line that does
- * not start a speaker's turn is the continuation of the one above it, and the wrap it replaced sat
- * at a space, so the two are joined with a space.
- *
- * Checked against the 22 of these questions that were typed up properly by hand and are already in
- * the bank: after this, the repaired text matches theirs.
+ * The app draws "1)" itself, so the number inside the text shows up twice — "1) 1. 그래?…". It is
+ * stripped only when the number **matches the option's own position**: a "3." on the first option
+ * means something is out of order, and renumbering that silently is how an answer key quietly
+ * stops matching its options. That case is left alone and reported.
  */
-export function mergeWrappedTranscript(stemText: string | null): string | null {
-  if (stemText === null) return null;
-  const lines = stemText.split("\n").map((l) => l.trim()).filter((l) => l !== "");
-  if (lines.length < 2 || !SPEAKER_LABEL.test(lines[0]!)) return stemText;
-  const turns: string[] = [];
-  for (const line of lines) {
-    if (SPEAKER_LABEL.test(line) || turns.length === 0) turns.push(line);
-    else turns[turns.length - 1] = `${turns[turns.length - 1]} ${line}`;
-  }
-  return turns.join("\n").replace(/[ \t]{2,}/g, " ");
+export function stripOptionNumber(text: string, position: number): string {
+  const m = /^\s*([1-4])\s*[.)．）]\s*(.*)$/s.exec(text);
+  if (!m || Number(m[1]) !== position) return text;
+  return m[2]!.trim();
 }
+
+/** Whether an option still carries a leading "N." / "N)" — reported in every mode, always. */
+export const hasOptionNumber = (text: string) => /^\s*[1-4]\s*[.)．）]\s/.test(text);
 
 export type BlockLine = { range: { start: number; end: number }; text: string };
 
@@ -256,11 +256,26 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       // A transcript line that does not start a turn is a line break typed at a visual wrap.
       const wrapped = fn.section === "listening" ? wrappedTranscriptLines(item.stem_text) : [];
       if (wrapped.length > 0) {
-        // The report, not the row's own `warning`: that column is for something an adult has to
-        // look at, and a repair that is deterministic and verified is not one of those.
-        warnings.push(`${examLabel} #${number}: joined ${wrapped.length} line break(s) typed mid-turn`);
+        // Not repaired, and deliberately so — see `wrappedTranscriptLines`. The file has to be
+        // fixed, so this is loud in every mode and sits on the question's own `warning` too.
+        // `notes` only: every note is echoed into the file's report a few lines below, so pushing
+        // to both printed each one twice and doubled every count in the report.
+        notes.push(
+          `${wrapped.length} line break(s) typed inside a turn (first: "${wrapped[0]!.slice(0, 30)}…") — the file needs fixing`,
+        );
       }
-      const stemText = fn.section === "listening" ? mergeWrappedTranscript(item.stem_text) : item.stem_text;
+      // The option's own number, typed into its text. Stripped when it agrees with the option's
+      // position, reported either way — "1) 1. 그래?…" on screen is the kind of thing that gets
+      // lived with for months once it is in the bank.
+      const options = item.options.map((o, i) => ({ ...o, text: stripOptionNumber(o.text, i + 1) }));
+      const numbered = item.options.filter((o) => hasOptionNumber(o.text)).length;
+      if (numbered > 0) notes.push(`${numbered} option(s) had their own number typed in, and it was stripped`);
+      const outOfOrder = item.options
+        .map((o, i) => (hasOptionNumber(o.text) && stripOptionNumber(o.text, i + 1) === o.text ? i + 1 : 0))
+        .filter((i) => i > 0);
+      if (outOfOrder.length > 0) {
+        notes.push(`option(s) ${outOfOrder.join(", ")} are numbered but not in that order — left exactly as typed`);
+      }
       const warning = notes.length > 0 ? notes.join("; ") : null;
       // A whole paper's question takes the block line that covers its number, plus its own "HỎI:"
       // line — never the line it happened to be parsed next to.
@@ -308,8 +323,8 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
         instruction,
         points: pointsFromInstruction(instruction) ?? DEFAULT_QUESTION_POINTS,
         same_segment: item.same_segment,
-        stem: { text: stemText, image_rid: item.stem_image_rid },
-        options: item.options.map((o) => ({ text: o.text, image_rid: o.image_rid })),
+        stem: { text: item.stem_text, image_rid: item.stem_image_rid },
+        options: options.map((o) => ({ text: o.text, image_rid: o.image_rid })),
         warning,
         correct_option: item.declared_correct!,
       });

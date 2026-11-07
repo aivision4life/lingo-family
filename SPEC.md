@@ -680,6 +680,20 @@ cách, nên nối lại bằng dấu cách. **Kiểm được**: 22 câu trong s
 và sau khi nối, văn bản trùng khít từng ký tự (chỉ còn khác `남자:` với `남자 :`). Đó là cách duy
 nhất tin được một phép sửa tự động trên dữ liệu học: so với bản người làm.
 
+**Và phép nối tự động ấy đã bị rút lại ngay sau đó** — đây mới là bài học thật. Nó khớp ở câu 3 nên
+tôi tuyên bố "đã kiểm chứng"; xem thêm vài câu nữa thì thấy nó **bịa ra dấu cách giữa từ**:
+`제품` + `인지도` phải là `제품인지도`, `중요하` + `다고` phải là `중요하다고`. Tiếng Hàn xuống dòng ở
+**bất kỳ ký tự nào**, nên chỗ ngắt rơi vào giữa từ cũng thường như rơi vào dấu cách, mà file không
+giữ dấu vết nào để phân biệt (đã kiểm XML thô: ký tự trước `<w:br/>` không có dấu cách thừa). Một
+phép sửa sai ở số chỗ không biết được thì tệ hơn một file sai lộ liễu. Giờ chỉ **báo, không sửa** —
+và bài học là: "khớp một ca" không phải là kiểm chứng; phải xem đủ số ca mà dữ liệu cho phép, nhất
+là khi mình đang định viết lại nội dung người khác gõ.
+
+Một mảnh nữa của cùng câu chuyện: luật nhận "lượt thoại mới" lúc đầu dò đúng chữ `남자`/`여자`, mà
+một file có `남잠:` (gõ nhầm) — thế là dòng đó không phải lượt mới, và phép nối **dán hai lượt của
+hai người vào nhau**. Giờ lượt thoại là "nhãn ngắn + dấu hai chấm", nhãn gì cũng được: sai về phía
+"đây là lượt mới" thì cùng lắm để nguyên dòng, sai phía kia thì phá văn bản.
+
 Bài học chung: lỗi lộ ra **chỉ vì** có bản cũ để đối chiếu. Nếu nhập thẳng 4 đề mới thì 156 câu
 chưa từng có sẽ mang nguyên lỗi và không gì phát hiện. Vì vậy `buildImportDraft` giờ cảnh báo
 thường trực mỗi dòng không mở đầu một lượt thoại, ở **mọi** chế độ chạy, và `--diff` báo thêm đề

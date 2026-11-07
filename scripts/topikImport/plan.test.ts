@@ -164,29 +164,29 @@ describe("fileMatchesFilter", () => {
   const listening = "TOPIK_Listening_Cau04_08_OfficialTest_VERSION1.docx";
 
   it("no filter keeps every file", () => {
-    const none: ImportFilter = { section: null, source: null };
+    const none: ImportFilter = { section: null, source: null , name: null };
     expect(fileMatchesFilter(reading, none)).toBe(true);
     expect(fileMatchesFilter(listening, none)).toBe(true);
   });
 
   it("--section keeps only that section", () => {
-    const filter: ImportFilter = { section: "listening", source: null };
+    const filter: ImportFilter = { section: "listening", source: null , name: null };
     expect(fileMatchesFilter(listening, filter)).toBe(true);
     expect(fileMatchesFilter(reading, filter)).toBe(false);
   });
 
   it("--source matches the file name's source, case-insensitively", () => {
-    expect(fileMatchesFilter(reading, { section: null, source: "yonsei" })).toBe(true);
-    expect(fileMatchesFilter(listening, { section: null, source: "yonsei" })).toBe(false);
+    expect(fileMatchesFilter(reading, { section: null, source: "yonsei" , name: null })).toBe(true);
+    expect(fileMatchesFilter(listening, { section: null, source: "yonsei" , name: null })).toBe(false);
   });
 
   it("both filters must match", () => {
-    expect(fileMatchesFilter(listening, { section: "listening", source: "OfficialTest" })).toBe(true);
-    expect(fileMatchesFilter(listening, { section: "reading", source: "OfficialTest" })).toBe(false);
+    expect(fileMatchesFilter(listening, { section: "listening", source: "OfficialTest" , name: null })).toBe(true);
+    expect(fileMatchesFilter(listening, { section: "reading", source: "OfficialTest" , name: null })).toBe(false);
   });
 
   it("keeps a file name it cannot parse, so buildImportDraft still reports it", () => {
-    expect(fileMatchesFilter("notes.docx", { section: "listening", source: null })).toBe(true);
+    expect(fileMatchesFilter("notes.docx", { section: "listening", source: null , name: null })).toBe(true);
   });
 });
 
@@ -226,11 +226,29 @@ describe("forceScopeProblem", () => {
 
 describe("filterLabel", () => {
   it("says ALL when no section is given", () => {
-    expect(filterLabel({ section: null, source: null })).toBe("section=ALL");
+    expect(filterLabel({ section: null, source: null, name: null })).toBe("section=ALL");
   });
 
   it("names both axes when both are set", () => {
-    expect(filterLabel({ section: "listening", source: "OfficialTest" })).toBe("section=listening, source=OfficialTest");
+    expect(filterLabel({ section: "listening", source: "OfficialTest", name: null })).toBe("section=listening, source=OfficialTest");
+  });
+
+  it("names the file filter too", () => {
+    expect(filterLabel({ section: null, source: null, name: "Test35" })).toBe("section=ALL, file~Test35");
+  });
+});
+
+describe("fileMatchesFilter with --file", () => {
+  const f = (name: string | null) => ({ section: null, source: null, name });
+
+  it("keeps only the files whose name contains the text, ignoring case", () => {
+    expect(fileMatchesFilter("TOPIK_II_Test35_Listening_OfficialTest.docx", f("test35"))).toBe(true);
+    expect(fileMatchesFilter("TOPIK_II_Test36_Listening_OfficialTest.docx", f("Test35"))).toBe(false);
+  });
+
+  it("applies to a file name this project cannot parse, which is when you most want it", () => {
+    expect(fileMatchesFilter("whatever Test35.docx", f("Test35"))).toBe(true);
+    expect(fileMatchesFilter("whatever.docx", f("Test35"))).toBe(false);
   });
 });
 

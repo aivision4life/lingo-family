@@ -9,6 +9,7 @@
 //   npm run topik-import -- --diff                                read-only: what --force WOULD change, column by column
 //   npm run topik-import -- --section listening                   only the listening files; --section reading for the others
 //   npm run topik-import -- --source Yonsei                       only files whose name's <source> is Yonsei
+//   npm run topik-import -- --file Test35                         only files whose name contains "Test35"
 //
 // `--section` / `--source` filter by **file name** and apply identically to the dry run and to
 // `--apply`, so the printed report always describes exactly the set that would be written. Because
@@ -132,7 +133,7 @@ if (!sectionFlag.ok) {
   console.error(sectionFlag.reason);
   process.exit(1);
 }
-const filter: ImportFilter = { section: sectionFlag.section, source: flag("--source") ?? null };
+const filter: ImportFilter = { section: sectionFlag.section, source: flag("--source") ?? null, name: flag("--file") ?? null };
 
 function tempConfig() {
   const dir = mkdtempSync(path.join(os.tmpdir(), "lingo-topik-import-"));

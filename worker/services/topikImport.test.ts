@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockRangeOf, buildImportDraft, mergeWrappedTranscript, parseTopikFileName, wrappedTranscriptLines } from "./topikImport";
+import { blockRangeOf, buildImportDraft, hasOptionNumber, parseTopikFileName, stripOptionNumber, wrappedTranscriptLines } from "./topikImport";
 
 describe("parseTopikFileName", () => {
   it("parses a range file name", () => {
@@ -473,31 +473,46 @@ describe("a transcript wrapped by Word (M7.16)", () => {
     expect(wrappedTranscriptLines(null)).toEqual([]);
   });
 
-  it("joins a continuation back onto its turn, with the space the wrap replaced", () => {
-    expect(mergeWrappedTranscript(wrapped)).toBe(
-      "여자 : 이거 좀 봐 주실래요?\n남자 : 어디 좀 볼까요? 언제까지 해 드리면 돼요?\n여자 : 내일까지 해 주세요.",
+  it("treats a mistyped speaker label as a turn, so it is not reported as a wrapped line", () => {
+    // A real file has "남잠:" for "남자:". A fixed list of labels called that line a wrap, and the
+    // repair built on top of it merged two people's turns into one.
+    expect(wrappedTranscriptLines("여자: 못 갔어.\n남잠: 텐트같이 필요한 물건들이 있다던데?")).toEqual([]);
+  });
+
+  it("counts every line of a turn broken several times", () => {
+    expect(wrappedTranscriptLines("남자 : 하나\n둘\n셋\n여자 : 넷")).toEqual(["둘", "셋"]);
+  });
+
+  it("leaves the text exactly as the file has it — the breaks are reported, not repaired", () => {
+    // Korean wraps at any character, so a break sits at a space as readily as inside a word, and
+    // the file keeps no trace of which. The draft therefore carries the text unchanged.
+    const xml = doc(
+      heading("Heading2", "35회") +
+        plain("[1~3] 다음을 듣고 알맞은 그림을 고르십시오.") +
+        heading("Heading3", "1") +
+        plain("1(1)") +
+        `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>여자 : 가고 싶었는데</w:t><w:br/><w:t>못 갔어.</w:t></w:r></w:p></w:tc></w:tr>` +
+          `<w:tr>${cell("a", true)}${cell("b")}</w:tr><w:tr>${cell("c")}${cell("d")}</w:tr></w:tbl>`,
     );
+    const draft = buildImportDraft("TOPIK_II_Test35_Listening_OfficialTest.docx", xml);
+    expect(draft.questions[0]!.stem.text).toBe("여자 : 가고 싶었는데\n못 갔어.");
+    expect(draft.questions[0]!.warning).toContain("line break(s) typed inside a turn");
+  });
+});
+
+describe("an option typed with its own number (M7.16)", () => {
+  it("strips the number when it matches the option's position", () => {
+    expect(stripOptionNumber("1. 그래? 텐트만 사면 되겠네.", 1)).toBe("그래? 텐트만 사면 되겠네.");
+    expect(stripOptionNumber("3) 미리 알았으면 좋았을걸.", 3)).toBe("미리 알았으면 좋았을걸.");
   });
 
-  it("leaves a well-typed transcript exactly as it is", () => {
-    const clean = "여자 : 네.\n남자 : 알겠습니다.";
-    expect(mergeWrappedTranscript(clean)).toBe(clean);
+  it("leaves a number that disagrees with the position exactly as typed", () => {
+    expect(stripOptionNumber("3. 미리 알았으면 좋았을걸.", 1)).toBe("3. 미리 알았으면 좋았을걸.");
   });
 
-  it("does not touch text it cannot judge, nor a missing stem", () => {
-    expect(mergeWrappedTranscript("안내 말씀\n드리겠습니다.")).toBe("안내 말씀\n드리겠습니다.");
-    expect(mergeWrappedTranscript(null)).toBeNull();
-  });
-
-  it("treats a mistyped speaker label as a turn rather than gluing two speakers together", () => {
-    // A real file has "남잠:" for "남자:". With a fixed list of labels that line was not a turn,
-    // so the rejoin merged two people's lines into one — worse than the problem it fixes.
-    const typo = "여자: 가고 싶었는데 못 갔어.\n남잠: 텐트같이 필요한 물건들이 있다던데?";
-    expect(wrappedTranscriptLines(typo)).toEqual([]);
-    expect(mergeWrappedTranscript(typo)).toBe(typo);
-  });
-
-  it("handles a turn broken into several lines", () => {
-    expect(mergeWrappedTranscript("남자 : 하나\n둘\n셋\n여자 : 넷")).toBe("남자 : 하나 둘 셋\n여자 : 넷");
+  it("leaves text that merely starts with a digit alone", () => {
+    expect(stripOptionNumber("1시간 후에 만나요.", 1)).toBe("1시간 후에 만나요.");
+    expect(hasOptionNumber("1시간 후에 만나요.")).toBe(false);
+    expect(hasOptionNumber("1. 그래?")).toBe(true);
   });
 });
