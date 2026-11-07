@@ -454,3 +454,53 @@ describe("migration 0019_topik_test_clock", () => {
     expect(live!.status).toBe("running");
   });
 });
+
+describe("migration 0020_topik_test_range", () => {
+  beforeAll(async () => {
+    await applyRemaining();
+  });
+
+  // The range is the sitting's intention, so it is stored — but the sittings that already existed
+  // have only their items to say what they covered. Backfilled, so the history has one shape.
+  it("backfills the range of a sitting drawn before ranges existed", async () => {
+    const now = Date.now();
+    await DB.prepare(
+      `INSERT INTO topik_tests (id, profile_id, section, kind, question_count, total_points, status, started_at, pause_count, paused_ms, created_at)
+       VALUES ('t-old', 'p-sit', 'listening', 'original', 3, 6, 'finished', ?, 0, 0, ?)`,
+    ).bind(now, now).run();
+    for (const [position, number] of [[21, 21], [22, 22], [23, 23]]) {
+      await DB.prepare(
+        `INSERT INTO topik_test_items (id, test_id, position, number, points)
+         VALUES (?, 't-old', ?, ?, 2)`,
+      ).bind(`i-${number}`, position, number).run();
+    }
+    expect(await count("SELECT count(*) AS n FROM topik_tests WHERE id = 't-old' AND from_number IS NULL")).toBe(1);
+
+    const sql = readFileSync(path.join(dir, "0020_topik_test_range.sql"), "utf8")
+      .split("--> statement-breakpoint")
+      .map((stmt) => stmt.trim())
+      .filter((stmt) => stmt.includes("UPDATE"));
+    expect(sql).toHaveLength(1);
+    await DB.prepare(sql[0]!).run();
+
+    const row = await DB.prepare("SELECT from_number, to_number FROM topik_tests WHERE id = 't-old'").first<{
+      from_number: number;
+      to_number: number;
+    }>();
+    expect(row).toEqual({ from_number: 21, to_number: 23 });
+  });
+
+  it("leaves a sitting with no items at all alone, rather than writing nonsense", async () => {
+    const now = Date.now();
+    await DB.prepare(
+      `INSERT INTO topik_tests (id, profile_id, section, kind, question_count, total_points, status, started_at, pause_count, paused_ms, created_at)
+       VALUES ('t-empty', 'p-sit', 'listening', 'original', 0, 0, 'abandoned', ?, 0, 0, ?)`,
+    ).bind(now, now).run();
+    const sql = readFileSync(path.join(dir, "0020_topik_test_range.sql"), "utf8")
+      .split("--> statement-breakpoint")
+      .map((stmt) => stmt.trim())
+      .filter((stmt) => stmt.includes("UPDATE"));
+    await DB.prepare(sql[0]!).run();
+    expect(await count("SELECT count(*) AS n FROM topik_tests WHERE id = 't-empty' AND from_number IS NULL")).toBe(1);
+  });
+});

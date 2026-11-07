@@ -817,7 +817,21 @@
       "resumeBody": "Đồng hồ không dừng khi bạn rời đi: băng đang ở phút {{at}}, còn {{left}}. Bấm Tiếp tục để nghe tiếp từ đúng chỗ đó.",
       "resumeTape": "Tiếp tục",
       "exitBodyPaused": "Bài đang tạm dừng nên thời gian được giữ — rời đi rồi quay lại vẫn còn nguyên. Còn Huỷ bài thì không lưu điểm và không tính vào lịch ôn.",
-      "autoSubmitted": "Hết giờ, bài được tự nộp."
+      "autoSubmitted": "Hết giờ, bài được tự nộp.",
+      "rangeTitle": "Hoặc chọn khoảng câu",
+      "rangeFrom": "Từ câu",
+      "rangeTo": "Đến câu",
+      "rangeInvalid": "Nhập câu bắt đầu và câu kết thúc.",
+      "rangeSummary": "Câu {{from}}-{{to}} · {{count}} câu · {{time}}",
+      "rangeExpanded": "Đã mở rộng thành câu {{from}}-{{to}} vì câu {{added}} dùng chung {{group}} với câu bên cạnh.",
+      "rangeGroupClip": "đoạn nghe",
+      "rangeGroupPassage": "đoạn văn",
+      "rangeMissing": "Ngân hàng thiếu câu {{number}} — chưa thi được khoảng này.",
+      "startRange": "Bắt đầu khoảng này",
+      "historyRange": "Câu {{from}}-{{to}} · {{score}}/{{total}} điểm",
+      "historyScore": "{{score}}/{{total}} điểm",
+      "atQuestionInRange": "Câu {{number}} · khoảng {{from}}–{{to}}",
+      "atQuestionsInRange": "Câu {{first}}–{{last}} · khoảng {{from}}–{{to}}"
     }
   }
 }

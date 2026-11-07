@@ -817,7 +817,21 @@
       "resumeBody": "The clock did not stop while you were away: the tape is at {{at}}, with {{left}} left. Carry on to pick it up from exactly there.",
       "resumeTape": "Carry on",
       "exitBodyPaused": "The paper is paused, so your time is held — leave and come back and it is still there. Cancelling the test, though, keeps no score and leaves the review schedule untouched.",
-      "autoSubmitted": "Time ran out; the paper was submitted for you."
+      "autoSubmitted": "Time ran out; the paper was submitted for you.",
+      "rangeTitle": "Or pick a range of questions",
+      "rangeFrom": "From question",
+      "rangeTo": "To question",
+      "rangeInvalid": "Enter a first and a last question.",
+      "rangeSummary": "Questions {{from}}-{{to}} · {{count}} questions · {{time}}",
+      "rangeExpanded": "Widened to questions {{from}}-{{to}}, because question {{added}} shares its {{group}} with the one next to it.",
+      "rangeGroupClip": "recording",
+      "rangeGroupPassage": "passage",
+      "rangeMissing": "The bank has no question {{number}} — this range cannot be sat.",
+      "startRange": "Start this range",
+      "historyRange": "Questions {{from}}-{{to}} · {{score}}/{{total}} points",
+      "historyScore": "{{score}}/{{total}} points",
+      "atQuestionInRange": "Question {{number}} · range {{from}}–{{to}}",
+      "atQuestionsInRange": "Questions {{first}}–{{last}} · range {{from}}–{{to}}"
     }
   }
 }

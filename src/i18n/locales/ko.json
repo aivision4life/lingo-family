@@ -817,7 +817,21 @@
       "resumeBody": "나가 있는 동안에도 시계는 멈추지 않았습니다. 음원은 {{at}} 지점, {{left}} 남았습니다. 계속을 누르면 그 지점부터 이어서 들립니다.",
       "resumeTape": "계속",
       "exitBodyPaused": "일시정지 상태여서 시간은 지켜집니다 — 나갔다 돌아와도 그대로입니다. 다만 시험을 취소하면 점수도 복습 일정도 남지 않습니다.",
-      "autoSubmitted": "시간이 끝나 자동으로 제출되었습니다."
+      "autoSubmitted": "시간이 끝나 자동으로 제출되었습니다.",
+      "rangeTitle": "또는 문항 범위 선택",
+      "rangeFrom": "시작 문항",
+      "rangeTo": "끝 문항",
+      "rangeInvalid": "시작 문항과 끝 문항을 입력하세요.",
+      "rangeSummary": "{{from}}~{{to}}번 · {{count}}문항 · {{time}}",
+      "rangeExpanded": "{{added}}번이 옆 문항과 {{group}}을 공유하므로 {{from}}~{{to}}번으로 넓혔습니다.",
+      "rangeGroupClip": "듣기 음원",
+      "rangeGroupPassage": "지문",
+      "rangeMissing": "{{number}}번이 아직 없습니다 — 이 범위는 시험할 수 없습니다.",
+      "startRange": "이 범위로 시작",
+      "historyRange": "{{from}}~{{to}}번 · {{score}}/{{total}}점",
+      "historyScore": "{{score}}/{{total}}점",
+      "atQuestionInRange": "{{number}}번 · 범위 {{from}}~{{to}}",
+      "atQuestionsInRange": "{{first}}~{{last}}번 · 범위 {{from}}~{{to}}"
     }
   }
 }

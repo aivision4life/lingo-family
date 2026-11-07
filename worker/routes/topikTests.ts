@@ -12,6 +12,11 @@
 //    moves cards, and it writes them with `scheduled = 1`: a timed sitting is the truest recall
 //    test there is, so it is the best possible input for the spacing.
 //
+// A sitting covers a **range** of question numbers (M7.14), never "a number of questions": the
+// three shortcut buttons on the picker fill a range in, so there is one input shape here. The range
+// is widened to whole groups before anything is drawn, and a hole inside it refuses the sitting
+// outright rather than quietly handing over a shorter paper.
+//
 // The clock is the server's (M7.13). A sitting is drawn with no deadline at all; `POST .../start`
 // fixes `length_ms` and `ends_at`, `POST .../clock` pauses and resumes, and nothing the client
 // reports about time is believed. There is no scheduler: a paper whose time ran out while nobody
@@ -26,8 +31,9 @@ import {
   topikTestAnswerSchema,
   topikTestFinishSchema,
   topikTestPauseSchema,
-  type TopikTestLength,
+  topikTestRangeQuerySchema,
 } from "../../shared/topik";
+import { expandToGroups, missingNumber, rangeCount, type NumberRange, type QuestionGroup } from "../../shared/topikRange";
 import {
   isExpired,
   pausedClock,
@@ -45,7 +51,7 @@ import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
 import { requireAdult } from "../lib/access";
 import { zv } from "../lib/validate";
 import { readInD1Chunks, writeInD1Chunks } from "../lib/d1Chunk";
-import { audioSpan, isContiguousFromOne, lengthOptions, lengthQuestionCount, pointsOf, scoreTest } from "../services/topikTest";
+import { audioSpan, isContiguousFromOne, lengthOptions, pointsOf, scoreTest } from "../services/topikTest";
 import { mixedLengthOptions, planMixedTest, reachableLength, type MixedCandidate } from "../services/topikMixed";
 import { toCardFields } from "../services/topikCards";
 
@@ -89,6 +95,8 @@ export const topikTestRoutes = () =>
 
       const entry = (h: TestRow) => ({
         id: h.id,
+        from_number: h.from_number,
+        to_number: h.to_number,
         score_points: h.score_points ?? 0,
         total_points: h.total_points,
         question_count: h.question_count,
@@ -167,15 +175,46 @@ export const topikTestRoutes = () =>
     })
 
     // --- Sitting one ---------------------------------------------------------------------------
+    /**
+     * What a range would really be (M7.14) — asked on every keystroke while it is typed, so it is
+     * **read-only**: it SELECTs, works out the widening and the length, and creates no sitting.
+     */
+    .get("/topik/tests/range", zv("query", topikTestRangeQuerySchema), async (c) => {
+      const { section, kind, exam, from, to } = c.req.valid("query");
+      const db = getDb(c.env);
+      if (kind !== "mixed" && !exam) return c.json(err("exam_required"), 400);
+
+      const plan =
+        kind === "mixed" ? await planRangeForMixed(db, section, { from, to }) : await planRangeForPaper(db, section, exam!, { from, to });
+
+      const added: number[] = [];
+      for (let n = plan.range.from; n <= plan.range.to; n++) if (n < from || n > to) added.push(n);
+
+      return c.json({
+        from: plan.range.from,
+        to: plan.range.to,
+        expanded: plan.expanded,
+        added,
+        question_count: rangeCount(plan.range),
+        missing_number: plan.missing,
+        // A range with a hole has no honest length to report: the sitting cannot start anyway.
+        length_ms: plan.missing === null ? await rangeLengthMs(db, section, kind, plan.questions) : 0,
+      });
+    })
+
     .post("/topik/tests", zv("json", topikTestCreateSchema), async (c) => {
-      const { profile_id, section, kind, exam, length } = c.req.valid("json");
+      const { profile_id, section, kind, exam, from, to } = c.req.valid("json");
       const db = getDb(c.env);
 
       // Two ways to choose the questions, one way to sit them: a test owns a list of questions, so
       // the mixed mode differs only in how that list is filled.
-      const picked = kind === "mixed" ? await drawMixed(db, profile_id, section, length) : await takePaper(db, section, exam!, length);
+      const picked =
+        kind === "mixed"
+          ? await drawMixed(db, profile_id, section, { from, to })
+          : await takePaper(db, section, exam!, { from, to });
       if ("error" in picked) return c.json(picked.error, 400);
       const chosen = picked.questions;
+      const range = picked.range;
 
       const clips = await clipsFor(db, chosen.map((q) => q.segment_id).filter((s): s is string => s !== null));
       const total_points = chosen.reduce((n, q) => n + pointsOf(q.points), 0);
@@ -189,6 +228,8 @@ export const topikTestRoutes = () =>
           // A mixed sitting has no source paper; each item carries its own, read live from the
           // question it points at.
           source_exam: kind === "mixed" ? null : exam!,
+          from_number: range.from,
+          to_number: range.to,
           question_count: chosen.length,
           total_points,
           status: "running",
@@ -524,20 +565,51 @@ type TestRow = typeof topik_tests.$inferSelect;
 type ItemRow = typeof topik_test_items.$inferSelect;
 type Clip = { audio_key: string; start_ms: number; speech_end_ms: number; end_ms: number };
 
-type Picked = { questions: QuestionRow[] } | { error: { error: string; missing_position?: number } };
+type Picked =
+  | { questions: QuestionRow[]; range: NumberRange }
+  | { error: { error: string; missing_position?: number; missing_number?: number } };
 
-/** One original paper, questions 1..N. */
-async function takePaper(db: Db, section: "reading" | "listening", exam: string, length: TopikTestLength): Promise<Picked> {
+/** The groups of a paper: a clip's questions, or a question on its own (M7.5/M7.14). */
+function groupsOf(questions: readonly QuestionRow[]): QuestionGroup[] {
+  const byGroup = new Map<string, number[]>();
+  for (const q of questions) {
+    const key = q.segment_id ?? q.id;
+    byGroup.set(key, [...(byGroup.get(key) ?? []), q.number]);
+  }
+  return [...byGroup.values()];
+}
+
+type RangePlan = { range: NumberRange; expanded: boolean; missing: number | null; questions: QuestionRow[] };
+
+/**
+ * What a range means on one paper: widened to whole groups, then checked for holes.
+ *
+ * Shared by the preview and the real draw, so the screen's promise and the sitting are decided by
+ * one piece of code.
+ */
+async function planRangeForPaper(db: Db, section: "reading" | "listening", exam: string, asked: NumberRange): Promise<RangePlan> {
   const all = await db
     .select()
     .from(topik_questions)
     .where(and(eq(topik_questions.section, section), eq(topik_questions.exam, exam), readyQuestions(section)))
     .orderBy(asc(topik_questions.number));
 
-  if (!isContiguousFromOne(all.map((q) => q.number))) return { error: err("topik_test_not_contiguous") };
-  const wanted = lengthQuestionCount(length, all.length);
-  if (wanted <= 0 || wanted > all.length) return { error: err("topik_test_too_short") };
-  return { questions: all.slice(0, wanted) };
+  const range = expandToGroups(asked, groupsOf(all));
+  const missing = missingNumber(range, new Set(all.map((q) => q.number)));
+  return {
+    range,
+    expanded: range.expanded,
+    missing,
+    questions: all.filter((q) => q.number >= range.from && q.number <= range.to),
+  };
+}
+
+/** One original paper, over the asked range. */
+async function takePaper(db: Db, section: "reading" | "listening", exam: string, asked: NumberRange): Promise<Picked> {
+  const plan = await planRangeForPaper(db, section, exam, asked);
+  if (plan.missing !== null) return { error: { ...err("topik_test_missing_number"), missing_number: plan.missing } };
+  if (plan.questions.length === 0) return { error: err("topik_test_too_short") };
+  return { questions: plan.questions, range: plan.range };
 }
 
 /**
@@ -545,18 +617,57 @@ async function takePaper(db: Db, section: "reading" | "listening", exam: string,
  * not met lately (`planMixedTest` has the rules). The failure carries the position the bank ran
  * out at — "the bank has nothing for question 23" is actionable; "too short" is not.
  */
-async function drawMixed(db: Db, profileId: string, section: "reading" | "listening", length: TopikTestLength): Promise<Picked> {
+async function drawMixed(db: Db, profileId: string, section: "reading" | "listening", asked: NumberRange): Promise<Picked> {
   const candidates = await mixedCandidates(db, section);
-  const wanted = lengthQuestionCount(length, reachableLength(candidates));
-  if (wanted <= 0) return { error: { ...err("topik_test_bank_short"), missing_position: 1 } };
+  const range = expandToGroups(asked, candidates.map((c) => c.numbers));
 
-  const plan = planMixedTest({ candidates, length: wanted, seen: await seenRanks(db, profileId, section), random: Math.random });
+  const plan = planMixedTest({
+    candidates,
+    from: range.from,
+    to: range.to,
+    seen: await seenRanks(db, profileId, section),
+    random: Math.random,
+  });
   if (!plan.ok) return { error: { ...err("topik_test_bank_short"), missing_position: plan.missingPosition } };
 
   const rows = await questionsOf(db, plan.picks.map((p) => p.question_id));
   const questions = plan.picks.map((p) => rows.get(p.question_id)).filter((q): q is QuestionRow => !!q);
-  if (questions.length !== plan.picks.length) return { error: { ...err("topik_test_bank_short"), missing_position: 1 } };
-  return { questions: questions.sort((a, b) => a.number - b.number) };
+  if (questions.length !== plan.picks.length) return { error: { ...err("topik_test_bank_short"), missing_position: range.from } };
+  return { questions: questions.sort((a, b) => a.number - b.number), range };
+}
+
+/**
+ * The same plan for the mixed card: the widening takes the **union** of every paper's groups, since
+ * the draw may land on the paper that pairs a number its neighbour leaves alone.
+ */
+async function planRangeForMixed(db: Db, section: "reading" | "listening", asked: NumberRange): Promise<RangePlan> {
+  const candidates = await mixedCandidates(db, section);
+  const range = expandToGroups(asked, candidates.map((c) => c.numbers));
+  const plan = planMixedTest({ candidates, from: range.from, to: range.to, seen: new Map(), random: () => 0 });
+  if (!plan.ok) return { range, expanded: range.expanded, missing: plan.missingPosition, questions: [] };
+
+  const rows = await questionsOf(db, plan.picks.map((p) => p.question_id));
+  return {
+    range,
+    expanded: range.expanded,
+    missing: null,
+    questions: plan.picks.map((p) => rows.get(p.question_id)).filter((q): q is QuestionRow => !!q),
+  };
+}
+
+/**
+ * How long a range would run, for the preview — the same arithmetic `paperLengthMs` uses once the
+ * sitting exists, over the questions the plan picked rather than over stored items.
+ */
+async function rangeLengthMs(db: Db, section: "reading" | "listening", kind: "original" | "mixed", questions: readonly QuestionRow[]): Promise<number> {
+  if (section === "reading") return readingDurationMs(questions.length);
+  const clips = await clipsFor(db, questions.map((q) => q.segment_id).filter((x): x is string => x !== null));
+  const used = questions.map((q) => (q.segment_id ? clips.get(q.segment_id) : undefined)).filter((c): c is Clip => !!c);
+  if (kind === "original") {
+    const span = audioSpan(used);
+    return span ? Math.max(0, span.end_ms - span.start_ms) : 0;
+  }
+  return tapeLengthMs(used);
 }
 
 /**
@@ -670,6 +781,8 @@ function runPayload(
     question_count: test.question_count,
     total_points: test.total_points,
     ...clockView(test, now),
+    from_number: test.from_number,
+    to_number: test.to_number,
     audio: span && used[0] ? { audio_key: used[0].audio_key, ...span } : null,
     questions: questions.map((q) => {
       const clip = q.segment_id ? (clips.get(q.segment_id) ?? null) : null;
@@ -707,6 +820,8 @@ function resultPayload(test: TestRow, items: readonly ItemRow[], questions: Map<
     pause_count: test.pause_count,
     paused_ms: test.paused_ms,
     auto_submitted: test.auto_submitted,
+    from_number: test.from_number,
+    to_number: test.to_number,
     finished_at: test.finished_at?.getTime() ?? null,
     items: items.map((i) => {
       const q = questions.get(i.question_id ?? "");

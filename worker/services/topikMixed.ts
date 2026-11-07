@@ -87,16 +87,18 @@ export function mixedLengthOptions(candidates: readonly MixedCandidate[]): Mixed
  */
 export function planMixedTest(args: {
   candidates: readonly MixedCandidate[];
-  length: number;
+  /** The range to fill (M7.14). It is already widened to whole groups by the caller. */
+  from: number;
+  to: number;
   seen: SeenRanks;
   /** Injected so a test can pin the choice; `Math.random` in the Worker. */
   random: () => number;
 }): { ok: true; picks: MixedPick[] } | { ok: false; missingPosition: number } {
   const picks: MixedPick[] = [];
-  let position = 1;
+  let position = args.from;
 
-  while (position <= args.length) {
-    const here = candidatesStartingAt(args.candidates, position).filter((c) => lastNumber(c) <= args.length);
+  while (position <= args.to) {
+    const here = candidatesStartingAt(args.candidates, position).filter((c) => lastNumber(c) <= args.to);
     if (here.length === 0) return { ok: false, missingPosition: position };
 
     const chosen = pickCandidate(here, args.seen, args.random);

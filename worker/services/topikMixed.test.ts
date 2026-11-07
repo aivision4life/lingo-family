@@ -71,14 +71,14 @@ describe("planMixedTest", () => {
   const seen = new Map<string, number>();
 
   it("fills every position from 1 to the asked length", () => {
-    const plan = planMixedTest({ candidates: bank(["a", "b"], 24), length: 22, seen, random: pinned(0) });
+    const plan = planMixedTest({ candidates: bank(["a", "b"], 24), from: 1, to: 22, seen, random: pinned(0) });
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
     expect(plan.picks.map((p) => p.position)).toEqual([...Array(22)].map((_, i) => i + 1));
   });
 
   it("takes both questions of a pair from the same paper", () => {
-    const plan = planMixedTest({ candidates: bank(["a", "b"], 24), length: 22, seen, random: pinned(0, 0, 0, 0.99) });
+    const plan = planMixedTest({ candidates: bank(["a", "b"], 24), from: 1, to: 22, seen, random: pinned(0, 0, 0, 0.99) });
     if (!plan.ok) throw new Error("expected a plan");
     const pair = plan.picks.filter((p) => p.position === 21 || p.position === 22);
     expect(pair).toHaveLength(2);
@@ -88,17 +88,17 @@ describe("planMixedTest", () => {
 
   it("never half-takes a pair that would run past the asked length", () => {
     // 21 only exists as the pair 21-22, so a 21-question test cannot include it.
-    const plan = planMixedTest({ candidates: bank(["a"], 24), length: 21, seen, random: pinned(0) });
+    const plan = planMixedTest({ candidates: bank(["a"], 24), from: 1, to: 21, seen, random: pinned(0) });
     expect(plan).toEqual({ ok: false, missingPosition: 21 });
   });
 
   it("reports the position it ran out at instead of a short test", () => {
-    const plan = planMixedTest({ candidates: bank(["a"], 12), length: 20, seen, random: pinned(0) });
+    const plan = planMixedTest({ candidates: bank(["a"], 12), from: 1, to: 20, seen, random: pinned(0) });
     expect(plan).toEqual({ ok: false, missingPosition: 13 });
   });
 
   it("mixes papers: one sitting is not one exam", () => {
-    const plan = planMixedTest({ candidates: bank(["a", "b"], 20), length: 20, seen, random: pinned(0, 0.99, 0, 0.99) });
+    const plan = planMixedTest({ candidates: bank(["a", "b"], 20), from: 1, to: 20, seen, random: pinned(0, 0.99, 0, 0.99) });
     if (!plan.ok) throw new Error("expected a plan");
     expect(new Set(plan.picks.map((p) => p.exam)).size).toBe(2);
   });
@@ -107,7 +107,7 @@ describe("planMixedTest", () => {
     // Paper "a" was asked in the most recent sitting; the draw must take "b" even though the
     // random would otherwise land on "a".
     const recent = new Map([["a-1", 1]]);
-    const plan = planMixedTest({ candidates: [clip("a", [1]), clip("b", [1])], length: 1, seen: recent, random: pinned(0) });
+    const plan = planMixedTest({ candidates: [clip("a", [1]), clip("b", [1])], from: 1, to: 1, seen: recent, random: pinned(0) });
     if (!plan.ok) throw new Error("expected a plan");
     expect(plan.picks[0]!.exam).toBe("b");
   });
@@ -118,7 +118,7 @@ describe("planMixedTest", () => {
       ["b-1", 3],
       ["c-1", 2],
     ]);
-    const plan = planMixedTest({ candidates: [clip("a", [1]), clip("b", [1]), clip("c", [1])], length: 1, seen: all, random: pinned(0) });
+    const plan = planMixedTest({ candidates: [clip("a", [1]), clip("b", [1]), clip("c", [1])], from: 1, to: 1, seen: all, random: pinned(0) });
     if (!plan.ok) throw new Error("expected a plan");
     expect(plan.picks[0]!.exam).toBe("b");
   });
@@ -127,7 +127,7 @@ describe("planMixedTest", () => {
     // Only the second half was answered last time, but the two questions are one clip: it counts
     // as seen, so the untouched paper wins.
     const half = new Map([["a-2", 1]]);
-    const plan = planMixedTest({ candidates: [clip("a", [1, 2]), clip("b", [1, 2])], length: 2, seen: half, random: pinned(0) });
+    const plan = planMixedTest({ candidates: [clip("a", [1, 2]), clip("b", [1, 2])], from: 1, to: 2, seen: half, random: pinned(0) });
     if (!plan.ok) throw new Error("expected a plan");
     expect(plan.picks.every((p) => p.exam === "b")).toBe(true);
   });
@@ -135,14 +135,44 @@ describe("planMixedTest", () => {
   it("spreads its choice across the candidates as the random moves", () => {
     const candidates = [clip("a", [1]), clip("b", [1]), clip("c", [1])];
     const exams = [0, 0.5, 0.99].map((r) => {
-      const plan = planMixedTest({ candidates, length: 1, seen, random: () => r });
+      const plan = planMixedTest({ candidates, from: 1, to: 1, seen, random: () => r });
       return plan.ok ? plan.picks[0]!.exam : "?";
     });
     expect(exams).toEqual(["a", "b", "c"]);
   });
 
   it("stays in range when the random returns exactly 1", () => {
-    const plan = planMixedTest({ candidates: [clip("a", [1]), clip("b", [1])], length: 1, seen, random: () => 1 });
+    const plan = planMixedTest({ candidates: [clip("a", [1]), clip("b", [1])], from: 1, to: 1, seen, random: () => 1 });
     expect(plan.ok).toBe(true);
+  });
+  // M7.14: a mixed sitting can start anywhere, which is the whole point of drilling one kind of
+  // question — "câu 16 đến 18, each from a different paper".
+  describe("over a range that does not start at 1", () => {
+    it("fills only the asked positions", () => {
+      const candidates = [clip("a", [16]), clip("a2", [17]), clip("a3", [18]), clip("a4", [19])];
+      const plan = planMixedTest({ candidates, from: 16, to: 18, seen, random: pinned(0) });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks.map((p) => p.position)).toEqual([16, 17, 18]);
+    });
+
+    it("names the position the bank ran out at, counting inside the range", () => {
+      const candidates = [clip("a", [16]), clip("b", [18])];
+      const plan = planMixedTest({ candidates, from: 16, to: 18, seen, random: pinned(0) });
+      expect(plan).toEqual({ ok: false, missingPosition: 17 });
+    });
+
+    it("draws a pair whole when the range starts on one", () => {
+      const candidates = [clip("a", [21, 22]), clip("b", [23, 24])];
+      const plan = planMixedTest({ candidates, from: 21, to: 24, seen, random: pinned(0) });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks.map((p) => p.position)).toEqual([21, 22, 23, 24]);
+    });
+
+    it("refuses a pair that would hang out of the range rather than cutting it", () => {
+      // The caller widens the range first (`expandToGroups`); if something still asks for 21-21
+      // with only a 21-22 clip to offer, nothing is drawn — half a pair is never a sitting.
+      const plan = planMixedTest({ candidates: [clip("a", [21, 22])], from: 21, to: 21, seen, random: pinned(0) });
+      expect(plan).toEqual({ ok: false, missingPosition: 21 });
+    });
   });
 });

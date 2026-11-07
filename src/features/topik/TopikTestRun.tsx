@@ -20,9 +20,24 @@ import { groupNumbers, groupQuestions } from "./groups";
 import { isInLastMinutes, READING_WARNING_MS } from "./readingClock";
 import { TopikTestGrid } from "./TopikTestGrid";
 import { formatRemaining, isParked, positionAt, progressFraction, shownPosition, type ParkedAt } from "./testClock";
+import { sittingHeader, type SittingHeader } from "./sittingHeader";
 import { TopikTestQuestionCard } from "./TopikTestQuestionCard";
 import { useSittingTape } from "./useSittingTape";
 import { useTestClock } from "./useTestClock";
+
+/** The header's four states turned into words; the choice between them is `sittingHeader`. */
+function headerText(header: SittingHeader, t: ReturnType<typeof useTranslation>["t"]): string {
+  switch (header.kind) {
+    case "single":
+      return t("topik.test.atQuestion", { number: header.number, total: header.total });
+    case "pair":
+      return t("topik.test.atQuestions", { from: header.first, to: header.last, total: header.total });
+    case "singleInRange":
+      return t("topik.test.atQuestionInRange", { number: header.number, from: header.from, to: header.to });
+    case "pairInRange":
+      return t("topik.test.atQuestionsInRange", { first: header.first, last: header.last, from: header.from, to: header.to });
+  }
+}
 
 /**
  * Sitting a mock test (M6.4). The recording paces the paper: it runs from the first clip's start to
@@ -134,11 +149,7 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between gap-2 text-sm">
-          <span className="font-medium">
-            {from === to
-              ? t("topik.test.atQuestion", { number: from, total: test.question_count })
-              : t("topik.test.atQuestions", { from, to, total: test.question_count })}
-          </span>
+          <span className="font-medium">{headerText(sittingHeader({ from, to }, { from: test.from_number, to: test.to_number }, test.question_count), t)}</span>
           <span className="font-mono tabular-nums text-muted-foreground">{t("topik.test.timeLeft", { time: formatRemaining(left) })}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-border" role="progressbar" aria-valuenow={answered} aria-valuemax={test.question_count}>

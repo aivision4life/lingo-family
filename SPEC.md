@@ -580,6 +580,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M6.11 | TOPIK: mastered split | Two-segment block bar (known / answered-not-known) + "thuộc N" count, one query | [x] |
 | M7.1 | TOPIK listening (groundwork) | One mp3 per exam + clip timestamps + byte-range playback + boundary review screen | [x] |
 | M6.12 | Review only my own words | Per-profile switch; hides other people's cards from the queue and Home counts, never resets them | [x] |
+| M7.14 | A mock test covers a range of questions | `from_number`/`to_number` on `topik_tests`; the three lengths become shortcuts that fill a range, a range that would cut a pair in half is widened, a hole in it refuses the sitting, and the preview that says so writes nothing | [x] |
 | M7.13 | The mock test's clock belongs to the server | `ends_at` in `topik_tests`; the countdown and the tape's position are derived from it, reopening a paper resumes where the time got to, a pause costs nothing, and a paper nobody came back to is submitted and graded instead of staying `running` | [x] |
 | M7.12 | TOPIK words into their own album | A word added from a TOPIK question joins "TOPIK II Reading"/"Listening", gets exam-style example sentences and remembers which question it was met in; markable from a sitting's result too | [x] |
 | M7.11 | TOPIK: the reading section can be sat | Section chips, a countdown instead of the tape (70min/50 questions, pausable, auto-submit), free navigation by question grid, Submit, and a mixed reading paper | [x] |
@@ -648,6 +649,39 @@ Vá bằng hai mục in ra ở cuối dry-run (`shortGroups`, `examCoverage` tro
 - **Nhóm thiếu câu** — so số câu thật với dải trong tên file: *"nhóm 8DeOfficial-60회: có 2 câu, dải đòi 3; thiếu câu 18"*. Là **cảnh báo**, không chặn nhập: soạn dở là cách làm việc bình thường.
 - **Độ phủ theo đề** — mỗi đề có bao nhiêu câu và **chạy liền từ 1 được bao nhiêu**, tức đúng số câu mini test đề gốc dùng được. Chính mục này phát hiện cái `shortGroups` không thấy nổi: cả 8 đề 8DeOfficial có 12-14 câu nhưng chỉ dùng được **4**, vì chưa đề nào có câu 5-8; và một đề vắng mặt hẳn khỏi một file thì không để lại "nhóm thiếu" nào để mà tìm.
 
+
+### M7.14 — Thi theo khoảng câu: một hình dạng đầu vào (2026-11-08)
+
+Bài thi thử chỉ có ba cỡ (20 / 30 / cả đề), luôn đếm từ câu 1. Đúng cho việc thi nguyên bài, sai cho
+việc luyện một dạng câu — mà luyện một dạng mới là phần lớn thời gian ngồi học. Giờ một bài thi phủ
+một **khoảng**, và ba nút kia chỉ là cách điền nhanh một khoảng.
+
+Quyết định đáng ghi nhất là **bỏ hẳn `length: 20|30|"full"` khỏi API** thay vì cho server hiểu cả
+hai kiểu đầu vào. Hai luật song song nói cùng một chuyện là chỗ chắc chắn lệch nhau sau vài tháng —
+và ở đây chúng đã suýt lệch ngay lập tức: "full" nghĩa là "bao nhiêu câu đã sẵn sàng", một con số
+chỉ server biết, nên nếu giữ lại thì luật nới-cho-tròn-cặp phải viết hai lần, một lần cho mỗi kiểu.
+
+- **Khoảng là ý định, không phải hệ quả.** `from_number`/`to_number` được lưu thành cột chứ không
+  suy từ `min/max` của items: hai bài 21-30 và 1-30 phải phân biệt được trong lịch sử kể cả sau khi
+  một câu bị xoá (items giữ `number` nhưng `question_id` thành NULL). Migration `0020` backfill các
+  bài cũ từ chính items của chúng, nên màn lịch sử chỉ có một hình dạng để đọc.
+- **Luật nới nằm ở hàm thuần, nhận nhóm làm dữ liệu** (`shared/topikRange.ts#expandToGroups`). Không
+  có chữ "listening" nào trong đó: nhóm do caller dựng (`segment_id ?? id`), nên khi đề đọc có cặp
+  19-20 / 23-24 thì cùng hàm đó đúng ngay, không sửa gì — có test chạy đúng bộ nhóm kiểu đề đọc để
+  chốt điều này. Ở chế độ trộn, nới theo **hợp** của mọi nhóm (đề A ghép 21-22, đề B không), và chạy
+  tới điểm bất động vì một lần nới có thể lộ ra nhóm kế tiếp.
+- **Xem trước phải rẻ và không ghi gì.** `GET /topik/tests/range` chỉ SELECT: nó trả về khoảng đã
+  nới, câu thiếu đầu tiên, và thời gian thật — gọi mỗi lần gõ phím cũng không tạo hàng nào. Có một
+  test khẳng định đúng chuyện đó (gọi bốn lần, `topik_tests` vẫn rỗng), vì "endpoint xem trước lỡ
+  tạo dữ liệu" là loại lỗi không ai thấy cho tới khi bảng đầy rác.
+- **Thiếu câu thì từ chối, không âm thầm rút ngắn.** `missingNumber` trả về số câu đầu tiên không có,
+  màn hình nói "Ngân hàng thiếu câu 21" và tắt nút Bắt đầu; server kiểm lại y hệt khi tạo thật.
+- Thời gian không cần toán mới: M7.13 đã tính độ dài từ chính items của bài, nên khoảng 16-18 tự
+  nhận đúng 2:57 băng thật, còn đề đọc vẫn 1,4 phút/câu.
+
+Một chi tiết nhỏ bắt được khi sửa: tiêu đề màn thi hiện "Câu 21 / 10" — vị trí trên **số lượng** —
+vô nghĩa với bài theo khoảng. Bốn trạng thái (một câu / một cặp, trong đề / trong khoảng) nên theo
+luật §11 nó thành hàm thuần `sittingHeader`, không phải ba tầng ternary trong JSX.
 
 ### M7.13 — Đồng hồ bài thi: một mốc duy nhất ở server (2026-11-07)
 

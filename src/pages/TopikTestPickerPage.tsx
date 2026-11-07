@@ -6,6 +6,8 @@ import type { TopikMixedOption, TopikTestCreate, TopikTestOption } from "@shared
 import { Button } from "@/components/ui/button";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useCreateTopikTest, useTopikTestOptions } from "@/features/topik/api";
+import { TestRangePicker } from "@/features/topik/TestRangePicker";
+import { shortcutRange } from "@shared/topikRange";
 import { topikTestStartMessage } from "@/features/topik/errors";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +22,10 @@ import { cn } from "@/lib/utils";
  * has been sat: it draws every question from the whole bank and prefers what has not been asked
  * lately. A length the bank cannot fill is shown greyed with the reason rather than hidden —
  * "this exists, it is not ready yet" is the true state of a bank still being typed up.
+ *
+ * Both cards offer the same two ways in (M7.14): the three shortcut buttons, which sit a paper from
+ * question 1, and a **range** below them for drilling one kind of question. The shortcuts only fill
+ * a range in — the API takes nothing else — so the two cannot come to mean different things.
  */
 export function TopikTestPickerPage() {
   const { t } = useTranslation();
@@ -92,14 +98,29 @@ function Failure({ message }: { message: string | null }) {
   );
 }
 
+/**
+ * What has been sat before. Each entry names its **range** (M7.14): with ranges, "32/50" twice over
+ * could be two completely different papers, and a history that cannot tell them apart is no use for
+ * deciding what to drill next.
+ */
 function History({ entries }: { entries: TopikTestOption["history"] }) {
   const { t } = useTranslation();
+  if (entries.length === 0) return <p className="text-sm text-muted-foreground">{t("topik.test.neverTaken")}</p>;
   return (
-    <p className="text-sm text-muted-foreground">
-      {entries.length === 0
-        ? t("topik.test.neverTaken")
-        : t("topik.test.history", { count: entries.length, scores: entries.map((h) => `${h.score_points}/${h.total_points}`).join(", ") })}
-    </p>
+    <ul className="flex flex-col gap-0.5 text-sm text-muted-foreground">
+      {entries.map((h) => (
+        <li key={h.id}>
+          {h.from_number !== null && h.to_number !== null
+            ? t("topik.test.historyRange", {
+                from: h.from_number,
+                to: h.to_number,
+                score: h.score_points,
+                total: h.total_points,
+              })
+            : t("topik.test.historyScore", { score: h.score_points, total: h.total_points })}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -123,7 +144,7 @@ function MixedCard({ mixed, profileId, section }: { mixed: TopikMixedOption; pro
               variant={option.available ? "default" : "outline"}
               disabled={!option.available || pending}
               className={cn(!option.available && "opacity-50")}
-              onClick={() => start({ profile_id: profileId, section, kind: "mixed", length: option.length })}
+              onClick={() => start({ profile_id: profileId, section, kind: "mixed", ...shortcutRange(option.questions) })}
             >
               {option.length === "full"
                 ? t("topik.test.lengthFull", { count: option.questions })
@@ -141,6 +162,16 @@ function MixedCard({ mixed, profileId, section }: { mixed: TopikMixedOption; pro
           </div>
         ))}
       </div>
+
+      <TestRangePicker
+        profileId={profileId}
+        section={section}
+        kind="mixed"
+        exam={null}
+        maxNumber={Math.max(1, mixed.reachable)}
+        pending={pending}
+        onStart={(range) => start({ profile_id: profileId, section, kind: "mixed", ...range })}
+      />
 
       <History entries={mixed.history} />
       <Failure message={failure} />
@@ -169,7 +200,7 @@ function PaperCard({ paper, profileId, section }: { paper: TopikTestOption; prof
               variant={option.available ? "default" : "outline"}
               disabled={!option.available || pending}
               className={cn(!option.available && "opacity-50")}
-              onClick={() => start({ profile_id: profileId, section, kind: "original", exam: paper.exam, length: option.length })}
+              onClick={() => start({ profile_id: profileId, section, kind: "original", exam: paper.exam, ...shortcutRange(option.questions) })}
             >
               {option.length === "full"
                 ? t("topik.test.lengthFull", { count: option.questions })
@@ -183,6 +214,16 @@ function PaperCard({ paper, profileId, section }: { paper: TopikTestOption; prof
           </div>
         ))}
       </div>
+
+      <TestRangePicker
+        profileId={profileId}
+        section={section}
+        kind="original"
+        exam={paper.exam}
+        maxNumber={Math.max(1, paper.ready_questions)}
+        pending={pending}
+        onStart={(range) => start({ profile_id: profileId, section, kind: "original", exam: paper.exam, ...range })}
+      />
 
       <History entries={paper.history} />
       <Failure message={failure} />

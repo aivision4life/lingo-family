@@ -606,6 +606,16 @@ export const topik_tests = sqliteTable(
     kind: text("kind", { enum: TOPIK_TEST_KINDS }).notNull(),
     /** Only for `kind = "original"`; null for a mixed paper, which has no single source. */
     source_exam: text("source_exam"),
+    /**
+     * Which questions the sitting covers (M7.14): "câu 21 đến 30", widened to whole groups.
+     *
+     * Stored rather than derived from the items, because the range is the sitting's **intention**,
+     * not a consequence of the list: two sittings of different ranges must stay distinguishable in
+     * the history even after a question in one of them is deleted. Null only on a sitting drawn
+     * before ranges existed, and migration 0020 backfills those from their own items.
+     */
+    from_number: integer("from_number"),
+    to_number: integer("to_number"),
     question_count: integer("question_count").notNull(),
     /** Sum of the items' points as they were at the time: editing a question's points later must
      * not silently rewrite a result that was already achieved. */

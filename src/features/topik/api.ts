@@ -20,6 +20,7 @@ import {
   type TopikSegmentUpdate,
   topikTestClockSchema,
   topikTestOptionsSchema,
+  topikTestRangePreviewSchema,
   topikTestResultSchema,
   topikTestRunSchema,
   type TopikSessionMode,
@@ -239,6 +240,31 @@ export const useTopikTestOptions = (profileId: string, section: TopikSection) =>
     queryKey: ["topik", "tests", "options", profileId, section],
     queryFn: () => api("GET", `/topik/tests/options?profile_id=${profileId}&section=${section}`, topikTestOptionsSchema),
     enabled: profileId !== "",
+  });
+
+/**
+ * What the range being typed would really be (M7.14): widened to whole groups, with the first
+ * missing question and the real length. Read-only on the server, so it is safe to ask as the
+ * numbers change; `enabled` keeps it quiet until both ends are plausible.
+ */
+export const useTopikRangePreview = (
+  profileId: string,
+  section: TopikSection,
+  kind: "original" | "mixed",
+  exam: string | null,
+  from: number,
+  to: number,
+) =>
+  useQuery({
+    queryKey: ["topik", "tests", "range", profileId, section, kind, exam, from, to],
+    queryFn: () => {
+      const qs = new URLSearchParams({ profile_id: profileId, section, kind, from: String(from), to: String(to) });
+      if (exam) qs.set("exam", exam);
+      return api("GET", `/topik/tests/range?${qs}`, topikTestRangePreviewSchema);
+    },
+    enabled: profileId !== "" && from > 0 && to >= from && (kind === "mixed" || !!exam),
+    // The answer depends only on the bank, which does not move while a range is being typed.
+    staleTime: 60_000,
   });
 
 export const useCreateTopikTest = () => {

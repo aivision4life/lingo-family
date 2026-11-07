@@ -72,8 +72,19 @@ beforeEach(async () => {
   other = ((await t.api("POST", "/profiles", profile({ name: "Mẹ" }))).body as { id: string }).id;
 });
 
-const start = async (length: number | "full" = "full") =>
-  (await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", exam: "Test-35회", length })).body as {
+/** How many questions one exam has ready — what the old "full" length meant (M7.14). */
+const readyCount = async (exam = "Test-35회") =>
+  (await t.env.DB.prepare("SELECT count(*) AS n FROM topik_questions WHERE exam = ?").bind(exam).first<{ n: number }>())!.n;
+
+/** Questions 1..N of the paper; with no argument, the whole of it. */
+const start = async (count?: number) =>
+  (await t.api("POST", "/topik/tests", {
+    profile_id: adult,
+    section: "listening",
+    exam: "Test-35회",
+    from: 1,
+    to: count ?? (await readyCount()),
+  })).body as {
     id: string;
     audio: { audio_key: string; start_ms: number; end_ms: number } | null;
     question_count: number;
@@ -320,10 +331,20 @@ describe("mixed mock test (M6.5)", () => {
     questions: { position: number; number: number; exam: string; clip: { audio_key: string; start_ms: number } | null }[];
   };
 
-  const startMixed = async (length: number | "full" = "full", profile = adult) =>
-    await t.api("POST", "/topik/tests", { profile_id: profile, section: "listening", kind: "mixed", length });
+  /** As far as the bank reaches: the distinct question numbers the papers cover (old "full"). */
+  const mixedReach = async () =>
+    (await t.env.DB.prepare("SELECT count(DISTINCT number) AS n FROM topik_questions WHERE section = 'listening'").first<{ n: number }>())!.n;
 
-  const mixedRun = async (length: number | "full" = "full", profile = adult) => (await startMixed(length, profile)).body as MixedRun;
+  const startMixed = async (count?: number, profile = adult) =>
+    await t.api("POST", "/topik/tests", {
+      profile_id: profile,
+      section: "listening",
+      kind: "mixed",
+      from: 1,
+      to: count ?? (await mixedReach()),
+    });
+
+  const mixedRun = async (count?: number, profile = adult) => (await startMixed(count, profile)).body as MixedRun;
 
   /** Two papers covering the same question numbers — the bank a mixed draw needs. */
   const twoPapers = async (numbers: number[]) => {
@@ -397,7 +418,7 @@ describe("mixed mock test (M6.5)", () => {
     await t.api("POST", `/topik/tests/${mine.id}/finish`, { profile_id: adult });
     // The other profile has sat nothing, so the question I just answered is still new to them and
     // either paper is fair game — what must not happen is my history steering their draw.
-    const theirs = await mixedRun("full", other);
+    const theirs = await mixedRun(undefined, other);
     expect(theirs.questions).toHaveLength(1);
   });
 
@@ -409,7 +430,7 @@ describe("mixed mock test (M6.5)", () => {
   });
 
   it("refuses a mixed draw from an empty bank", async () => {
-    const res = await startMixed("full");
+    const res = await startMixed(1);
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: "topik_test_bank_short", missing_position: 1 });
   });
@@ -436,7 +457,7 @@ describe("mixed mock test (M6.5)", () => {
 
   it("refuses an original sitting with no paper named", async () => {
     await twoPapers([1]);
-    expect((await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", length: "full" })).status).toBe(400);
+    expect((await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", from: 1, to: 3 })).status).toBe(400);
   });
 });
 
@@ -451,7 +472,7 @@ describe("a pair sharing one clip in a sitting", () => {
     const segment = await t.env.DB.prepare("SELECT segment_id AS s FROM topik_questions WHERE id = ?").bind(id2).first<{ s: string }>();
     await t.env.DB.prepare("UPDATE topik_questions SET segment_id = ? WHERE id = ?").bind(segment!.s, id3).run();
 
-    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", exam: "Test-35회", length: "full" })).body as {
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", exam: "Test-35회", from: 1, to: 3 })).body as {
       questions: { number: number; group_id: string }[];
     };
     const byNumber = new Map(run.questions.map((q) => [q.number, q.group_id]));
@@ -491,7 +512,7 @@ describe("reading mock test", () => {
 
   it("creates a reading sitting with no audio and no clips", async () => {
     for (const n of [1, 2, 3]) await readingQuestion(n);
-    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", length: "full" })).body as {
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", from: 1, to: 3 })).body as {
       section: string;
       audio: unknown;
       question_count: number;
@@ -520,7 +541,7 @@ describe("reading mock test", () => {
     })).body as { id: string };
     expect(created.id).toBeTruthy();
 
-    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", length: "full" })).body as {
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", from: 1, to: 1 })).body as {
       id: string;
       questions: { stem: { text: string | null; image_key: string | null } }[];
     };
@@ -535,7 +556,7 @@ describe("reading mock test", () => {
   it("draws a mixed reading paper from more than one exam", async () => {
     for (const n of [1, 2, 3]) await readingQuestion(n, "Read-60회");
     for (const n of [1, 2, 3]) await readingQuestion(n, "Read-64회");
-    const first = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", kind: "mixed", length: "full" })).body as {
+    const first = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", kind: "mixed", from: 1, to: 3 })).body as {
       id: string;
       source_exam: string | null;
       questions: { number: number; exam: string }[];
@@ -545,7 +566,7 @@ describe("reading mock test", () => {
     await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult });
 
     // Every position has one alternative, and the first sitting used all of them up.
-    const second = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", kind: "mixed", length: "full" })).body as {
+    const second = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", kind: "mixed", from: 1, to: 3 })).body as {
       questions: { number: number; exam: string }[];
     };
     for (const q of second.questions) {
@@ -555,7 +576,7 @@ describe("reading mock test", () => {
 
   it("keeps a reading sitting out of the listening history", async () => {
     for (const n of [1, 2, 3]) await readingQuestion(n);
-    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", length: "full" })).body as { id: string };
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", from: 1, to: 3 })).body as { id: string };
     await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult });
 
     expect((await options()).papers[0]!.ready_questions).toBe(3);
@@ -636,7 +657,7 @@ describe("the sitting's clock", () => {
       })).body as { id: string }).id;
       await t.env.DB.prepare("UPDATE topik_questions SET verified = 1 WHERE id = ?").bind(id).run();
     }
-    const test = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-1", length: "full" })).body as {
+    const test = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-1", from: 1, to: 2 })).body as {
       id: string;
     };
     const clock = (await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0)).body as Clock;
@@ -737,5 +758,157 @@ describe("the sitting's clock", () => {
     };
     expect(result.pause_count).toBe(1);
     expect(result.paused_ms).toBe(60_000);
+  });
+});
+
+// --- ranges (M7.14) -----------------------------------------------------------------------------
+//
+// A sitting covers a range of question numbers. Three promises: a range that would cut a pair in
+// half is widened, a range with a hole in it refuses the sitting instead of quietly shortening it,
+// and the preview that says so creates nothing.
+
+type RangePreview = {
+  from: number;
+  to: number;
+  expanded: boolean;
+  added: number[];
+  question_count: number;
+  missing_number: number | null;
+  length_ms: number;
+};
+
+const preview = async (from: number, to: number, over: Record<string, string> = {}) => {
+  const qs = new URLSearchParams({ profile_id: adult, section: "listening", exam: "Test-35회", from: String(from), to: String(to), ...over });
+  const res = await t.api("GET", `/topik/tests/range?${qs}`);
+  return { status: res.status, body: res.body as RangePreview };
+};
+
+/** A paper where 21 and 22 share one clip, as every real paper does from 21 on. */
+async function pairedPaper() {
+  for (const n of [19, 20, 21, 22, 23]) await question(n);
+  const shared = await t.env.DB.prepare("SELECT segment_id FROM topik_questions WHERE exam = 'Test-35회' AND number = 21").first<{
+    segment_id: string;
+  }>();
+  await t.env.DB.prepare("UPDATE topik_questions SET segment_id = ? WHERE exam = 'Test-35회' AND number = 22")
+    .bind(shared!.segment_id)
+    .run();
+}
+
+describe("sitting a range of questions", () => {
+  it("sits exactly the asked range, not the first N questions", async () => {
+    for (const n of [1, 2, 3, 4, 5]) await question(n);
+    const run = (await t.api("POST", "/topik/tests", {
+      profile_id: adult,
+      section: "listening",
+      exam: "Test-35회",
+      from: 3,
+      to: 5,
+    })).body as { question_count: number; from_number: number; to_number: number; questions: { number: number }[] };
+
+    expect(run.questions.map((q) => q.number)).toEqual([3, 4, 5]);
+    expect(run).toMatchObject({ question_count: 3, from_number: 3, to_number: 5 });
+  });
+
+  it("widens a range that would cut a pair in half, and says which numbers it pulled in", async () => {
+    await pairedPaper();
+    const ahead = await preview(19, 21);
+    expect(ahead.body).toMatchObject({ from: 19, to: 22, expanded: true, added: [22], question_count: 4, missing_number: null });
+
+    const behind = await preview(22, 23);
+    expect(behind.body).toMatchObject({ from: 21, to: 23, expanded: true, added: [21] });
+  });
+
+  it("creates the widened sitting, not the one that was typed", async () => {
+    await pairedPaper();
+    const run = (await t.api("POST", "/topik/tests", {
+      profile_id: adult,
+      section: "listening",
+      exam: "Test-35회",
+      from: 19,
+      to: 21,
+    })).body as { from_number: number; to_number: number; questions: { number: number }[] };
+    expect(run).toMatchObject({ from_number: 19, to_number: 22 });
+    expect(run.questions.map((q) => q.number)).toEqual([19, 20, 21, 22]);
+  });
+
+  it("leaves a range alone when it already holds whole groups", async () => {
+    await pairedPaper();
+    expect((await preview(21, 22)).body).toMatchObject({ from: 21, to: 22, expanded: false, added: [] });
+  });
+
+  it("names the missing question and refuses the sitting", async () => {
+    for (const n of [1, 2, 4]) await question(n);
+    expect((await preview(1, 4)).body).toMatchObject({ missing_number: 3, length_ms: 0 });
+
+    const res = await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", exam: "Test-35회", from: 1, to: 4 });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: "topik_test_missing_number", missing_number: 3 });
+  });
+
+  it("reports the clips' real length for listening, and the reading rate for reading", async () => {
+    for (const n of [1, 2, 3]) await question(n);
+    // `question` lays each clip out as a minute, so questions 2-3 run two minutes.
+    expect((await preview(2, 3)).body.length_ms).toBe(2 * 60_000);
+
+    for (const n of [1, 2, 3]) {
+      const id = ((await t.api("POST", "/topik/questions", {
+        ...input({ number: n, section: "reading", exam: "Read-range", block: "1~3", stem: { text: "( )", image_key: null } }),
+        profile_id: adult,
+      })).body as { id: string }).id;
+      await t.env.DB.prepare("UPDATE topik_questions SET verified = 1 WHERE id = ?").bind(id).run();
+    }
+    const reading = await preview(1, 3, { section: "reading", exam: "Read-range" });
+    // Three questions at 70 minutes per 50, rounded down to the minute.
+    expect(reading.body.length_ms).toBe(4 * 60_000);
+  });
+
+  it("previews without creating anything", async () => {
+    for (const n of [1, 2]) await question(n);
+    const before = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_tests").first<{ n: number }>();
+    for (const [from, to] of [[1, 1], [1, 2], [2, 2], [1, 9]]) await preview(from!, to!);
+    const after = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_tests").first<{ n: number }>();
+    expect(after!.n).toBe(before!.n);
+    expect(after!.n).toBe(0);
+  });
+
+  it("refuses a backwards or oversized range before it reaches the bank", async () => {
+    await question(1);
+    const backwards = await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", exam: "Test-35회", from: 5, to: 2 });
+    expect(backwards.status).toBe(400);
+    const huge = await t.api("POST", "/topik/tests", { profile_id: adult, section: "listening", exam: "Test-35회", from: 1, to: 80 });
+    expect(huge.status).toBe(400);
+  });
+
+  it("tells two sittings of different ranges apart in the history", async () => {
+    for (const n of [1, 2, 3, 4]) await question(n);
+    for (const [from, to] of [[1, 2], [3, 4]]) {
+      const run = (await t.api("POST", "/topik/tests", {
+        profile_id: adult,
+        section: "listening",
+        exam: "Test-35회",
+        from,
+        to,
+      })).body as { id: string };
+      await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult });
+    }
+    const history = (await options()).papers[0]!.history as unknown as { from_number: number; to_number: number }[];
+    expect(history.map((h) => [h.from_number, h.to_number]).sort()).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
+  });
+
+  it("draws a mixed range from anywhere in the bank", async () => {
+    for (const n of [16, 17, 18]) await question(n, { exam: "Test-35회" });
+    for (const n of [16, 17, 18]) await question(n, { exam: "Test-41회" });
+    const run = (await t.api("POST", "/topik/tests", {
+      profile_id: adult,
+      section: "listening",
+      kind: "mixed",
+      from: 16,
+      to: 18,
+    })).body as { from_number: number; to_number: number; questions: { number: number; exam: string }[] };
+    expect(run).toMatchObject({ from_number: 16, to_number: 18 });
+    expect(run.questions.map((q) => q.number)).toEqual([16, 17, 18]);
   });
 });

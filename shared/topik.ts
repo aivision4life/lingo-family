@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { topikSectionSchema, topikTestKindSchema, topikTestStatusSchema } from "./enums";
 import { DEFAULT_SESSION_SIZE } from "./profile";
+import { MAX_RANGE_QUESTIONS } from "./topikRange";
 import { posSchema } from "./word";
 export { TOPIK_ALBUM, topikWordSourceSchema, TOPIK_SOURCES_MAX, type TopikWordSource } from "./topikSource";
 
@@ -517,6 +518,10 @@ export const topikTestLengthOptionSchema = z.object({
 /** A finished sitting, as the picker lists it: "đã thi 2 lần: 32/50, 38/50". */
 export const topikTestHistoryEntrySchema = z.object({
   id: z.string(),
+  /** The range sat, so two sittings of different ranges cannot look alike in the history (M7.14).
+   * Null only for a sitting with no items left to read it from. */
+  from_number: z.number().int().positive().nullable(),
+  to_number: z.number().int().positive().nullable(),
   score_points: z.number().int(),
   total_points: z.number().int(),
   question_count: z.number().int(),
@@ -560,7 +565,26 @@ export const topikTestOptionsSchema = z.object({
 });
 export type TopikTestOptions = z.infer<typeof topikTestOptionsSchema>;
 
-export type TopikTestCreate = z.infer<typeof topikTestCreateSchema>;
+/**
+ * Which questions to sit (M7.14).
+ *
+ * One shape, always a range: the three shortcut buttons on the picker fill one in ("20" means
+ * questions 1-20), rather than being a second kind of input the server has to understand. Two ways
+ * of saying the same thing is how the two drift apart a few months later.
+ *
+ * The range is what was *asked for*; the server widens it to whole groups (`expandToGroups`) and
+ * answers with what it actually drew.
+ */
+export const topikTestRangeSchema = z
+  .object({
+    from: z.coerce.number().int().positive(),
+    to: z.coerce.number().int().positive(),
+  })
+  .refine((v) => v.to >= v.from, { message: "range_backwards", path: ["to"] })
+  // One real paper is 50 questions; this also bounds the mixed draw's walk.
+  .refine((v) => v.to - v.from + 1 <= MAX_RANGE_QUESTIONS, { message: "range_too_long", path: ["to"] });
+
+export type TopikTestCreate = z.input<typeof topikTestCreateSchema>;
 export const topikTestCreateSchema = z
   .object({
     profile_id: z.string().min(1),
@@ -568,9 +592,43 @@ export const topikTestCreateSchema = z
     kind: topikTestKindSchema.default("original"),
     /** The paper to sit. A mixed test has none: its questions come from everywhere. */
     exam: z.string().min(1).optional(),
-    length: topikTestLengthSchema,
+    from: z.coerce.number().int().positive(),
+    to: z.coerce.number().int().positive(),
   })
-  .refine((v) => v.kind === "mixed" || !!v.exam, { message: "exam_required", path: ["exam"] });
+  .refine((v) => v.kind === "mixed" || !!v.exam, { message: "exam_required", path: ["exam"] })
+  .refine((v) => v.to >= v.from, { message: "range_backwards", path: ["to"] })
+  .refine((v) => v.to - v.from + 1 <= MAX_RANGE_QUESTIONS, { message: "range_too_long", path: ["to"] });
+
+/** `GET /topik/tests/range` — what the picker asks while the range is being typed. */
+export const topikTestRangeQuerySchema = z.object({
+  profile_id: z.string().min(1),
+  section: topikSectionSchema,
+  kind: topikTestKindSchema.default("original"),
+  exam: z.string().min(1).optional(),
+  from: z.coerce.number().int().positive(),
+  to: z.coerce.number().int().positive(),
+});
+
+/**
+ * The answer: the range as it would really be sat, and why it cannot be.
+ *
+ * Read-only — it creates nothing, so it is safe to ask on every keystroke. `expanded` is true when
+ * the widening moved an edge, which is what lets the screen say *why* the range it shows is not the
+ * one that was typed.
+ */
+export const topikTestRangePreviewSchema = z.object({
+  from: z.number().int().positive(),
+  to: z.number().int().positive(),
+  expanded: z.boolean(),
+  /** The numbers the widening pulled in, so the screen can name them instead of saying "a group". */
+  added: z.array(z.number().int().positive()),
+  question_count: z.number().int().nonnegative(),
+  /** The first question of the range the bank does not have; the sitting cannot start. */
+  missing_number: z.number().int().positive().nullable(),
+  /** How long the sitting would get: the clips' real length, or the reading rate. */
+  length_ms: z.number().int().nonnegative(),
+});
+export type TopikTestRangePreview = z.infer<typeof topikTestRangePreviewSchema>;
 
 /**
  * One position of a running test. No `correct_option`, and for listening no transcript either —
@@ -628,6 +686,9 @@ export const topikTestRunSchema = z.object({
   pause_count: z.number().int(),
   /** The server's own clock, so a phone set to the wrong time still counts down correctly. */
   server_now: z.number().int(),
+  /** The range being sat (M7.14): the sitting's header says "câu 21-30", not "câu 21 / 10". */
+  from_number: z.number().int().positive().nullable(),
+  to_number: z.number().int().positive().nullable(),
   audio: z
     .object({ audio_key: z.string(), start_ms: z.number().int(), end_ms: z.number().int() })
     .nullable(),
@@ -703,6 +764,8 @@ export const topikTestResultSchema = z.object({
   paused_ms: z.number().int(),
   /** True when the time ran out and the server submitted the paper itself (M7.13). */
   auto_submitted: z.boolean(),
+  from_number: z.number().int().positive().nullable(),
+  to_number: z.number().int().positive().nullable(),
   finished_at: z.number().int().nullable(),
   items: z.array(topikTestResultItemSchema),
 });
