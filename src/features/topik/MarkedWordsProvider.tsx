@@ -3,7 +3,7 @@ import { MarkedWordsContext, toggleMarked, type MarkedTerm } from "./markedWords
 
 export function MarkedWordsProvider({ children }: { children: ReactNode }) {
   const [marked, setMarked] = useState<MarkedTerm[]>([]);
-  const toggle = useCallback((lemma: string, gloss_vi: string) => setMarked((prev) => toggleMarked(prev, lemma, gloss_vi)), []);
+  const toggle = useCallback((term: MarkedTerm) => setMarked((prev) => toggleMarked(prev, term)), []);
   const remove = useCallback((lemma: string) => setMarked((prev) => prev.filter((m) => m.lemma !== lemma)), []);
   const isMarked = useCallback((lemma: string) => marked.some((m) => m.lemma === lemma), [marked]);
   const value = useMemo(() => ({ marked, isMarked, toggle, remove }), [marked, isMarked, toggle, remove]);

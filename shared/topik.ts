@@ -7,6 +7,24 @@ import { posSchema } from "./word";
 
 export const TOPIK_OPTION_COUNT = 4;
 
+/**
+ * The album a word joins when it is added from a TOPIK question (M7.12), one per section.
+ *
+ * A plain constant, deliberately **not** i18n: an album name lives in `decks.name`, which is data
+ * shared by the whole family, while the interface language is per profile — a translated name
+ * would have a Vietnamese profile and a Korean one create two different albums for the same thing.
+ * Albums are family-wide (there is no profile column on `decks`), so there is one of each.
+ */
+export const TOPIK_ALBUM = { reading: "TOPIK II Reading", listening: "TOPIK II Listening" } as const;
+
+/** Where a word was met, carried from the question into the library (M7.12). */
+export const topikWordSourceSchema = z.object({
+  section: topikSectionSchema,
+  exam: z.string().min(1),
+  number: z.number().int().positive(),
+});
+export type TopikWordSource = z.infer<typeof topikWordSourceSchema>;
+
 /** Looser than the general upload limits (SPEC F3): exam scans need to stay legible. */
 export const TOPIK_IMAGE_MAX_SIDE = 1600;
 export const TOPIK_IMAGE_MAX_BYTES = 1_000_000;

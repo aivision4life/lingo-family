@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
+  ALBUM_ERRORS,
   albumChangedSchema,
   albumCreatedSchema,
   albumListSchema,
@@ -76,6 +77,14 @@ export function useSetWordAlbums(wordId: string) {
       api("PUT", `/words/${wordId}/albums`, wordAlbumsResponseSchema, { profile_id: v.profileId, album_ids: v.albumIds }),
     onSuccess: () => refresh(qc),
   });
+}
+
+/** Id of the album that already has this name, when an API error is a duplicate (M7.12: creating
+ * the TOPIK album is how we find out it exists). */
+export function duplicateAlbumIdOf(error: unknown): string | null {
+  const body = error && typeof error === "object" && "body" in error ? error.body : null;
+  const parsed = z.object({ error: z.literal(ALBUM_ERRORS.duplicate), existing_id: z.string() }).safeParse(body);
+  return parsed.success ? parsed.data.existing_id : null;
 }
 
 /** Error codes of the album API → i18n keys (undefined = show the generic message). */

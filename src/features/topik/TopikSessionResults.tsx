@@ -33,8 +33,7 @@ export function TopikSessionResults({ summary }: { summary: SessionSummary }) {
     });
 
   const addAll = async () => {
-    const lemmas = marked.filter((m) => !excluded.has(m.lemma)).map((m) => m.lemma);
-    const { addedLemmas } = await bulk.run(lemmas);
+    const { addedLemmas } = await bulk.run(marked.filter((m) => !excluded.has(m.lemma)));
     for (const lemma of addedLemmas) remove(lemma);
   };
 

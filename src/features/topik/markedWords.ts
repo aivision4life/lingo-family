@@ -4,18 +4,21 @@
 // so answering questions is never interrupted. Lives only in memory (not D1): a fresh practice
 // session starts with an empty list.
 import { createContext, useContext } from "react";
+import type { TopikWordSource } from "@shared/topik";
 
-export type MarkedTerm = { lemma: string; gloss_vi: string };
+/** A term waiting to be added, with the question it was met in: that decides which TOPIK album it
+ * joins (M7.12). A term met twice keeps the first question — where you actually met it. */
+export type MarkedTerm = { lemma: string; gloss_vi: string; source: TopikWordSource };
 
-/** Pure: toggles `lemma` in `marked` (adds it with `gloss_vi` if absent, removes it if present). */
-export function toggleMarked(marked: MarkedTerm[], lemma: string, gloss_vi: string): MarkedTerm[] {
-  return marked.some((m) => m.lemma === lemma) ? marked.filter((m) => m.lemma !== lemma) : [...marked, { lemma, gloss_vi }];
+/** Pure: toggles `term.lemma` in `marked` (adds the term if absent, removes it if present). */
+export function toggleMarked(marked: MarkedTerm[], term: MarkedTerm): MarkedTerm[] {
+  return marked.some((m) => m.lemma === term.lemma) ? marked.filter((m) => m.lemma !== term.lemma) : [...marked, term];
 }
 
 export type MarkedWordsValue = {
   marked: MarkedTerm[];
   isMarked: (lemma: string) => boolean;
-  toggle: (lemma: string, gloss_vi: string) => void;
+  toggle: (term: MarkedTerm) => void;
   /** Called once a marked term is safely saved to the library, so it stops needing the "unsaved
    * marks, are you sure you want to leave?" guard. */
   remove: (lemma: string) => void;

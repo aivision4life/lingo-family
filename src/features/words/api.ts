@@ -84,6 +84,10 @@ export function useWordLookup(lang: LearnLang, term: string, options: { enabled?
   });
 }
 
+/** The same lookup outside React Query, for a loop (M7.12's bulk add) that cannot call a hook. */
+export const lookupWord = (lang: LearnLang, term: string) =>
+  api("GET", `/words/lookup?lang=${lang}&term=${encodeURIComponent(term)}`, wordLookupResponseSchema);
+
 /** Id of the existing word when an API error is a duplicate, otherwise null. */
 export function duplicateIdOf(error: unknown): string | null {
   const body = error && typeof error === "object" && "body" in error ? error.body : null;
