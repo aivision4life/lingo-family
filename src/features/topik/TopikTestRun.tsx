@@ -19,20 +19,22 @@ import { answerAcknowledged, answerGiven, answeredCount, emptyQueue, unsentAnswe
 import { groupNumbers, groupQuestions } from "./groups";
 import { isInLastMinutes, READING_WARNING_MS } from "./readingClock";
 import { TopikTestGrid } from "./TopikTestGrid";
-import { formatRemaining, isParked, positionAt, progressFraction, remainingMs, shownPosition, type ParkedAt } from "./testClock";
+import { formatRemaining, isParked, positionAt, progressFraction, shownPosition, type ParkedAt } from "./testClock";
 import { TopikTestQuestionCard } from "./TopikTestQuestionCard";
 import { useSittingTape } from "./useSittingTape";
-
-/** Outside the component so `react-hooks/purity` does not flag the clock read itself. */
-const nowMs = () => Date.now();
+import { useTestClock } from "./useTestClock";
 
 /**
- * Sitting a mock test (M6.4). The tape is the clock: it runs from the first clip's start to the
- * last clip's end, answering silences included, and which question is "current" follows the
+ * Sitting a mock test (M6.4). The recording paces the paper: it runs from the first clip's start to
+ * the last clip's end, answering silences included, and which question is "current" follows the
  * playing head. There is no replay, no speed control and no seeking — that is the exercise.
  *
  * Going back to change an earlier answer *is* allowed while the tape runs, because flipping back a
  * page is allowed in the real exam.
+ *
+ * The time is the server's (M7.13, `useTestClock`). Closing the paper does not stop it, which is
+ * what makes a sitting worth anything — so the pause button is deliberately the biggest control on
+ * the screen, and leaving says plainly that the clock keeps running.
  */
 export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestRun; profileId: string; onFinished: (r: TopikTestResult) => void }) {
   const { t } = useTranslation();
@@ -56,12 +58,8 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   const leaving = useRef(false);
   // Set on the first effect run rather than during render: `react-hooks/purity` refuses a clock
   // read while rendering, and the sitting starts when the tape does anyway.
-  const startedAt = useRef(0);
-  useEffect(() => {
-    startedAt.current = nowMs();
-  }, []);
-
-  const tape = useSittingTape(test);
+  const clock = useTestClock(test, profileId);
+  const tape = useSittingTape(test, clock);
   // A screen is a group: the questions about one recording, which the tape plays once (M7.5).
   const groups = groupQuestions(test.questions.map((q) => ({ ...q, id: q.question_id })));
   const groupOf = (position: number) => groups.find((g) => g.questions.some((q) => q.position === position)) ?? groups[0];
@@ -82,15 +80,10 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
     if (submitted.current) return;
     submitted.current = true;
     tape.stop();
+    // No times reported: the server has held the clock since `/start`, and a client that was
+    // reloaded part way through could only report a shorter sitting than the real one.
     finish.mutate(
-      {
-        testId: test.id,
-        profile_id: profileId,
-        duration_ms: nowMs() - startedAt.current,
-        pause_count: tape.pauseCount,
-        paused_ms: tape.pausedMs,
-        answers: unsentAnswers(queue),
-      },
+      { testId: test.id, profile_id: profileId, answers: unsentAnswers(queue) },
       { onSuccess: onFinished, onError: () => (submitted.current = false) },
     );
   };
@@ -130,7 +123,7 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   if (!group) return <p className="text-muted-foreground">{t("topik.test.empty")}</p>;
   const { from, to } = groupNumbers(group);
   const answered = answeredCount(queue);
-  const left = remainingMs(tape.positionMs, tape.endMs);
+  const left = clock.remainingMs;
   const mixed = test.kind === "mixed";
   // A reading paper is flipped through freely and ends by its own clock, so it gets the question
   // grid and a Submit button; the listening paper keeps exactly what it had (M7.11).
@@ -164,7 +157,7 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
       )}
 
       {/* The clock is nearly out: a banner that stays, not a toast that flashes past. */}
-      {reading && !tape.needsStart && isInLastMinutes(left) && (
+      {reading && clock.started && !clock.paused && isInLastMinutes(left) && (
         <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm font-medium dark:bg-amber-950/40">
           {t("topik.test.lastMinutes", { minutes: READING_WARNING_MS / 60_000 })}
         </p>
@@ -215,15 +208,17 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </Button>
       </div>
 
-      {/* The mixed tape must be started by a tap: a phone only lets a page play audio an actual
-          gesture asked for, and the second `<audio>` element is unlocked in that same tap. */}
+      {/* Nothing has started yet, so no exam time is passing: a slow network or an image still
+          loading must not eat minutes the paper was never read in. The tape also needs a real tap —
+          a phone only lets a page play audio a gesture asked for, and the second `<audio>` element
+          is unlocked in that same tap. */}
       {tape.needsStart && (
         <div className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-accent/40 p-3">
           {reading ? (
             <>
               <p className="font-medium">{t("topik.test.readyTitle")}</p>
               <p className="text-sm">
-                {t("topik.test.readyBody", { count: test.question_count, time: formatRemaining(tape.endMs) })}
+                {t("topik.test.readyBody", { count: test.question_count, time: formatRemaining(clock.lengthMs) })}
               </p>
             </>
           ) : (
@@ -234,24 +229,56 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
           </Button>
         </div>
       )}
+
+      {/* Reopened mid-paper (M7.13). The clock never stopped, so the recording is already minutes
+          in; the tap picks it up there rather than at the beginning. */}
+      {tape.needsResume && (
+        <div className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-accent/40 p-3">
+          <p className="font-medium">{t("topik.test.resumeTitle")}</p>
+          <p className="text-sm">
+            {t("topik.test.resumeBody", { at: formatRemaining(tape.resumeAtMs), left: formatRemaining(left) })}
+          </p>
+          <Button type="button" onClick={tape.resume}>
+            {t("topik.test.resumeTape")}
+          </Button>
+        </div>
+      )}
       {tape.waiting && <p className="text-sm text-amber-700 dark:text-amber-500">{t("topik.test.tapeWaiting")}</p>}
 
-      <div className="flex items-center justify-between gap-2 border-t pt-3">
-        <Button variant="secondary" onClick={tape.toggle} disabled={tape.needsStart}>
-          {tape.playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
-          {t(tape.playing ? "topik.test.pause" : "topik.test.resume")}
+      {/* Sticky, and the pause button is the full width of the row: the clock runs whatever else
+          happens, so on a phone — where a child needing something is the normal interruption —
+          stopping it has to be one easy thumb tap at the bottom of the screen, not a small
+          secondary control among others (M7.13). */}
+      <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+        <Button
+          variant={clock.paused ? "default" : "secondary"}
+          className="h-14 w-full text-base"
+          onClick={tape.toggle}
+          disabled={!clock.started}
+        >
+          {clock.paused ? <Play className="size-5" aria-hidden /> : <Pause className="size-5" aria-hidden />}
+          {t(clock.paused ? "topik.test.resumeClock" : "topik.test.pauseClock")}
         </Button>
-        {/* Sitting at home, there is no reason to wait out the clock once the paper is done. */}
-        {reading && !tape.needsStart && (
-          <Button onClick={() => setConfirmSubmit(true)} disabled={finish.isPending}>
-            {t("topik.test.submit")}
+        <div className="flex items-center justify-between gap-2">
+          {/* Sitting at home, there is no reason to wait out the clock once the paper is done. */}
+          {reading && clock.started ? (
+            <Button onClick={() => setConfirmSubmit(true)} disabled={finish.isPending}>
+              {t("topik.test.submit")}
+            </Button>
+          ) : (
+            <span />
+          )}
+          <Button variant="ghost" onClick={() => setConfirmExit(true)}>
+            {t("topik.test.exit")}
           </Button>
-        )}
-        <Button variant="ghost" onClick={() => setConfirmExit(true)}>
-          {t("topik.test.exit")}
-        </Button>
+        </div>
       </div>
-      {tape.pauseCount > 0 && <p className="text-xs text-amber-700 dark:text-amber-500">{t("topik.test.pausedNote", { count: tape.pauseCount })}</p>}
+      {clock.paused && (
+        <p role="status" className="text-sm font-medium text-amber-700 dark:text-amber-500">
+          {t("topik.test.pausedNow")}
+        </p>
+      )}
+      {clock.pauseCount > 0 && <p className="text-xs text-amber-700 dark:text-amber-500">{t("topik.test.pausedNote", { count: clock.pauseCount })}</p>}
 
       {/* Folded away, but kept: if a handover ever goes wrong on a phone there are no developer
           tools to find out why, and this is the only record of what the tape actually did. */}
@@ -288,7 +315,9 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("topik.test.exitTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("topik.test.exitBody")}</AlertDialogDescription>
+            {/* The one thing that must be said out loud, now that the clock is the server's: it
+                does not stop because the paper is off screen — and pausing is how to keep it. */}
+            <AlertDialogDescription>{t(clock.paused ? "topik.test.exitBodyPaused" : "topik.test.exitBody")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("topik.test.exitStay")}</AlertDialogCancel>

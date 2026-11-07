@@ -6,6 +6,7 @@
 // how much time is left, when the paper is over, where a park ends — then works unchanged on that
 // timeline, instead of being written a second time for the mixed case.
 import type { TopikClip } from "@shared/topik";
+import { clipKeyOf } from "@shared/topikClock";
 import type { TestPosition } from "./testClock";
 
 export type MixedTimeline = {
@@ -19,8 +20,10 @@ export type MixedTimeline = {
   totalMs: number;
 };
 
-/** Two questions about one clip carry the very same clip, so it is played once. */
-const keyOf = (clip: TopikClip) => `${clip.audio_key}@${clip.start_ms}`;
+/** Two questions about one clip carry the very same clip, so it is played once. The key is shared
+ * with `tapeLengthMs`, which the server times the paper by: a clip counted twice by one of them and
+ * once by the other would make the deadline and the tape disagree. */
+const keyOf = (clip: TopikClip) => clipKeyOf(clip);
 
 export function mixedTimeline(questions: readonly TestPosition[]): MixedTimeline {
   const clips: TopikClip[] = [];
@@ -58,4 +61,30 @@ export function mixedTimeline(questions: readonly TestPosition[]): MixedTimeline
 export function stitchedPosition(timeline: MixedTimeline, index: number, withinMs: number): number {
   const offset = timeline.offsets[index] ?? timeline.totalMs;
   return Math.min(timeline.totalMs, offset + Math.max(0, withinMs));
+}
+
+/**
+ * The inverse of `stitchedPosition`: which clip the stitched millisecond falls in, and how far into
+ * it (M7.13).
+ *
+ * This is what resuming a mixed sitting needs. The server says how much exam time has gone; that
+ * number has to become "clip 7, 12.4 seconds in" before an `<audio>` element can be seeked. A
+ * position past the end of the tape means the paper is over, and is reported as the end of the last
+ * clip rather than clamped into it — the caller submits instead of playing.
+ */
+export function positionOnTimeline(clips: readonly TopikClip[], stitchedMs: number): { index: number; withinMs: number; past: boolean } {
+  let offset = 0;
+  const seen = new Set<string>();
+  const unique = clips.filter((c) => (seen.has(keyOf(c)) ? false : (seen.add(keyOf(c)), true)));
+  const target = Math.max(0, stitchedMs);
+
+  for (const [index, clip] of unique.entries()) {
+    const length = Math.max(0, clip.end_ms - clip.start_ms);
+    // `<` and not `<=`: a position exactly on a boundary belongs to the clip that starts there, so
+    // round-tripping the start of clip 7 gives clip 7 at 0 rather than clip 6 at its very end.
+    if (target < offset + length) return { index, withinMs: target - offset, past: false };
+    offset += length;
+  }
+  const last = unique.length - 1;
+  return { index: Math.max(0, last), withinMs: last < 0 ? 0 : Math.max(0, unique[last]!.end_ms - unique[last]!.start_ms), past: true };
 }

@@ -765,7 +765,7 @@
       "pausedNote": "Paused {{count}} time(s)",
       "exit": "Leave",
       "exitTitle": "Cancel this test?",
-      "exitBody": "Leaving part way cancels the test: no score is kept and the review schedule is untouched.",
+      "exitBody": "The clock keeps running while you are away. To keep your time, press Pause first. Cancelling the test keeps no score and leaves the review schedule untouched.",
       "exitStay": "Keep going",
       "exitLeave": "Cancel it",
       "scoreRaw": "{{score}}/{{total}} points",
@@ -809,7 +809,15 @@
       "submitBody": "It is marked straight away and cannot be changed.",
       "submitUnanswered": "{{count}} questions are still blank. Submit anyway?",
       "submitConfirm": "Submit",
-      "submitCancel": "Keep working"
+      "submitCancel": "Keep working",
+      "pauseClock": "Pause",
+      "resumeClock": "Carry on",
+      "pausedNow": "Paused. The clock has stopped, so no time is being lost.",
+      "resumeTitle": "This paper is still running",
+      "resumeBody": "The clock did not stop while you were away: the tape is at {{at}}, with {{left}} left. Carry on to pick it up from exactly there.",
+      "resumeTape": "Carry on",
+      "exitBodyPaused": "The paper is paused, so your time is held — leave and come back and it is still there. Cancelling the test, though, keeps no score and leaves the review schedule untouched.",
+      "autoSubmitted": "Time ran out; the paper was submitted for you."
     }
   }
 }

@@ -765,7 +765,7 @@
       "pausedNote": "{{count}}회 일시정지",
       "exit": "나가기",
       "exitTitle": "시험을 취소할까요?",
-      "exitBody": "도중에 나가면 시험이 취소되고 점수도 복습 일정도 남지 않습니다.",
+      "exitBody": "나가 있어도 시계는 계속 갑니다. 시간을 지키려면 먼저 일시정지를 누르세요. 시험을 취소하면 점수도 복습 일정도 남지 않습니다.",
       "exitStay": "계속 풀기",
       "exitLeave": "취소하기",
       "scoreRaw": "{{score}}/{{total}}점",
@@ -809,7 +809,15 @@
       "submitBody": "바로 채점되며 다시 고칠 수 없습니다.",
       "submitUnanswered": "{{count}}문항이 비어 있습니다. 그대로 제출할까요?",
       "submitConfirm": "제출",
-      "submitCancel": "계속 풀기"
+      "submitCancel": "계속 풀기",
+      "pauseClock": "일시정지",
+      "resumeClock": "이어서 풀기",
+      "pausedNow": "일시정지 중입니다. 시계가 멈췄으니 시간은 줄지 않습니다.",
+      "resumeTitle": "시험이 아직 진행 중입니다",
+      "resumeBody": "나가 있는 동안에도 시계는 멈추지 않았습니다. 음원은 {{at}} 지점, {{left}} 남았습니다. 계속을 누르면 그 지점부터 이어서 들립니다.",
+      "resumeTape": "계속",
+      "exitBodyPaused": "일시정지 상태여서 시간은 지켜집니다 — 나갔다 돌아와도 그대로입니다. 다만 시험을 취소하면 점수도 복습 일정도 남지 않습니다.",
+      "autoSubmitted": "시간이 끝나 자동으로 제출되었습니다."
     }
   }
 }

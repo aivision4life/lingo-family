@@ -18,6 +18,7 @@ import {
   type TopikQuestionInput,
   type TopikQuestionUpdate,
   type TopikSegmentUpdate,
+  topikTestClockSchema,
   topikTestOptionsSchema,
   topikTestResultSchema,
   topikTestRunSchema,
@@ -254,6 +255,21 @@ export const useTopikTest = (testId: string, profileId: string) =>
     queryKey: ["topik", "tests", testId, profileId],
     queryFn: () => api("GET", `/topik/tests/${testId}?profile_id=${profileId}`, topikTestRunSchema.or(topikTestResultSchema)),
     enabled: testId !== "" && profileId !== "",
+  });
+
+/** Starts the sitting's clock on the server (M7.13): "Bắt đầu làm bài", or the tap that unlocks
+ * the tape. Idempotent, so a double tap cannot shorten the paper. */
+export const useStartTopikTest = () =>
+  useMutation({
+    mutationFn: ({ testId, ...body }: { testId: string; profile_id: string }) =>
+      api("POST", `/topik/tests/${testId}/start`, topikTestClockSchema, body),
+  });
+
+/** Pause and resume. The server moves `ends_at` out by the pause, so pausing costs no exam time. */
+export const usePauseTopikTest = () =>
+  useMutation({
+    mutationFn: ({ testId, ...body }: { testId: string; profile_id: string; paused: boolean }) =>
+      api("POST", `/topik/tests/${testId}/clock`, topikTestClockSchema, body),
   });
 
 /**

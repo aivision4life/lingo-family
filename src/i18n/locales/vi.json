@@ -765,7 +765,7 @@
       "pausedNote": "Đã tạm dừng {{count}} lần",
       "exit": "Thoát",
       "exitTitle": "Huỷ bài thi?",
-      "exitBody": "Thoát giữa chừng sẽ huỷ bài, không lưu điểm và không tính vào lịch ôn.",
+      "exitBody": "Đồng hồ vẫn chạy khi bạn rời đi. Muốn giữ thời gian thì bấm Tạm dừng trước. Huỷ bài thì không lưu điểm và không tính vào lịch ôn.",
       "exitStay": "Ở lại làm tiếp",
       "exitLeave": "Huỷ bài",
       "scoreRaw": "{{score}}/{{total}} điểm",
@@ -809,7 +809,15 @@
       "submitBody": "Bài sẽ được chấm ngay và không sửa được nữa.",
       "submitUnanswered": "Còn {{count}} câu chưa làm. Nộp luôn?",
       "submitConfirm": "Nộp bài",
-      "submitCancel": "Làm tiếp"
+      "submitCancel": "Làm tiếp",
+      "pauseClock": "Tạm dừng",
+      "resumeClock": "Tiếp tục làm bài",
+      "pausedNow": "Đang tạm dừng. Đồng hồ đã đứng, thời gian không bị trừ.",
+      "resumeTitle": "Bài thi vẫn đang chạy",
+      "resumeBody": "Đồng hồ không dừng khi bạn rời đi: băng đang ở phút {{at}}, còn {{left}}. Bấm Tiếp tục để nghe tiếp từ đúng chỗ đó.",
+      "resumeTape": "Tiếp tục",
+      "exitBodyPaused": "Bài đang tạm dừng nên thời gian được giữ — rời đi rồi quay lại vẫn còn nguyên. Còn Huỷ bài thì không lưu điểm và không tính vào lịch ôn.",
+      "autoSubmitted": "Hết giờ, bài được tự nộp."
     }
   }
 }

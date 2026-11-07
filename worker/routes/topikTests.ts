@@ -11,6 +11,11 @@
 //  - abandoning a test must leave no trace in the FSRS schedule. Only `finish` writes attempts and
 //    moves cards, and it writes them with `scheduled = 1`: a timed sitting is the truest recall
 //    test there is, so it is the best possible input for the spacing.
+//
+// The clock is the server's (M7.13). A sitting is drawn with no deadline at all; `POST .../start`
+// fixes `length_ms` and `ends_at`, `POST .../clock` pauses and resumes, and nothing the client
+// reports about time is believed. There is no scheduler: a paper whose time ran out while nobody
+// was looking is submitted by `expireOverdueTests`, called on the reads that would show it.
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -20,8 +25,20 @@ import {
   topikTestCreateSchema,
   topikTestAnswerSchema,
   topikTestFinishSchema,
+  topikTestPauseSchema,
   type TopikTestLength,
 } from "../../shared/topik";
+import {
+  isExpired,
+  pausedClock,
+  pausedTotalMs,
+  readingDurationMs,
+  resumedClock,
+  shouldAbandonPaused,
+  startedClock,
+  tapeLengthMs,
+  type TestClock,
+} from "../../shared/topikClock";
 import { topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments, topik_test_items, topik_tests } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
@@ -52,6 +69,8 @@ export const topikTestRoutes = () =>
     .get("/topik/tests/options", zv("query", z.object({ profile_id: z.string().min(1), section: topikSectionSchema })), async (c) => {
       const { profile_id, section } = c.req.valid("query");
       const db = getDb(c.env);
+      // The picker is where a sitting whose time quietly ran out shows up as history.
+      await expireOverdueTests(db, profile_id, resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url));
 
       const rows = await db
         .select({ exam: topik_questions.exam, number: topik_questions.number })
@@ -199,11 +218,25 @@ export const topikTestRoutes = () =>
         throw e;
       }
 
-      return c.json(runPayload(test!, chosen, clips, new Map()), 201);
+      // How long this paper gets is settled now, with the questions that are actually in it — the
+      // screen can then say "20 câu · 28:00" before the clock is started, and editing a question's
+      // clip later cannot change a sitting that has already been drawn. Only `ends_at` waits for
+      // the start.
+      const length_ms = await paperLengthMs(db, test!, chosen, clips);
+      await db.update(topik_tests).set({ length_ms }).where(eq(topik_tests.id, test!.id));
+
+      return c.json(
+        runPayload({ ...test!, length_ms }, chosen, clips, new Map(), resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url)),
+        201,
+      );
     })
 
     .get("/topik/tests/:id", idParam, zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
       const db = getDb(c.env);
+      const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
+      // Opening a paper whose time ran out while the phone was away: it is graded here, before it
+      // is read, so what comes back is the result and not a sitting that could still be answered.
+      await expireOverdueTests(db, c.req.valid("query").profile_id, now);
       const test = await db.select().from(topik_tests).where(eq(topik_tests.id, c.req.valid("param").id)).get();
       if (!test || test.profile_id !== c.req.valid("query").profile_id) return c.json(err("not_found"), 404);
 
@@ -218,9 +251,66 @@ export const topikTestRoutes = () =>
       // Running: the answers stay hidden, exactly as in a practice session.
       if (test.status === "running") {
         const chosen = items.map((i) => questions.get(i.question_id ?? "")).filter((q): q is NonNullable<typeof q> => !!q);
-        return c.json(runPayload(test, chosen, clips, new Map(items.map((i) => [i.position, i.selected_option]))));
+        return c.json(runPayload(test, chosen, clips, new Map(items.map((i) => [i.position, i.selected_option])), now));
       }
       return c.json(resultPayload(test, items, questions, clips));
+    })
+
+    /**
+     * Starting the clock (M7.13) — the "Bắt đầu làm bài" button, and the tap that unlocks the tape.
+     *
+     * Deliberately separate from drawing the paper: a sitting can sit on screen while the network
+     * is slow or an image is still loading without losing a second of exam time. Calling it twice
+     * changes nothing, so a double tap or a replayed request cannot shorten the paper.
+     */
+    .post("/topik/tests/:id/start", idParam, zv("json", z.object({ profile_id: z.string().min(1) })), async (c) => {
+      const db = getDb(c.env);
+      const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
+      const test = await db.select().from(topik_tests).where(eq(topik_tests.id, c.req.valid("param").id)).get();
+      if (!test || test.profile_id !== c.req.valid("json").profile_id) return c.json(err("not_found"), 404);
+      if (test.status !== "running") return c.json(err("topik_test_not_running"), 409);
+      if (test.ends_at !== null) return c.json(clockView(test, now));
+
+      // Settled when the paper was drawn; recomputed only for a sitting from before that (M7.13).
+      const length = test.length_ms ?? (await paperLengthMs(db, test));
+      const clock = startedClock(clockOf(test), length, now.getTime());
+      const [started] = await db
+        .update(topik_tests)
+        .set({ started_at: new Date(clock.started_at), length_ms: clock.length_ms, ends_at: new Date(clock.ends_at!), paused_at: null })
+        .where(eq(topik_tests.id, test.id))
+        .returning();
+      return c.json(clockView(started!, now));
+    })
+
+    /**
+     * Pausing and resuming.
+     *
+     * A pause costs no exam time (`resumedClock` pushes `ends_at` out by the whole pause), which is
+     * what makes the strict wall-clock rule liveable: a child needing something is not a reason to
+     * lose the paper. Every pause is counted, and the result says the sitting was not under exam
+     * conditions.
+     */
+    .post("/topik/tests/:id/clock", idParam, zv("json", topikTestPauseSchema), async (c) => {
+      const { profile_id, paused } = c.req.valid("json");
+      const db = getDb(c.env);
+      const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
+      const test = await db.select().from(topik_tests).where(eq(topik_tests.id, c.req.valid("param").id)).get();
+      if (!test || test.profile_id !== profile_id) return c.json(err("not_found"), 404);
+      if (test.status !== "running") return c.json(err("topik_test_not_running"), 409);
+      if (test.ends_at === null) return c.json(err("topik_test_not_started"), 409);
+
+      const clock = paused ? pausedClock(clockOf(test), now.getTime()) : resumedClock(clockOf(test), now.getTime());
+      const [updated] = await db
+        .update(topik_tests)
+        .set({
+          ends_at: clock.ends_at === null ? null : new Date(clock.ends_at),
+          paused_at: clock.paused_at === null ? null : new Date(clock.paused_at),
+          paused_ms: clock.paused_ms,
+          pause_count: clock.pause_count,
+        })
+        .where(eq(topik_tests.id, test.id))
+        .returning();
+      return c.json(clockView(updated!, now));
     })
 
     /**
@@ -251,7 +341,7 @@ export const topikTestRoutes = () =>
     )
 
     .post("/topik/tests/:id/finish", idParam, zv("json", topikTestFinishSchema), async (c) => {
-      const { profile_id, duration_ms, pause_count, paused_ms, answers } = c.req.valid("json");
+      const { profile_id, answers } = c.req.valid("json");
       const db = getDb(c.env);
       const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
       const test = await db.select().from(topik_tests).where(eq(topik_tests.id, c.req.valid("param").id)).get();
@@ -267,60 +357,9 @@ export const topikTestRoutes = () =>
           .where(and(eq(topik_test_items.test_id, test.id), eq(topik_test_items.position, a.position)));
       }
 
-      const items = await db.select().from(topik_test_items).where(eq(topik_test_items.test_id, test.id)).orderBy(asc(topik_test_items.position));
-      const questions = await questionsOf(db, items.map((i) => i.question_id));
-
-      const graded = items.map((i) => {
-        const q = questions.get(i.question_id ?? "");
-        return { ...i, is_correct: !!q && i.selected_option === q.correct_option };
-      });
-      for (const g of graded) {
-        await db.update(topik_test_items).set({ is_correct: g.is_correct }).where(eq(topik_test_items.id, g.id));
-      }
-
-      // A timed sitting is a real recall test, so it feeds the schedule like any review would.
-      for (const g of graded) {
-        const q = questions.get(g.question_id ?? "");
-        if (!q) continue;
-        const existing = await db
-          .select()
-          .from(topik_cards)
-          .where(and(eq(topik_cards.profile_id, profile_id), eq(topik_cards.question_id, q.id)))
-          .get();
-        const { card } = applyReview(existing ? toCardFields(existing) : emptyCardFields(now), g.is_correct ? 3 : 1, now);
-        if (existing) await db.update(topik_cards).set({ ...card, updated_at: now }).where(eq(topik_cards.id, existing.id));
-        else await db.insert(topik_cards).values({ profile_id, question_id: q.id, ...card });
-
-        await db.insert(topik_attempts).values({
-          profile_id,
-          question_id: q.id,
-          section: q.section,
-          exam: q.exam,
-          number: q.number,
-          selected_option: g.selected_option ?? 0,
-          is_correct: g.is_correct,
-          scheduled: true,
-          duration_ms: null,
-        });
-      }
-
-      const score = scoreTest(graded.map((g) => ({ points: g.points, is_correct: g.is_correct })));
-      const [finished] = await db
-        .update(topik_tests)
-        .set({
-          status: "finished",
-          finished_at: now,
-          duration_ms,
-          pause_count,
-          paused_ms,
-          correct_count: score.correct_count,
-          score_points: score.score_points,
-        })
-        .where(eq(topik_tests.id, test.id))
-        .returning();
-
-      const clips = await clipsFor(db, items.map((i) => i.segment_id).filter((s): s is string => s !== null));
-      return c.json(resultPayload(finished!, graded, questions, clips));
+      const { finished, graded, questions } = await gradeAndFinish(db, test, now, false);
+      const clips = await clipsFor(db, graded.map((i) => i.segment_id).filter((s): s is string => s !== null));
+      return c.json(resultPayload(finished, graded, questions, clips));
     })
 
     /** Left before the end: no score, no attempts, nothing touched in the schedule. */
@@ -336,6 +375,150 @@ export const topikTestRoutes = () =>
 // --- helpers ------------------------------------------------------------------------------------
 
 type Db = ReturnType<typeof getDb>;
+/** The clock as `shared/topikClock.ts` wants it: plain numbers, no `Date`s. */
+function clockOf(test: TestRow): TestClock {
+  return {
+    started_at: test.started_at.getTime(),
+    length_ms: test.length_ms,
+    ends_at: test.ends_at?.getTime() ?? null,
+    paused_at: test.paused_at?.getTime() ?? null,
+    paused_ms: test.paused_ms,
+    pause_count: test.pause_count,
+  };
+}
+
+/** What the client needs to run its own countdown, plus the server's clock to measure it against. */
+const clockView = (test: TestRow, now: Date) => ({ ...clockOf(test), server_now: now.getTime() });
+
+/**
+ * How long this paper gets, fixed once when the clock starts.
+ *
+ * Reading has no recording, so the real exam's rate decides. A listening paper is as long as what
+ * it plays: one span of one file for an original paper, every clip back to back for a mixed one —
+ * the same `tapeLengthMs` the client stitches the tape with, so the deadline and the last clip's
+ * end land in the same place.
+ */
+async function paperLengthMs(db: Db, test: TestRow, questions?: readonly QuestionRow[], known?: Map<string, Clip>): Promise<number> {
+  if (test.section === "reading") return readingDurationMs(test.question_count);
+
+  // The caller that has just drawn the paper passes its questions and clips in; anything else reads
+  // them back from the sitting's own items.
+  const used = questions
+    ? questions.map((q) => (q.segment_id ? known?.get(q.segment_id) : undefined)).filter((c): c is Clip => !!c)
+    : await (async () => {
+        const items = await db
+          .select()
+          .from(topik_test_items)
+          .where(eq(topik_test_items.test_id, test.id))
+          .orderBy(asc(topik_test_items.position));
+        const clips = await clipsFor(db, items.map((i) => i.segment_id).filter((x): x is string => x !== null));
+        return items.map((i) => (i.segment_id ? clips.get(i.segment_id) : undefined)).filter((c): c is Clip => !!c);
+      })();
+  if (test.kind === "original") {
+    const span = audioSpan(used);
+    return span ? Math.max(0, span.end_ms - span.start_ms) : 0;
+  }
+  return tapeLengthMs(used);
+}
+
+type GradedItem = ItemRow & { is_correct: boolean };
+
+/**
+ * Grading a sitting and closing it: the one path, whether the learner pressed submit or the time
+ * simply ran out (M7.13).
+ *
+ * The time written down is the server's own: wall clock from the start, the pauses it recorded,
+ * and — for an auto-submit — nothing that depends on a browser having been there to report it.
+ */
+async function gradeAndFinish(
+  db: Db,
+  test: TestRow,
+  now: Date,
+  auto: boolean,
+): Promise<{ finished: TestRow; graded: GradedItem[]; questions: Map<string, QuestionRow> }> {
+  const items = await db.select().from(topik_test_items).where(eq(topik_test_items.test_id, test.id)).orderBy(asc(topik_test_items.position));
+  const questions = await questionsOf(db, items.map((i) => i.question_id));
+
+  const graded: GradedItem[] = items.map((i) => {
+    const q = questions.get(i.question_id ?? "");
+    return { ...i, is_correct: !!q && i.selected_option === q.correct_option };
+  });
+  for (const g of graded) {
+    await db.update(topik_test_items).set({ is_correct: g.is_correct }).where(eq(topik_test_items.id, g.id));
+  }
+
+  // A timed sitting is a real recall test, so it feeds the schedule like any review would.
+  for (const g of graded) {
+    const q = questions.get(g.question_id ?? "");
+    if (!q) continue;
+    const existing = await db
+      .select()
+      .from(topik_cards)
+      .where(and(eq(topik_cards.profile_id, test.profile_id), eq(topik_cards.question_id, q.id)))
+      .get();
+    const { card } = applyReview(existing ? toCardFields(existing) : emptyCardFields(now), g.is_correct ? 3 : 1, now);
+    if (existing) await db.update(topik_cards).set({ ...card, updated_at: now }).where(eq(topik_cards.id, existing.id));
+    else await db.insert(topik_cards).values({ profile_id: test.profile_id, question_id: q.id, ...card });
+
+    await db.insert(topik_attempts).values({
+      profile_id: test.profile_id,
+      question_id: q.id,
+      section: q.section,
+      exam: q.exam,
+      number: q.number,
+      selected_option: g.selected_option ?? 0,
+      is_correct: g.is_correct,
+      scheduled: true,
+      duration_ms: null,
+    });
+  }
+
+  const clock = clockOf(test);
+  // An auto-submit happens at the deadline, not whenever the sweep noticed it: a paper that ran out
+  // at 21:00 and is opened at 23:00 took its own length, not two hours.
+  const closedAt = auto && clock.ends_at !== null ? clock.ends_at : now.getTime();
+  const score = scoreTest(graded.map((g) => ({ points: g.points, is_correct: g.is_correct })));
+  const [finished] = await db
+    .update(topik_tests)
+    .set({
+      status: "finished",
+      finished_at: new Date(closedAt),
+      duration_ms: Math.max(0, closedAt - clock.started_at),
+      paused_ms: pausedTotalMs(clock, closedAt),
+      pause_count: clock.pause_count,
+      paused_at: null,
+      auto_submitted: auto,
+      correct_count: score.correct_count,
+      score_points: score.score_points,
+    })
+    .where(eq(topik_tests.id, test.id))
+    .returning();
+  return { finished: finished!, graded, questions };
+}
+
+/**
+ * Closing the sittings whose time ran out while nobody was looking.
+ *
+ * There is no scheduler on a free plan, and there does not need to be one: the only places a stale
+ * sitting can be seen are the picker and the sitting's own page, so both sweep first. Out of time
+ * means graded — the answers are already in D1, given one by one as they were chosen, so marking
+ * them is more honest than throwing a half-finished paper away. A paper that is *paused* is not out
+ * of time at all, however long it has been; but a pause nobody ever lifted is abandoned after a day,
+ * because a `running` sitting is one that can still be answered.
+ */
+async function expireOverdueTests(db: Db, profileId: string, now: Date): Promise<void> {
+  const running = await db
+    .select()
+    .from(topik_tests)
+    .where(and(eq(topik_tests.profile_id, profileId), eq(topik_tests.status, "running")));
+
+  for (const test of running) {
+    const clock = clockOf(test);
+    if (isExpired(clock, now.getTime())) await gradeAndFinish(db, test, now, true);
+    else if (shouldAbandonPaused(clock, now.getTime())) await db.update(topik_tests).set({ status: "abandoned" }).where(eq(topik_tests.id, test.id));
+  }
+}
+
 type QuestionRow = typeof topik_questions.$inferSelect;
 type TestRow = typeof topik_tests.$inferSelect;
 type ItemRow = typeof topik_test_items.$inferSelect;
@@ -467,7 +650,13 @@ async function clipsFor(db: Db, segmentIds: readonly string[]): Promise<Map<stri
 
 /** The running payload: never `correct_option`, and never a listening question's stem (its text is
  * the transcript, which is the answer read out loud). */
-function runPayload(test: TestRow, questions: readonly QuestionRow[], clips: Map<string, Clip>, answered: Map<number, number | null>) {
+function runPayload(
+  test: TestRow,
+  questions: readonly QuestionRow[],
+  clips: Map<string, Clip>,
+  answered: Map<number, number | null>,
+  now: Date,
+) {
   const used = questions.map((q) => (q.segment_id ? clips.get(q.segment_id) : undefined)).filter((c): c is Clip => !!c);
   // Only an original paper has one span of one file. A mixed paper's clips come from several mp3s,
   // so there is nothing to span: the client stitches the per-question clips into a tape instead.
@@ -480,7 +669,7 @@ function runPayload(test: TestRow, questions: readonly QuestionRow[], clips: Map
     status: test.status,
     question_count: test.question_count,
     total_points: test.total_points,
-    started_at: test.started_at.getTime(),
+    ...clockView(test, now),
     audio: span && used[0] ? { audio_key: used[0].audio_key, ...span } : null,
     questions: questions.map((q) => {
       const clip = q.segment_id ? (clips.get(q.segment_id) ?? null) : null;
@@ -517,6 +706,7 @@ function resultPayload(test: TestRow, items: readonly ItemRow[], questions: Map<
     duration_ms: test.duration_ms,
     pause_count: test.pause_count,
     paused_ms: test.paused_ms,
+    auto_submitted: test.auto_submitted,
     finished_at: test.finished_at?.getTime() ?? null,
     items: items.map((i) => {
       const q = questions.get(i.question_id ?? "");

@@ -615,6 +615,23 @@ export const topik_tests = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
     finished_at: timestamp("finished_at"),
+    /**
+     * The paper's own length, fixed when the clock starts (M7.13): the reading rate for a reading
+     * paper, the tape's length for a listening one. Stored rather than derived, so editing a
+     * question's clip later cannot change how long a sitting that already happened was given.
+     * `null` on a sitting that was drawn before the clock existed, or has not been started yet.
+     */
+    length_ms: integer("length_ms"),
+    /**
+     * When the time runs out. `null` = the questions are drawn but the clock has not been started,
+     * so no exam time is passing. This is the single source of truth about a sitting's time: the
+     * client derives both the countdown and where the tape should be from it (`shared/topikClock.ts`).
+     */
+    ends_at: timestamp("ends_at"),
+    /** Set while the sitting is paused; the clock is frozen and `ends_at` moves out on resume. */
+    paused_at: timestamp("paused_at"),
+    /** The server submitted this paper itself because the time ran out while nobody was looking. */
+    auto_submitted: integer("auto_submitted", { mode: "boolean" }).notNull().default(false),
     /** Wall-clock time from start to submit, pauses included. */
     duration_ms: integer("duration_ms"),
     /** Pausing is allowed and never blocked — but a paused sitting is not exam conditions, so the

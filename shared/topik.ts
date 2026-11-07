@@ -614,12 +614,40 @@ export const topikTestRunSchema = z.object({
   question_count: z.number().int(),
   total_points: z.number().int(),
   started_at: z.number().int(),
+  /**
+   * The sitting's clock, held by the server (M7.13, `shared/topikClock.ts`).
+   *
+   * `ends_at === null` means the paper is drawn but the clock has not been started. Everything the
+   * screen shows about time — the countdown, and where the tape has to be — is derived from these,
+   * never from how long the browser happens to have had the page open.
+   */
+  length_ms: z.number().int().nullable(),
+  ends_at: z.number().int().nullable(),
+  paused_at: z.number().int().nullable(),
+  paused_ms: z.number().int(),
+  pause_count: z.number().int(),
+  /** The server's own clock, so a phone set to the wrong time still counts down correctly. */
+  server_now: z.number().int(),
   audio: z
     .object({ audio_key: z.string(), start_ms: z.number().int(), end_ms: z.number().int() })
     .nullable(),
   questions: z.array(topikTestQuestionSchema),
 });
 export type TopikTestRun = z.infer<typeof topikTestRunSchema>;
+
+/** What `POST /topik/tests/:id/start` and `.../clock` answer with: the clock and nothing else. */
+export const topikTestClockSchema = z.object({
+  started_at: z.number().int(),
+  length_ms: z.number().int().nullable(),
+  ends_at: z.number().int().nullable(),
+  paused_at: z.number().int().nullable(),
+  paused_ms: z.number().int(),
+  pause_count: z.number().int(),
+  server_now: z.number().int(),
+});
+export type TopikTestClockView = z.infer<typeof topikTestClockSchema>;
+
+export const topikTestPauseSchema = z.object({ profile_id: z.string().min(1), paused: z.boolean() });
 
 export const topikTestAnswerSchema = z.object({
   profile_id: z.string().min(1),
@@ -629,11 +657,12 @@ export const topikTestAnswerSchema = z.object({
 export type TopikTestFinish = z.infer<typeof topikTestFinishSchema>;
 export const topikTestFinishSchema = z.object({
   profile_id: z.string().min(1),
-  duration_ms: z.number().int().nonnegative(),
-  pause_count: z.number().int().nonnegative(),
-  paused_ms: z.number().int().nonnegative(),
   /** Answers that never reached the server while the tape was running (a phone on a bad
-   * connection queues them); applied before grading so a lost request cannot cost a mark. */
+   * connection queues them); applied before grading so a lost request cannot cost a mark.
+   *
+   * The duration and the pauses used to be reported from here too. They are not any more (M7.13):
+   * the server holds the clock, so a client that had been reloaded — or was simply wrong about the
+   * time — could otherwise overwrite it with its own shorter version. */
   answers: z.array(z.object({ position: z.number().int().positive(), selected_option: topikCorrectOptionSchema })).optional(),
 });
 
@@ -672,6 +701,8 @@ export const topikTestResultSchema = z.object({
   duration_ms: z.number().int().nullable(),
   pause_count: z.number().int(),
   paused_ms: z.number().int(),
+  /** True when the time ran out and the server submitted the paper itself (M7.13). */
+  auto_submitted: z.boolean(),
   finished_at: z.number().int().nullable(),
   items: z.array(topikTestResultItemSchema),
 });

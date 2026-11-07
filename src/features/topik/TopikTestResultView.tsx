@@ -50,6 +50,9 @@ export function TopikTestResultView({ result, profileId, level }: { result: Topi
             {t("topik.test.pausedSummary", { count: result.pause_count, minutes: Math.round(result.paused_ms / 60_000) })}
           </p>
         )}
+        {/* The server submitted this one itself when the time ran out (M7.13): said plainly, or a
+            score lower than the paper felt is a mystery. */}
+        {result.auto_submitted && <p className="text-sm text-amber-700 dark:text-amber-500">{t("topik.test.autoSubmitted")}</p>}
       </div>
 
       <ul className="flex flex-col divide-y rounded-lg border">

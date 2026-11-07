@@ -17,6 +17,7 @@
 //    in the feature that no test can catch, so `start()` must be called straight from the tap.
 import type { TopikClip } from "@shared/topik";
 import { mediaUrl } from "@/features/audio/player";
+import { positionOnTimeline } from "./mixedTimeline";
 
 export type TapeEvent =
   | { kind: "unlocked"; blocked: number }
@@ -121,7 +122,8 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
     return promise;
   }
 
-  async function playFrom(i: number): Promise<void> {
+  /** `withinMs` > 0 only when a reopened sitting resumes part way into a clip (M7.13). */
+  async function playFrom(i: number, withinMs = 0): Promise<void> {
     if (disposed) return;
     const clip = clips[i];
     if (!clip) {
@@ -133,8 +135,9 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
     if (disposed) return;
 
     const el = elementFor(i);
-    el.currentTime = clip.start_ms / 1000;
-    set({ index: i, positionMs: 0, playing: true });
+    const within = Math.max(0, Math.min(withinMs, clip.end_ms - clip.start_ms));
+    el.currentTime = (clip.start_ms + within) / 1000;
+    set({ index: i, positionMs: within, playing: true });
     emit({ kind: "playing", index: i, src: clip.audio_key.slice(-12) });
     void el.play().catch((e: Error) => emit({ kind: "error", message: e.message }));
 
@@ -186,7 +189,7 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
      * Call this straight from the tap that starts the sitting — not after an `await`, or the
      * gesture is no longer live and a phone will refuse the second element for the whole session.
      */
-    async start(): Promise<void> {
+    async start(fromMs = 0): Promise<void> {
       // Both `play()` calls are made synchronously, before any await, so each one happens while
       // the tap that triggered them is still the live user gesture. Awaiting the first and then
       // starting the second would spend the gesture on element A and leave B blocked all session.
@@ -204,7 +207,15 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
       const results = await Promise.all(attempts);
       for (const el of els) el.muted = false;
       emit({ kind: "unlocked", blocked: results.filter((ok) => !ok).length });
-      await playFrom(0);
+      // Reopening a sitting resumes where the exam clock says the tape is, not at the beginning:
+      // the minutes that passed while the paper was closed have gone, recording and all.
+      const at = positionOnTimeline(clips, fromMs);
+      if (at.past) {
+        emit({ kind: "finished" });
+        set({ playing: false, finished: true });
+        return;
+      }
+      await playFrom(at.index, at.withinMs);
     },
 
     toggle(): void {
@@ -250,7 +261,7 @@ const holders = new Set<() => void>();
 const notifyHolders = () => holders.forEach((l) => l());
 
 /** Replaces whatever was playing and starts the new tape. Call it straight from the tap. */
-export async function startMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeEvent) => void): Promise<void> {
+export async function startMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeEvent) => void, fromMs = 0): Promise<void> {
   current?.dispose();
   current = createMixedTape(clips, onEvent);
   // The new tape broadcasts through the module, not to whoever happened to be listening when it
@@ -258,7 +269,7 @@ export async function startMixedTape(clips: readonly TopikClip[], onEvent?: (e: 
   // way round left every later state change unheard and the clock frozen at zero.
   current.subscribe(notifyHolders);
   notifyHolders();
-  await current.start();
+  await current.start(fromMs);
 }
 
 export function stopMixedTape(): void {

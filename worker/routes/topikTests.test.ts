@@ -10,7 +10,9 @@ let adult = "";
 let other = "";
 
 beforeAll(async () => {
-  t = await createTestEnv();
+  // Time travel is on for the whole file so the clock tests can push a sitting past its deadline
+  // (M7.13). It only makes the Worker honour an `X-Dev-Now` header, and no other test sends one.
+  t = await createTestEnv(undefined, { DEV_TIME_TRAVEL: "1" });
 }, 60_000);
 afterAll(() => t.dispose());
 
@@ -188,9 +190,6 @@ describe("mock test", () => {
     await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
     const result = (await t.api("POST", `/topik/tests/${test.id}/finish`, {
       profile_id: adult,
-      duration_ms: 120_000,
-      pause_count: 0,
-      paused_ms: 0,
       answers: [{ position: 2, selected_option: 2 }],
     })).body as { correct_count: number; score_points: number; total_points: number; items: { position: number; is_correct: boolean }[] };
     expect(result.correct_count).toBe(2);
@@ -206,9 +205,6 @@ describe("mock test", () => {
 
     const result = (await t.api("POST", `/topik/tests/${test.id}/finish`, {
       profile_id: adult,
-      duration_ms: 90_000,
-      pause_count: 2,
-      paused_ms: 30_000,
     })).body as {
       status: string;
       correct_count: number;
@@ -219,7 +215,7 @@ describe("mock test", () => {
     };
 
     expect(result.status).toBe("finished");
-    expect(result).toMatchObject({ correct_count: 1, score_points: 2, total_points: 5, pause_count: 2 });
+    expect(result).toMatchObject({ correct_count: 1, score_points: 2, total_points: 5 });
     expect(result.items.map((i) => i.is_correct)).toEqual([true, false]);
     expect(result.items[1]!.correct_option).toBe(4);
     // The transcript is fair game now — it is what the question is learnt from.
@@ -229,7 +225,7 @@ describe("mock test", () => {
   it("counts an unanswered position as wrong", async () => {
     await question(1);
     const test = await start();
-    const result = (await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 }))
+    const result = (await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult }))
       .body as { correct_count: number; score_points: number; items: { selected_option: number | null }[] };
     expect(result).toMatchObject({ correct_count: 0, score_points: 0 });
     expect(result.items[0]!.selected_option).toBeNull();
@@ -239,7 +235,7 @@ describe("mock test", () => {
     await question(1);
     const test = await start();
     await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
-    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult });
 
     const cards = (await t.env.DB.prepare("SELECT reps FROM topik_cards WHERE profile_id = ?").bind(adult).all<{ reps: number }>()).results;
     expect(cards).toHaveLength(1);
@@ -278,7 +274,7 @@ describe("mock test", () => {
     const test = await start();
     await t.api("POST", `/topik/tests/${test.id}/abandon`, { profile_id: adult });
     expect((await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 1 })).status).toBe(409);
-    expect((await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult, duration_ms: 1, pause_count: 0, paused_ms: 0 })).status).toBe(409);
+    expect((await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult })).status).toBe(409);
   });
 
   it("keeps one profile's sitting away from another", async () => {
@@ -292,7 +288,7 @@ describe("mock test", () => {
     await question(1);
     const test = await start();
     await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
-    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult });
 
     expect((await options()).papers[0]!.history).toMatchObject([{ score_points: 2, total_points: 2, correct_count: 1 }]);
     // Another profile's history is its own.
@@ -302,7 +298,7 @@ describe("mock test", () => {
   it("keeps a sitting readable after its question is deleted", async () => {
     const id = await question(1);
     const test = await start();
-    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult });
     await t.api("DELETE", `/topik/questions/${id}`, { profile_id: adult });
 
     const result = (await t.api("GET", `/topik/tests/${test.id}?profile_id=${adult}`)).body as {
@@ -373,7 +369,7 @@ describe("mixed mock test (M6.5)", () => {
   it("prefers the paper the profile has not just sat", async () => {
     await twoPapers([1, 2, 3]);
     const first = await mixedRun();
-    await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult });
 
     // Every position has exactly one alternative, and the first sitting's questions are all seen
     // now (it was finished, so the tape played them all): the second sitting must be the mirror.
@@ -398,7 +394,7 @@ describe("mixed mock test (M6.5)", () => {
   it("keeps each profile's own seen list", async () => {
     await twoPapers([1]);
     const mine = await mixedRun();
-    await t.api("POST", `/topik/tests/${mine.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${mine.id}/finish`, { profile_id: adult });
     // The other profile has sat nothing, so the question I just answered is still new to them and
     // either paper is fair game — what must not happen is my history steering their draw.
     const theirs = await mixedRun("full", other);
@@ -421,7 +417,7 @@ describe("mixed mock test (M6.5)", () => {
   it("lists a finished mixed sitting in the mixed history, not in a paper's", async () => {
     await twoPapers([1]);
     const run = await mixedRun();
-    await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult });
     const body = await options();
     expect(body.mixed!.history).toHaveLength(1);
     expect(body.papers.every((p) => p.history.length === 0)).toBe(true);
@@ -430,7 +426,7 @@ describe("mixed mock test (M6.5)", () => {
   it("names every item's source paper in the result", async () => {
     await twoPapers([1, 2]);
     const run = await mixedRun();
-    const result = (await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 }))
+    const result = (await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult }))
       .body as { kind: string; items: { position: number; exam: string | null }[] };
     expect(result.kind).toBe("mixed");
     for (const item of result.items) {
@@ -546,7 +542,7 @@ describe("reading mock test", () => {
     };
     expect(first.source_exam).toBeNull();
     expect(first.questions.map((q) => q.number)).toEqual([1, 2, 3]);
-    await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult });
 
     // Every position has one alternative, and the first sitting used all of them up.
     const second = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", kind: "mixed", length: "full" })).body as {
@@ -560,10 +556,186 @@ describe("reading mock test", () => {
   it("keeps a reading sitting out of the listening history", async () => {
     for (const n of [1, 2, 3]) await readingQuestion(n);
     const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-60회", length: "full" })).body as { id: string };
-    await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult, duration_ms: 1000, pause_count: 0, paused_ms: 0 });
+    await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult });
 
     expect((await options()).papers[0]!.ready_questions).toBe(3);
     const listening = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=listening`)).body as OptionsBody;
     expect(listening.papers.every((p) => p.history.length === 0)).toBe(true);
+  });
+});
+
+// --- the clock (M7.13) --------------------------------------------------------------------------
+//
+// The clock is the server's, and these are the promises that make a sitting worth anything: time
+// passes whether or not a browser is watching, a pause costs nothing, and a paper nobody came back
+// to does not sit at `running` for ever.
+
+const iso = (ms: number) => new Date(ms).toISOString();
+
+/** A POST with a pretend clock. `t.api` sends no headers, so this goes the long way round. */
+async function at(method: string, url: string, body: unknown, nowMs: number) {
+  const res = await t.send(`/api${url}`, {
+    method,
+    headers: { "content-type": "application/json", "X-Dev-Now": iso(nowMs) },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  return { status: res.status, body: (text ? JSON.parse(text) : null) as unknown };
+}
+
+const getAt = async (url: string, nowMs: number) => {
+  const res = await t.raw(`/api${url}`, { "X-Dev-Now": iso(nowMs) });
+  return { status: res.status, body: (await res.json()) as unknown };
+};
+
+type Clock = {
+  started_at: number;
+  length_ms: number | null;
+  ends_at: number | null;
+  paused_at: number | null;
+  paused_ms: number;
+  pause_count: number;
+  server_now: number;
+};
+
+const T0 = Date.UTC(2026, 10, 1, 12, 0, 0);
+/** Three clips of a minute each (see `question`), so a full paper runs three minutes. */
+const PAPER_MS = 3 * 60_000;
+
+async function threeQuestionPaper() {
+  for (const n of [1, 2, 3]) await question(n);
+  return start();
+}
+
+describe("the sitting's clock", () => {
+  it("draws a paper with its length known but no clock running", async () => {
+    const test = (await threeQuestionPaper()) as unknown as Clock & { id: string };
+    // The length is settled at the draw, so the screen can say how long the paper is before the
+    // learner commits to starting it; `ends_at` is what waits for the tap.
+    expect(test.length_ms).toBe(PAPER_MS);
+    expect(test.ends_at).toBeNull();
+    expect(test.server_now).toBeGreaterThan(0);
+  });
+
+  it("starts the clock once, at the paper's own length", async () => {
+    const test = await threeQuestionPaper();
+    const first = (await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0)).body as Clock;
+    expect(first.length_ms).toBe(PAPER_MS);
+    expect(first.ends_at).toBe(T0 + PAPER_MS);
+
+    // A second tap (or a replayed request) must not move the deadline.
+    const again = (await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0 + 30_000)).body as Clock;
+    expect(again.ends_at).toBe(T0 + PAPER_MS);
+  });
+
+  it("gives a reading paper the real exam's rate instead of a tape", async () => {
+    for (const n of [1, 2]) {
+      const id = ((await t.api("POST", "/topik/questions", {
+        ...input({ number: n, section: "reading", exam: "Read-1", block: "1~2", stem: { text: "( )", image_key: null } }),
+        profile_id: adult,
+      })).body as { id: string }).id;
+      await t.env.DB.prepare("UPDATE topik_questions SET verified = 1 WHERE id = ?").bind(id).run();
+    }
+    const test = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-1", length: "full" })).body as {
+      id: string;
+    };
+    const clock = (await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0)).body as Clock;
+    // Two questions at 70 minutes per 50, rounded down to the minute.
+    expect(clock.length_ms).toBe(2 * 60_000);
+  });
+
+  it("stops the clock while paused and charges nothing for the pause", async () => {
+    const test = await threeQuestionPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+
+    const paused = (await at("POST", `/topik/tests/${test.id}/clock`, { profile_id: adult, paused: true }, T0 + 30_000)).body as Clock;
+    expect(paused.paused_at).toBe(T0 + 30_000);
+    expect(paused.pause_count).toBe(1);
+
+    const resumed = (await at("POST", `/topik/tests/${test.id}/clock`, { profile_id: adult, paused: false }, T0 + 90_000)).body as Clock;
+    // A minute of pause, so the deadline moved out by exactly a minute.
+    expect(resumed.ends_at).toBe(T0 + PAPER_MS + 60_000);
+    expect(resumed.paused_ms).toBe(60_000);
+    expect(resumed.paused_at).toBeNull();
+  });
+
+  it("refuses to pause a paper that has not been started", async () => {
+    const test = await threeQuestionPaper();
+    const res = await at("POST", `/topik/tests/${test.id}/clock`, { profile_id: adult, paused: true }, T0);
+    expect(res.status).toBe(409);
+  });
+
+  it("submits and grades a paper whose time ran out while nobody was looking", async () => {
+    const test = await threeQuestionPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    // One answer given before the phone was locked; the other two never were.
+    await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
+
+    // Opened again long after the deadline.
+    const result = (await getAt(`/topik/tests/${test.id}?profile_id=${adult}`, T0 + PAPER_MS + 2 * 60 * 60_000)).body as {
+      status: string;
+      auto_submitted: boolean;
+      correct_count: number;
+      duration_ms: number;
+      finished_at: number;
+      items: { is_correct: boolean }[];
+    };
+    expect(result.status).toBe("finished");
+    expect(result.auto_submitted).toBe(true);
+    expect(result.correct_count).toBe(1);
+    expect(result.items.map((i) => i.is_correct)).toEqual([true, false, false]);
+    // Closed at its own deadline, not whenever it happened to be noticed two hours later.
+    expect(result.finished_at).toBe(T0 + PAPER_MS);
+    expect(result.duration_ms).toBe(PAPER_MS);
+
+    // Graded for real: the schedule moved, exactly as a submitted paper would move it.
+    const attempts = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_attempts WHERE profile_id = ?").bind(adult).first<{ n: number }>();
+    expect(attempts!.n).toBe(3);
+  });
+
+  it("does not expire a paused paper, however long it stands", async () => {
+    const test = await threeQuestionPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await at("POST", `/topik/tests/${test.id}/clock`, { profile_id: adult, paused: true }, T0 + 30_000);
+
+    const body = (await getAt(`/topik/tests/${test.id}?profile_id=${adult}`, T0 + 10 * 60_000)).body as Clock & { status: string };
+    expect(body.status).toBe("running");
+    expect(body.paused_at).toBe(T0 + 30_000);
+  });
+
+  it("abandons a pause nobody ever lifted, rather than leaving the paper answerable for ever", async () => {
+    const test = await threeQuestionPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await at("POST", `/topik/tests/${test.id}/clock`, { profile_id: adult, paused: true }, T0);
+
+    const res = await getAt(`/topik/tests/${test.id}?profile_id=${adult}`, T0 + 25 * 60 * 60_000);
+    expect(res.status).toBe(410);
+    const row = await t.env.DB.prepare("SELECT status FROM topik_tests WHERE id = ?").bind(test.id).first<{ status: string }>();
+    expect(row!.status).toBe("abandoned");
+  });
+
+  it("times the sitting itself, whatever the client would have claimed", async () => {
+    const test = await threeQuestionPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    const result = (await at("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult }, T0 + 100_000)).body as {
+      duration_ms: number;
+      auto_submitted: boolean;
+      pause_count: number;
+    };
+    expect(result.duration_ms).toBe(100_000);
+    expect(result.auto_submitted).toBe(false);
+    expect(result.pause_count).toBe(0);
+  });
+
+  it("counts a pause that was never lifted before submitting", async () => {
+    const test = await threeQuestionPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await at("POST", `/topik/tests/${test.id}/clock`, { profile_id: adult, paused: true }, T0 + 20_000);
+    const result = (await at("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult }, T0 + 80_000)).body as {
+      paused_ms: number;
+      pause_count: number;
+    };
+    expect(result.pause_count).toBe(1);
+    expect(result.paused_ms).toBe(60_000);
   });
 });

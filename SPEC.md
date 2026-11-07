@@ -580,6 +580,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M6.11 | TOPIK: mastered split | Two-segment block bar (known / answered-not-known) + "thuộc N" count, one query | [x] |
 | M7.1 | TOPIK listening (groundwork) | One mp3 per exam + clip timestamps + byte-range playback + boundary review screen | [x] |
 | M6.12 | Review only my own words | Per-profile switch; hides other people's cards from the queue and Home counts, never resets them | [x] |
+| M7.13 | The mock test's clock belongs to the server | `ends_at` in `topik_tests`; the countdown and the tape's position are derived from it, reopening a paper resumes where the time got to, a pause costs nothing, and a paper nobody came back to is submitted and graded instead of staying `running` | [x] |
 | M7.12 | TOPIK words into their own album | A word added from a TOPIK question joins "TOPIK II Reading"/"Listening", gets exam-style example sentences and remembers which question it was met in; markable from a sitting's result too | [x] |
 | M7.11 | TOPIK: the reading section can be sat | Section chips, a countdown instead of the tape (70min/50 questions, pausable, auto-submit), free navigation by question grid, Submit, and a mixed reading paper | [x] |
 | M7.10 | TOPIK: underline on real text only | An underline on the paragraph mark is invisible in Word and was being counted | [x] |
@@ -647,6 +648,41 @@ Vá bằng hai mục in ra ở cuối dry-run (`shortGroups`, `examCoverage` tro
 - **Nhóm thiếu câu** — so số câu thật với dải trong tên file: *"nhóm 8DeOfficial-60회: có 2 câu, dải đòi 3; thiếu câu 18"*. Là **cảnh báo**, không chặn nhập: soạn dở là cách làm việc bình thường.
 - **Độ phủ theo đề** — mỗi đề có bao nhiêu câu và **chạy liền từ 1 được bao nhiêu**, tức đúng số câu mini test đề gốc dùng được. Chính mục này phát hiện cái `shortGroups` không thấy nổi: cả 8 đề 8DeOfficial có 12-14 câu nhưng chỉ dùng được **4**, vì chưa đề nào có câu 5-8; và một đề vắng mặt hẳn khỏi một file thì không để lại "nhóm thiếu" nào để mà tìm.
 
+
+### M7.13 — Đồng hồ bài thi: một mốc duy nhất ở server (2026-11-07)
+
+Mở lại một bài thi đang làm dở thì đồng hồ chạy lại từ đầu và băng nghe về mốc 0, vì toàn bộ thời gian
+chỉ nằm trong bộ nhớ React (`useReadingClock`, `useTestTape`). Nghĩa là **nạp lại trang là được thêm
+giờ** — bài thi không còn giống thi thật, dù không ai cố tình.
+
+Cách sửa là chọn **một** nguồn sự thật: `topik_tests.ends_at`. Thời gian còn lại là `ends_at − now`,
+và vị trí băng là `length_ms − thời gian còn lại` — **không** lưu "băng đang ở đâu" thành cột riêng.
+Hai nguồn sự thật về thời gian chắc chắn lệch nhau, và lệch luôn có lợi cho người nạp lại trang.
+
+Hệ quả được chấp nhận có ý thức: đóng bài 20 phút là mất 20 phút băng, đúng như trong phòng thi. Băng
+ghép đứng chờ nạp clip thì mất vài giây băng chứ không được bù — nới `ends_at` mỗi lần mạng chậm sẽ
+thành một cách xin thêm giờ. Đường thoát là **Tạm dừng**: `ends_at` được đẩy ra đúng bằng khoảng đã
+dừng, nên tạm dừng không mất gì; vì luật nghiêm, nút đó là nút to nhất màn hình, dán đáy, và hộp xác
+nhận khi thoát nói thẳng rằng đồng hồ vẫn chạy.
+
+Ba chỗ đáng ghi lại:
+
+- **Hàm nghịch đảo phải có test tính chất.** `stitchedPosition` (clip, mốc trong clip) → ms đã có từ
+  M6.5; vào lại một bài nghe ghép cần chiều ngược. `positionOnTimeline` được test bằng vòng lặp qua
+  **mọi** millisecond của một băng ngắn và qua các mốc biên của một băng thật, chứ không phải vài ví
+  dụ chọn tay — biên clip là chỗ sai một đơn vị sống được rất lâu mà không ai thấy.
+- **Hết giờ không cần bộ hẹn giờ.** Không có cron trên gói free, và không cần: chỉ hai chỗ nhìn thấy
+  một bài thi cũ (màn chọn đề và trang bài thi đó), nên cả hai quét trước khi đọc (`expireOverdueTests`).
+  Hết giờ thì **chấm luôn** — đáp án đã nằm trong D1 ngay khi chọn — và `finished_at` là **mốc hết
+  giờ của chính nó**, không phải lúc tình cờ bị phát hiện hai tiếng sau.
+- **Một pha tạm dừng không ai mở lại** là bài `running` vĩnh viễn, tức vẫn trả lời được: sau 24 giờ
+  thì chuyển `abandoned`. 5 bài trên production đã treo `running` 1–5 ngày (không có `ends_at` nào để
+  đo) — migration `0019` kết chúng lại.
+
+Một chi tiết nhỏ nhưng là bug thật, phát hiện khi thử trên trình duyệt: lúc đầu `length_ms` chỉ được
+chốt khi bấm Bắt đầu, nên màn "Sẵn sàng làm bài?" hiện "1 câu · 0:00". Độ dài bài giờ được chốt ngay
+khi rút đề (chỉ `ends_at` chờ cú bấm), nên màn hình nói được bài dài bao nhiêu trước khi cam kết bắt
+đầu — và vẫn miễn nhiễm với việc sửa câu hỏi về sau.
 
 ### M7.10 — Gạch chân vô hình: định dạng của dấu kết đoạn (2026-11-05)
 

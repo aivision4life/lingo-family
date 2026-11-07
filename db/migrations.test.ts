@@ -399,3 +399,58 @@ describe("migration 0014_topik_listening_audio", () => {
     expect(await count("SELECT count(*) AS n FROM topik_segments")).toBe(0);
   });
 });
+
+describe("migration 0019_topik_test_clock", () => {
+  beforeAll(async () => {
+    await applyRemaining();
+    await DB.prepare(
+      `INSERT INTO profiles (id, name, avatar, ui_lang, gloss_lang, is_kid, daily_new_limit, study_langs, created_at)
+       VALUES ('p-sit', 'D', '🐯', 'vi', 'vi', 0, 10, '["ko"]', ?)`,
+    ).bind(Date.now()).run();
+  });
+
+  it("gives a sitting the clock columns", async () => {
+    const now = Date.now();
+    await DB.prepare(
+      `INSERT INTO topik_tests (id, profile_id, section, kind, question_count, total_points, status, started_at,
+         length_ms, ends_at, paused_at, auto_submitted, pause_count, paused_ms, created_at)
+       VALUES ('t-clock', 'p-sit', 'reading', 'original', 2, 4, 'running', ?, 120000, ?, NULL, 0, 0, 0, ?)`,
+    ).bind(now, now + 120_000, now).run();
+    const row = await DB.prepare("SELECT length_ms, ends_at, auto_submitted FROM topik_tests WHERE id = 't-clock'").first<{
+      length_ms: number;
+      ends_at: number;
+      auto_submitted: number;
+    }>();
+    expect(row).toMatchObject({ length_ms: 120_000, auto_submitted: 0 });
+    expect(row!.ends_at).toBe(now + 120_000);
+  });
+
+  // The data fix in the file itself: five sittings on production had been `running` — and therefore
+  // still answerable — for days, with no deadline to measure them by. Re-run here on a row of the
+  // same shape, taking the statement from the migration rather than a copy of it.
+  it("ends the deadline-less sittings it inherited", async () => {
+    const now = Date.now();
+    await DB.prepare(
+      `INSERT INTO topik_tests (id, profile_id, section, kind, question_count, total_points, status, started_at, pause_count, paused_ms, created_at)
+       VALUES ('t-stuck', 'p-sit', 'reading', 'original', 18, 36, 'running', ?, 0, 0, ?)`,
+    ).bind(now - 5 * 24 * 60 * 60_000, now).run();
+    await DB.prepare(
+      `INSERT INTO topik_tests (id, profile_id, section, kind, question_count, total_points, status, started_at,
+         length_ms, ends_at, pause_count, paused_ms, created_at)
+       VALUES ('t-live', 'p-sit', 'reading', 'original', 18, 36, 'running', ?, 1500000, ?, 0, 0, ?)`,
+    ).bind(now, now + 1_500_000, now).run();
+
+    const sql = readFileSync(path.join(dir, "0019_topik_test_clock.sql"), "utf8")
+      .split("--> statement-breakpoint")
+      .map((stmt) => stmt.trim())
+      .filter((stmt) => stmt.startsWith("UPDATE") || stmt.includes("\nUPDATE"));
+    expect(sql).toHaveLength(1);
+    await DB.prepare(sql[0]!).run();
+
+    const stuck = await DB.prepare("SELECT status FROM topik_tests WHERE id = 't-stuck'").first<{ status: string }>();
+    const live = await DB.prepare("SELECT status FROM topik_tests WHERE id = 't-live'").first<{ status: string }>();
+    expect(stuck!.status).toBe("abandoned");
+    // A sitting that has a deadline is one someone can still come back to: left alone.
+    expect(live!.status).toBe("running");
+  });
+});
