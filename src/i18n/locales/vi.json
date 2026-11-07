@@ -241,6 +241,11 @@
     "missing": "Từ này còn thiếu audio.",
     "savedWithoutAudio": "Đã lưu từ, nhưng chưa tạo được audio (dịch vụ giọng đọc lỗi hoặc hết lượt hôm nay). Bạn có thể bấm “Tạo lại audio” sau.",
     "stillMissing": "Vẫn còn {{count}} mục chưa có audio. Hãy thử lại sau.",
+    "failed": {
+      "quota": "Hết hạn mức audio hôm nay ({{count}} mục chưa có). Đặt lại lúc {{time}}.",
+      "rejected": "Dịch vụ audio từ chối khoá truy cập, nên {{count}} mục chưa có audio. Thử lại cũng không được — cần cấp lại khoá Azure Speech.",
+      "provider": "Dịch vụ audio đang lỗi hoặc không kết nối được, {{count}} mục chưa có audio. Thử lại sau ít phút."
+    },
     "done": "Đã tạo xong audio.",
     "notConfigured": "Chưa cấu hình giọng đọc (thiếu AZURE_SPEECH_KEY / AZURE_SPEECH_REGION)."
   },

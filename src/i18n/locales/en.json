@@ -241,6 +241,11 @@
     "missing": "This word is missing some audio.",
     "savedWithoutAudio": "The word was saved, but its audio could not be generated (speech service error or today's limit reached). Tap “Generate audio” later.",
     "stillMissing": "{{count}} item(s) still have no audio. Please try again later.",
+    "failed": {
+      "quota": "Today's audio allowance is used up ({{count}} still missing). It resets at {{time}}.",
+      "rejected": "The speech service refused our key, so {{count}} items have no audio. Trying again will not help — the Azure Speech key needs renewing.",
+      "provider": "The speech service failed or could not be reached; {{count}} items have no audio. Try again in a few minutes."
+    },
     "done": "Audio generated.",
     "notConfigured": "Speech is not configured (missing AZURE_SPEECH_KEY / AZURE_SPEECH_REGION)."
   },

@@ -185,7 +185,7 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       // Audio for the word, phrases and examples. TTS problems never fail the save: items stay
       // without audio and the client offers "Generate audio" later.
       const audio = await generateWordAudio(
-        { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
+        { db, DB: c.env.DB, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
         id,
       );
 
@@ -209,7 +209,7 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
 
       const tts = makeTts(c.env);
       if (!tts) return c.json({ error: WORD_ERRORS.ttsNotConfigured }, 503);
-      return c.json(await generateWordAudio({ db, bucket: c.env.MEDIA, tts, env: c.env, profileId: profile_id }, id));
+      return c.json(await generateWordAudio({ db, DB: c.env.DB, bucket: c.env.MEDIA, tts, env: c.env, profileId: profile_id }, id));
     })
 
     .get("/", zv("query", wordListQuerySchema), async (c) => {

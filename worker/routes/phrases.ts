@@ -61,7 +61,7 @@ export const phraseRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       });
       drawAfterSave(c, makeImageAi, profile_id, pendingImages.map((pid) => ({ kind: "phrase" as const, id: pid })));
       const audio = await generateWordAudio(
-        { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
+        { db, DB: c.env.DB, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
         id,
       );
       return c.json({ ...result, audio }, 201);
@@ -145,7 +145,7 @@ export const phraseRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
         }
       }
       const audio = await generateWordAudio(
-        { db, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
+        { db, DB: c.env.DB, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId: profile_id },
         phrase.word_id,
       );
       return c.json({ id, audio });

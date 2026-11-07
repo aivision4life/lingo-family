@@ -9,6 +9,7 @@ import {
   termSchema,
 } from "./base";
 import { albumRefSchema } from "./album";
+import { audioFailureSchema } from "./audioFailure";
 import { exampleLevelSchema, learnLangSchema, libraryScopeSchema } from "./enums";
 import { TOPIK_SOURCES_MAX, topikWordSourceSchema } from "./topikSource";
 import { imageViewSchema } from "./image";
@@ -203,7 +204,12 @@ export const LLM_DAILY_QUOTA = 50;
 export const TTS_DAILY_QUOTA = 200;
 
 /** Result of generating audio for a word: how many items (word + examples) still lack audio. */
-export const audioResultSchema = z.object({ missing: z.number().int().nonnegative() });
+export const audioResultSchema = z.object({
+  missing: z.number().int().nonnegative(),
+  /** Why they are still missing, so the screen can say which of three very different things went
+   * wrong (M7.13). Null when nothing failed. */
+  reason: audioFailureSchema.nullable().default(null),
+});
 
 /** POST /api/words response. */
 export const wordCreatedSchema = z.object({

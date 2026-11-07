@@ -27,7 +27,7 @@ const idParam = zv("param", z.object({ id: z.string().min(1) }));
 
 export const exampleRoutes = ({ makeTts, makeImageAi }: ContentDeps) => {
   const audio = (c: Context<AppEnv>, profileId: string, wordId: string) =>
-    generateWordAudio({ db: getDb(c.env), bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId }, wordId);
+    generateWordAudio({ db: getDb(c.env), DB: c.env.DB, bucket: c.env.MEDIA, tts: makeTts(c.env), env: c.env, profileId }, wordId);
 
   const drawInBackground = (c: Context<AppEnv>, profileId: string, id: string) =>
     runInBackground(c, drawClaimedItems({ DB: c.env.DB, bucket: c.env.MEDIA, ai: makeImageAi(c.env, c.req.url), profileId }, [{ kind: "example", id }]));

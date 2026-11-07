@@ -72,7 +72,7 @@ beforeEach(async () => {
 describe("audio on save", () => {
   it("generates audio for the word and each example, stored in R2", async () => {
     const created = await createWord();
-    expect(created.audio).toEqual({ missing: 0 });
+    expect(created.audio).toEqual({ missing: 0, reason: null });
     expect(tts.calls.map((c) => c.text).sort()).toEqual(["저는 학생이에요.", "학생", "학생이 많아요."].sort());
     expect(tts.calls.every((c) => c.voice === "ko-KR-SunHiNeural")).toBe(true);
 
@@ -94,18 +94,18 @@ describe("audio on save", () => {
   it("still saves the word when TTS fails, then 'Generate audio' fills the gaps", async () => {
     tts.state.fail = true;
     const created = await createWord();
-    expect(created.audio).toEqual({ missing: 3 });
+    expect(created.audio).toEqual({ missing: 3, reason: "provider_error" });
     expect((await detail(created.id)).audio_key).toBeNull();
 
     tts.state.fail = false;
     tts.calls.length = 0;
     const regen = await t.api("POST", `/words/${created.id}/audio`, { profile_id: adultId });
-    expect(regen.body).toEqual({ missing: 0 });
+    expect(regen.body).toEqual({ missing: 0, reason: null });
     expect(tts.calls).toHaveLength(3);
 
     // Nothing left to do: no further Azure calls.
     tts.calls.length = 0;
-    expect((await t.api("POST", `/words/${created.id}/audio`, { profile_id: adultId })).body).toEqual({ missing: 0 });
+    expect((await t.api("POST", `/words/${created.id}/audio`, { profile_id: adultId })).body).toEqual({ missing: 0, reason: null });
     expect(tts.calls).toHaveLength(0);
   });
 
@@ -115,8 +115,29 @@ describe("audio on save", () => {
       .bind(today, adultId, TTS_DAILY_QUOTA - 1)
       .run();
     const created = await createWord();
-    expect(created.audio).toEqual({ missing: 2 });
+    expect(created.audio).toEqual({ missing: 2, reason: "quota" });
     expect(tts.calls).toHaveLength(1);
+  });
+
+  // M7.13. Three failures used to reach the screen as one message ("still 3 missing, try again
+  // later"), and the real one was a refused key: every word added over two days stayed silent
+  // while "try again" could never have worked.
+  it("says why audio is missing, and a failed call costs no quota", async () => {
+    tts.state.fail = true;
+    tts.state.message = "Azure TTS HTTP 401: ";
+    const created = await createWord();
+    expect(created.audio).toEqual({ missing: 3, reason: "provider_rejected" });
+    // Three Azure calls were attempted and all three failed, so none of them is billed.
+    expect(tts.calls).toHaveLength(3);
+    expect(await ttsUsage()).toBe(0);
+
+    tts.state.message = "Azure TTS request failed: TimeoutError";
+    const again = await t.api("POST", `/words/${created.id}/audio`, { profile_id: adultId });
+    expect(again.body).toEqual({ missing: 3, reason: "provider_error" });
+    expect(await ttsUsage()).toBe(0);
+
+    tts.state.fail = false;
+    tts.state.message = "fake TTS failure";
   });
 
   it("generate-audio forbids kids and unknown words", async () => {
