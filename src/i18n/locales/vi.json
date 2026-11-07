@@ -205,6 +205,7 @@
       "generic": "Có lỗi xảy ra, vui lòng thử lại."
     },
     "detail": {
+      "metIn": "Gặp trong: {{places}}",
       "glosses": "Nghĩa",
       "examples": "Câu ví dụ",
       "notVerified": "Một số thông tin do AI tạo và chưa được người lớn kiểm tra.",

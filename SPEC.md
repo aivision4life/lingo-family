@@ -404,6 +404,7 @@ words         id, lang ('ko'|'en') ← M1.6, term, reading, pos,
               gloss_vi, gloss_en, gloss_ko,
               hanja? ← M1.6 (renamed from hanzi_traditional; hanzi_simplified dropped), han_viet?,
               emoji?, audio_key?, notes?,
+              topik_sources? (json [{section, exam, number}], where the word was met) ← M7.12,
               image_key?, image_prompt?, image_source? ('ai'|'upload'),
               image_status ('none'|'pending'|'ready'|'failed'), image_nonce?, image_requested_at?, image_model? ← M1.8,
               ai_generated, verified, created_by_profile, created_at, updated_at

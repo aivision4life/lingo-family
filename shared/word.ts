@@ -10,6 +10,7 @@ import {
 } from "./base";
 import { albumRefSchema } from "./album";
 import { exampleLevelSchema, learnLangSchema, libraryScopeSchema } from "./enums";
+import { TOPIK_SOURCES_MAX, topikWordSourceSchema } from "./topikSource";
 import { imageViewSchema } from "./image";
 import { llmPhraseSchema, PHRASES_MAX, phraseInputSchema, phraseSchema, skippedPhraseSchema } from "./phrase";
 
@@ -65,13 +66,23 @@ export const enrichmentSchema = llmEnrichmentSchema.extend({
 });
 export type Enrichment = z.infer<typeof enrichmentSchema>;
 
+/**
+ * Which register the example sentences are written in (M7.12). `general` is everything the app did
+ * before — everyday sentences at the profile's level. `topik` is for a word met in a TOPIK II
+ * question: the exam's own written register and subject matter, because a learner sitting TOPIK
+ * needs to meet the word the way the exam uses it, not over dinner.
+ */
+export const exampleStyleSchema = z.enum(["general", "topik"]);
+export type ExampleStyle = z.infer<typeof exampleStyleSchema>;
+
 export const enrichRequestSchema = z.object({
   profile_id: z.string().min(1),
   lang: learnLangSchema,
   term: termSchema,
   level: exampleLevelSchema,
+  style: exampleStyleSchema.default("general"),
 });
-export type EnrichRequest = z.infer<typeof enrichRequestSchema>;
+export type EnrichRequest = z.input<typeof enrichRequestSchema>;
 
 export const enrichResponseSchema = z.object({
   enrichment: enrichmentSchema,
@@ -104,6 +115,8 @@ export const wordCreateSchema = z.object({
   phrases: z.array(phraseInputSchema).max(PHRASES_MAX).default([]),
   /** Albums (of the word's language) the new word is added to (M2.4). */
   album_ids: z.array(z.string().min(1)).max(50).default([]),
+  /** Where the word was met, when it came from a TOPIK question (M7.12). */
+  topik_sources: z.array(topikWordSourceSchema).max(TOPIK_SOURCES_MAX).default([]),
 });
 export type WordCreate = z.input<typeof wordCreateSchema>;
 
@@ -131,6 +144,8 @@ export const wordDetailSchema = wordSummarySchema.extend({
   hanja: z.string().nullable(),
   han_viet: z.string().nullable(),
   notes: z.string().nullable(),
+  /** TOPIK questions this word was met in (M7.12), oldest first. */
+  topik_sources: z.array(topikWordSourceSchema),
   created_at: z.number(),
   /** Examples of the word itself (phrase examples are inside `phrases`). */
   examples: z.array(exampleSchema),

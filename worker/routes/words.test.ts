@@ -124,6 +124,19 @@ describe("words CRUD", () => {
     expect(detail.examples).toHaveLength(1);
   });
 
+  // M7.12: a word added from a TOPIK question remembers where it was met, as data (not a
+  // pre-joined label), so each profile's screen can word it in its own language.
+  it("keeps where a word was met in TOPIK, and defaults to nowhere", async () => {
+    const source = { section: "reading", exam: "8DeOfficial-35회", number: 12 } as const;
+    const created = await t.api("POST", "/words", word({ topik_sources: [source] }));
+    const id = (created.body as { id: string }).id;
+    expect(wordDetailSchema.parse((await t.api("GET", `/words/${id}`)).body).topik_sources).toEqual([source]);
+
+    const plain = await t.api("POST", "/words", word({ term: "학교", hanja: null, han_viet: null, examples: [] }));
+    const plainId = (plain.body as { id: string }).id;
+    expect(wordDetailSchema.parse((await t.api("GET", `/words/${plainId}`)).body).topik_sources).toEqual([]);
+  });
+
   it("rejects duplicates, case-insensitive for English", async () => {
     await t.api("POST", "/words", word({ lang: "en", term: "Apple", hanja: null, examples: [] }));
     const res = await t.api("POST", "/words", word({ lang: "en", term: "apple ", examples: [] }));

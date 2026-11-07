@@ -147,7 +147,15 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
       const image = initialImageFields(fields.image_prompt, imagesOn);
       const insertWord = db
         .insert(words)
-        .values({ ...fields, ...image, id, verified: false, created_by_profile: profile_id });
+        // An empty list is stored as NULL, so "never met in TOPIK" and "met nowhere" are one state.
+        .values({
+          ...fields,
+          topik_sources: fields.topik_sources.length > 0 ? fields.topik_sources : null,
+          ...image,
+          id,
+          verified: false,
+          created_by_profile: profile_id,
+        });
       // Word + examples in one D1 batch (atomic). `examples` binds ~17 parameters per row, so five
       // of them already sit at 85 of D1's 100-parameter ceiling — one added column would break
       // saving a word. The rows go in through the shared chunker rather than relying on that
@@ -265,6 +273,7 @@ export const wordRoutes = ({ makeLlm, makeTts, makeImageAi }: ContentDeps) =>
         hanja: w.hanja,
         han_viet: w.han_viet,
         notes: w.notes,
+        topik_sources: w.topik_sources ?? [],
         created_at: w.created_at.getTime(),
         examples: exs.map(toExample),
         phrases: phs,

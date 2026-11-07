@@ -205,6 +205,7 @@
       "generic": "오류가 발생했습니다. 다시 시도해 주세요."
     },
     "detail": {
+      "metIn": "출처: {{places}}",
       "glosses": "뜻",
       "examples": "예문",
       "notVerified": "일부 정보는 AI가 만들었고 아직 어른이 확인하지 않았습니다.",

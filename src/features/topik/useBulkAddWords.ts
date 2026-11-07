@@ -76,14 +76,16 @@ export function useBulkAddWords(profileId: string, lang: LearnLang, level: Examp
           continue;
         }
 
-        const enrichRes = await enrich.mutateAsync({ profile_id: profileId, lang, term: term.lemma, level });
+        // A word met in a TOPIK question is studied for that exam, so its example sentences are
+        // written the way the exam writes (M7.12) — not "tôi ăn cơm".
+        const enrichRes = await enrich.mutateAsync({ profile_id: profileId, lang, term: term.lemma, level, style: "topik" });
         const draft = draftFromEnrichment(enrichRes.enrichment);
         const { input } = draftToCreateInput(draft, { profileId, lang, term: term.lemma, level, aiFilled: true });
         if (!input) {
           setItem(term.lemma, { status: "error", errorCode: "invalid" });
           continue;
         }
-        const created = await create.mutateAsync({ ...input, phrases: [], album_ids: [albumId] });
+        const created = await create.mutateAsync({ ...input, phrases: [], album_ids: [albumId], topik_sources: [term.source] });
         setItem(term.lemma, { status: "done", wordId: created.id });
         added.push(term.lemma);
       } catch (e) {

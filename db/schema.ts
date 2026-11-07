@@ -29,6 +29,7 @@ import {
   type LearnLang,
 } from "../shared/enums";
 import type { TopikOptions, TopikVocabEntry } from "../shared/topik";
+import type { TopikWordSource } from "../shared/topikSource";
 
 const id = () =>
   text("id")
@@ -117,6 +118,12 @@ export const words = sqliteTable(
     /** Null until TTS audio has been generated. */
     audio_key: text("audio_key"),
     notes: text("notes"),
+    /**
+     * Where this word was met in a TOPIK question, when it was added from one (M7.12): the section,
+     * the exam label and the question number, kept as data so the screen can word it in the
+     * reader's own language. Appended to, because one word turns up in several questions.
+     */
+    topik_sources: text("topik_sources", { mode: "json" }).$type<TopikWordSource[]>(),
     ai_generated: bool("ai_generated").notNull().default(false),
     verified: bool("verified").notNull().default(false),
     created_by_profile: text("created_by_profile").references(() => profiles.id, {

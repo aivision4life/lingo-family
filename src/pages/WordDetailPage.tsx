@@ -95,6 +95,18 @@ function Detail({ w }: { w: WordDetail }) {
         </section>
       )}
 
+      {/* Where this word was met in TOPIK (M7.12). Stored as data (section, exam, number), worded
+          here, so a Korean profile reads "12번" where a Vietnamese one reads "Câu 12". */}
+      {w.topik_sources.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          {t("words.detail.metIn", {
+            places: w.topik_sources
+              .map((s) => `${t(`topik.section.${s.section}`)} · ${t("topik.practice.examQuestion", { exam: s.exam, number: s.number })}`)
+              .join(", "),
+          })}
+        </p>
+      )}
+
       <div className="flex justify-end">
         <SpeedToggle />
       </div>

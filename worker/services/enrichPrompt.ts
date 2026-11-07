@@ -1,4 +1,5 @@
 import type { ExampleLevel, LearnLang } from "../../shared/enums";
+import type { ExampleStyle } from "../../shared/word";
 import { IMAGE_PROMPT_RULES } from "./imagePrompt";
 
 /** Bump when the prompt or output schema changes, so old cache entries are not reused. */
@@ -42,6 +43,19 @@ const LEVEL_RULES: Record<ExampleLevel, string> = {
     "Example sentences are for an intermediate adult learner; workplace and IT/office contexts are welcome.",
 };
 
+/**
+ * The register of a word met in a TOPIK II question (M7.12). It replaces the level rule entirely:
+ * the exam does not write at a level, it writes one way, and a learner preparing for it has to
+ * meet the word the way the paper uses it. Only for `style: "topik"` — every other word keeps the
+ * everyday sentences the app has always made.
+ */
+const TOPIK_STYLE_RULES = [
+  "Example sentences must read like a sentence from a TOPIK II reading passage: formal written Korean (서술체: -ㄴ/는다, -(으)며, -에 따라), never conversational speech levels (no -요, no -습니다 dialogue).",
+  "Subject matter: society, economy, environment, education, research, health policy, technology and its effects — the topics TOPIK II writes about. Never everyday chit-chat (meals, family errands, weekend plans).",
+  "Each sentence is one full statement of the kind the exam uses, long enough to carry a real idea (roughly 40-70 characters), not a fragment.",
+  "The word must carry its normal meaning in the sentence; do not bend the topic to fit the word.",
+].join("\n");
+
 /** The translation field that equals the sentence's own language (left empty). */
 const OWN_TRANSLATION: Record<LearnLang, string> = {
   ko: "translation_ko",
@@ -56,7 +70,7 @@ const PHRASE_RULES = [
 
 const ROLE = "You are a careful bilingual lexicographer building flashcards for a Vietnamese family that also speaks Korean.";
 
-export function buildEnrichPrompt(lang: LearnLang, term: string, level: ExampleLevel) {
+export function buildEnrichPrompt(lang: LearnLang, term: string, level: ExampleLevel, style: ExampleStyle = "general") {
   const system = [
     ROLE,
     "Answer with a single JSON object that matches the given schema. No markdown, no comments.",
@@ -70,7 +84,7 @@ export function buildEnrichPrompt(lang: LearnLang, term: string, level: ExampleL
     IMAGE_FIELDS,
     `Leave ${OWN_TRANSLATION[lang]} empty for all example sentences, because the sentence is already in that language.`,
     LANG_RULES[lang],
-    LEVEL_RULES[level],
+    style === "topik" ? TOPIK_STYLE_RULES : LEVEL_RULES[level],
     "If you are unsure about Hanja or Hán-Việt, prefer an empty string over a guess.",
   ].join("\n");
 

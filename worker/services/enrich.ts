@@ -4,7 +4,7 @@ import { z } from "zod";
 import { duplicateKey, normalizeTerm, type LlmSentence } from "../../shared/base";
 import type { ExampleLevel, LearnLang } from "../../shared/enums";
 import { llmPhraseSchema, llmPhraseSuggestionsSchema, PHRASES_MAX, type LlmPhrase } from "../../shared/phrase";
-import { enrichmentSchema, llmEnrichmentSchema, type Enrichment, type LlmEnrichment } from "../../shared/word";
+import { enrichmentSchema, llmEnrichmentSchema, type Enrichment, type ExampleStyle, type LlmEnrichment } from "../../shared/word";
 import { ai_cache } from "../../db/schema";
 import type { getDb } from "../env";
 import { sha256Hex } from "../lib/hash";
@@ -12,13 +12,15 @@ import { checkEnrichment, checkPhrase, checkSentence } from "./contentCheck";
 import { buildEnrichPrompt, buildPhrasePrompt, ENRICH_PROMPT_VERSION, PHRASES_PROMPT_VERSION } from "./enrichPrompt";
 import { generateStructured, type LlmClient } from "./llm";
 
-type Input = { lang: LearnLang; term: string; level: ExampleLevel };
+type Input = { lang: LearnLang; term: string; level: ExampleLevel; style?: ExampleStyle };
 
 /** SPEC: 2 examples per word, 1 per phrase. */
 const WORD_EXAMPLES = 2;
 
-export const enrichCacheKey = (model: string, { lang, term, level }: Input) =>
-  sha256Hex(JSON.stringify(["enrich", ENRICH_PROMPT_VERSION, model, lang, term, level]));
+export const enrichCacheKey = (model: string, { lang, term, level, style }: Input) =>
+  // The style is only appended when it is not the default, so every entry cached before M7.12
+  // (and every ordinary word since) keeps the key it already has.
+  sha256Hex(JSON.stringify(["enrich", ENRICH_PROMPT_VERSION, model, lang, term, level, ...(style && style !== "general" ? [style] : [])]));
 
 export const phrasesCacheKey = (model: string, { lang, term, level }: Input) =>
   sha256Hex(JSON.stringify(["phrases", PHRASES_PROMPT_VERSION, model, lang, term, level]));
@@ -131,7 +133,7 @@ export async function enrichWithCache({ db, llm, input, beforeLlmCall }: Options
       const { data, model } = await generateStructured(
         llm,
         llmEnrichmentSchema,
-        buildEnrichPrompt(input.lang, input.term, input.level),
+        buildEnrichPrompt(input.lang, input.term, input.level, input.style),
         (d) => checkEnrichment(input.lang, d, allowedWords),
       );
       return { value: finalizeEnrichment(input.lang, input.term, data), model };

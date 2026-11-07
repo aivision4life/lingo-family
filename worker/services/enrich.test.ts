@@ -55,6 +55,35 @@ describe("enrichCacheKey", () => {
     expect(await enrichCacheKey("m1", { ...input, level: "kid" })).not.toBe(key);
     expect(await enrichCacheKey("m1", { ...input, term: "학교" })).not.toBe(key);
   });
+
+  // M7.12: the style is only part of the key when it is not the default, so nothing cached before
+  // it existed — and no ordinary word since — loses its entry.
+  it("leaves an ordinary word's key untouched and gives the TOPIK style its own", async () => {
+    const key = await enrichCacheKey("m1", input);
+    expect(await enrichCacheKey("m1", { ...input, style: "general" })).toBe(key);
+    expect(await enrichCacheKey("m1", { ...input, style: "topik" })).not.toBe(key);
+  });
+});
+
+describe("the TOPIK example style (M7.12)", () => {
+  it("replaces the level rule with the exam's register and subject matter", () => {
+    const topik = buildEnrichPrompt("ko", "환경", "beginner", "topik").system;
+    const general = buildEnrichPrompt("ko", "환경", "beginner").system;
+    expect(topik).toContain("TOPIK II reading passage");
+    expect(topik).toContain("society, economy, environment");
+    // The level rule and the TOPIK rule are alternatives: a formal exam sentence is not "short and
+    // simple, common vocabulary", and having both would ask for two different things at once.
+    expect(general).toContain("short and simple");
+    expect(topik).not.toContain("short and simple");
+  });
+
+  it("changes nothing else about the prompt", () => {
+    const topik = buildEnrichPrompt("ko", "환경", "beginner", "topik").system;
+    expect(topik).toContain(IMAGE_PROMPT_RULES);
+    expect(topik).toContain("hanja");
+    // Default argument = the old behaviour, so every other caller is untouched.
+    expect(buildEnrichPrompt("ko", "환경", "beginner", "general").system).toBe(buildEnrichPrompt("ko", "환경", "beginner").system);
+  });
 });
 
 describe("image prompts in enrichment (M1.8)", () => {
