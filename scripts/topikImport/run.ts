@@ -71,6 +71,7 @@ import {
   imageRefsOf,
   parseSectionFlag,
   refreshAiSql,
+  shortBlocks,
   shortGroups,
   verifiedAfterOverwrite,
   type DiffRow,
@@ -391,12 +392,16 @@ async function main() {
   const holes = parsed.flatMap((f) => {
     const fn = parseTopikFileName(f.fileName);
     if (!fn) return [];
-    return shortGroups(f.questions, fn.start, fn.end).map((g) => ({ file: f.fileName, ...g }));
+    // A block file states its intent in its name; a whole paper states it per question, in the
+    // "[N~M]" line each one carries (M7.16).
+    return fn.kind === "paper"
+      ? shortBlocks(f.questions).map((g) => ({ file: f.fileName, where: `${g.exam} khối ${g.block}`, ...g }))
+      : shortGroups(f.questions, fn.start, fn.end).map((g) => ({ file: f.fileName, where: `nhóm ${g.exam}`, ...g }));
   });
   console.log(`\n=== Nhóm thiếu câu (${holes.length}) ===`);
-  if (holes.length === 0) console.log("  (không có — mọi nhóm đủ số câu mà dải trong tên file đòi)");
+  if (holes.length === 0) console.log("  (không có — mọi nhóm đủ số câu mà dải của nó đòi)");
   for (const h of holes) {
-    console.log(`  ${h.file} — nhóm ${h.exam}: có ${h.have} câu, dải đòi ${h.want}; thiếu câu ${h.missing.join(", ")}`);
+    console.log(`  ${h.file} — ${h.where}: có ${h.have} câu, dải đòi ${h.want}; thiếu câu ${h.missing.join(", ")}`);
   }
 
   // Per exam, across every file of this run: how much of it a mock test of the original paper can
@@ -461,7 +466,28 @@ async function main() {
           diffs: diffColumns(existingSnapshot(existing), after),
         });
       }
+      // A listening question with no approved recording is invisible everywhere (the practice
+      // picker and the test picker both require a clip + an approved exam audio), so importing one
+      // is harmless — but silent. Say it out loud, per exam, so the owner can decide to wait.
+      const examsHere = [...new Set(parsed.flatMap((f) => f.questions.map((q) => `${q.section} ${q.exam}`)))];
+      const audioNotes: string[] = [];
+      for (const key of examsHere) {
+        const [section, exam] = key.split(" ") as [string, string];
+        if (section !== "listening") continue;
+        const audio = await db
+          .prepare("SELECT verified FROM topik_audio WHERE section = ?1 AND exam = ?2")
+          .bind(section, exam)
+          .first<{ verified: number }>();
+        const count = parsed.flatMap((f) => f.questions).filter((q) => q.exam === exam).length;
+        if (!audio) audioNotes.push(`${exam}: ${count} câu — CHƯA CÓ BĂNG (sẽ không hiện ở luyện tập lẫn thi thử)`);
+        else if (audio.verified !== 1) audioNotes.push(`${exam}: ${count} câu — có băng nhưng CHƯA DUYỆT ranh giới`);
+      }
+
       printDiff(diffRows, diffRows.length);
+      console.log(`
+=== Băng nghe (${audioNotes.length} đề cần chú ý) ===`);
+      if (audioNotes.length === 0) console.log("  (mọi đề nghe trong lần chạy này đều đã có băng đã duyệt)");
+      for (const n of audioNotes) console.log(`  ${n}`);
       if (missing > 0) console.log(`\n  (${missing} câu trong file chưa có trong cơ sở dữ liệu — --apply sẽ CHÈN MỚI, không nằm trong bảng trên)`);
       printAiRefresh(diffRows);
       console.log("\nKhông ghi gì cả. Xác nhận bảng trên rồi mới chạy --apply --force.");

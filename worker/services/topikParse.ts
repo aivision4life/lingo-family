@@ -102,6 +102,13 @@ export type ParsedItem = {
   /** The "-N" suffix of the Heading3 label, when parseable — cross-checked against the computed number. */
   labelNumber: number | null;
   /**
+   * A Heading3 label that is nothing but a number ("37"), which is how a whole-paper file numbers
+   * its questions (M7.16). Kept apart from `labelNumber` because the two mean different things: a
+   * block file's "1-9" is the ninth question *of a practice group*, while this is the question's
+   * own number in the paper, and reading one as the other would renumber a whole exam.
+   */
+  paperNumber: number | null;
+  /**
    * The "(XX회)" real-exam-round suffix on the Heading3 label, when present (e.g. "36회"). Some
    * files put one Heading2 group's items under several different real exam administrations
    * (Cau09/Cau10: one "연습1: Official" group holds 7 unrelated questions, "1-9 (36회)" .. "1-9
@@ -112,6 +119,12 @@ export type ParsedItem = {
   instruction: string | null;
   /** Listening (M7.1): the file marked this question as sharing the previous one's audio clip. */
   same_segment: boolean;
+  /**
+   * This question's own question line ("HỎI: …"), kept apart from the block's line so a whole-paper
+   * file can pair it with the right block (M7.16) — in those files the block line sits *between*
+   * two questions, so the one it is parsed with is not the one it belongs to.
+   */
+  own_instruction: string | null;
   /**
    * A block instruction ("[3~4] …") this question carried itself, when the file starts a new block
    * part way through a group instead of between the heading and the first question. It applies to
@@ -366,6 +379,9 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   // "1-1", "1-9 (36회)", "1-10(36회)" — the number right after the (first) dash.
   const labelMatch = /-\s*(\d+)/.exec(labelText);
   const labelNumber = labelMatch ? Number(labelMatch[1]) : null;
+  // "37" on its own: a whole paper's questions are labelled by their real number.
+  const bare = /^\s*(\d+)\s*$/.exec(labelText);
+  const paperNumber = bare ? Number(bare[1]) : null;
   // "1-9 (36회)" → "36회" (which real exam administration this item is from, if the label says).
   const roundMatch = ROUND_IN_TEXT.exec(labelText);
   const round = roundMatch ? roundMatch[1]! : null;
@@ -489,10 +505,12 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
   return {
     position,
     labelNumber,
+    paperNumber,
     round,
     // The group's line first, then this question's own: "[21~22] 다음을 듣고… (각 2점)" still holds
     // the points, and the question line is what actually has to be read before answering.
     instruction: ownInstruction ? [groupInstruction, ownInstruction].filter((x) => x).join("\n") : groupInstruction,
+    own_instruction: ownInstruction,
     same_segment: sameSegmentPara !== undefined,
     block_instruction: blockInstruction,
     stem_text: parsed.stem_text || null,

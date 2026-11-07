@@ -6,19 +6,83 @@ import type { TopikSection } from "../../shared/enums";
 import { DEFAULT_QUESTION_POINTS, pointsFromInstruction } from "../../shared/topik";
 import { parseTopikDocument } from "./topikParse";
 
-export type TopikFileName = { section: TopikSection; start: number; end: number; source: string };
+/**
+ * The two shapes a source file comes in (M7.16).
+ *
+ * `block`: one *block of questions* ("Cau16_18"), several exams deep — how the bank was first typed
+ * up, one task at a time across many papers. The name carries the block, because nothing inside the
+ * file does.
+ *
+ * `paper`: one whole exam, all fifty questions, twenty blocks ("TOPIK_II_Test35_Listening_
+ * OfficialTest.docx") — how complete papers arrive. No range can go in the name here, and none
+ * needs to: each question's own "[N~M] …" line states its block, which is the paper's real
+ * grouping rather than a stand-in for it. `test` is **not** used to decide anything; it is only
+ * cross-checked against the round in the document, so a mis-named copy is caught.
+ */
+export type TopikFileName =
+  | { kind: "block"; section: TopikSection; start: number; end: number; source: string }
+  | { kind: "paper"; section: TopikSection; source: string; test: number };
 
 const FILE_NAME = /^TOPIK_(Reading|Listening)_Cau(\d+)(?:_(\d+))?_(.+)_VERSION\d+$/i;
+const PAPER_FILE_NAME = /^TOPIK_II_Test(\d+)_(Reading|Listening)_(.+)$/i;
 
-/** "TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx" → { section: "reading", start: 1, end: 2, source: "Yonsei" }. */
+/** "TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx" → a block file; "TOPIK_II_Test35_Listening_
+ * OfficialTest.docx" → a whole paper. Anything else is rejected by name. */
 export function parseTopikFileName(fileName: string): TopikFileName | null {
   const base = fileName.replace(/\.docx$/i, "");
   const m = FILE_NAME.exec(base);
-  if (!m) return null;
-  const start = Number(m[2]);
-  const section = m[1]!.toLowerCase() as TopikSection;
-  return { section, start, end: m[3] ? Number(m[3]) : start, source: m[4]! };
+  if (m) {
+    const start = Number(m[2]);
+    return { kind: "block", section: m[1]!.toLowerCase() as TopikSection, start, end: m[3] ? Number(m[3]) : start, source: m[4]! };
+  }
+  const p = PAPER_FILE_NAME.exec(base);
+  if (p) return { kind: "paper", section: p[2]!.toLowerCase() as TopikSection, source: p[3]!, test: Number(p[1]) };
+  return null;
 }
+
+/**
+ * The block a question belongs to, read from its own instruction line ("[13~16] 다음을 듣고 …").
+ *
+ * This is where a whole paper's blocks come from, and it is a better source than the file name ever
+ * was: the paper itself prints the grouping. Returns null when the line has no bracket at all,
+ * which is refused rather than guessed — a question with no block would land in its own one-question
+ * group in the practice picker and nobody would notice.
+ */
+export function blockRangeOf(instruction: string | null): { start: number; end: number } | null {
+  const m = /^\s*\[\s*(\d+)\s*(?:[~～-]\s*(\d+))?\s*\]/.exec(instruction ?? "");
+  if (!m) return null;
+  const start = Number(m[1]);
+  return { start, end: m[2] ? Number(m[2]) : start };
+}
+
+const blockLabel = (range: { start: number; end: number }) =>
+  range.start === range.end ? String(range.start) : `${range.start}~${range.end}`;
+
+export type BlockLine = { range: { start: number; end: number }; text: string };
+
+/**
+ * Every "[N~M] …" line in one exam group, whichever question it was parsed with.
+ *
+ * In a whole-paper file the line sits **between** two questions — after question 3's table, before
+ * question 4's heading — and a paragraph between two questions belongs to the one before it
+ * (M7.3). So the line that opens block 4~8 arrives attached to question 3. Rather than guess from
+ * where it sits, the line is matched to questions by the range it **states**: it says 4~8, so it
+ * belongs to 4 to 8, and question 3 keeps the block before it. Nothing here depends on layout.
+ */
+export function blockLinesOf(items: readonly { instruction: string | null; block_instruction: string | null }[]): BlockLine[] {
+  const byRange = new Map<string, BlockLine>();
+  for (const item of items) {
+    for (const candidate of [item.block_instruction, item.instruction?.split("\n")[0] ?? null]) {
+      const range = blockRangeOf(candidate);
+      if (range && candidate) byRange.set(blockLabel(range), { range, text: candidate });
+    }
+  }
+  return [...byRange.values()];
+}
+
+/** The line a question belongs to: the one whose stated range covers its number. */
+export const blockLineFor = (lines: readonly BlockLine[], number: number): BlockLine | null =>
+  lines.find((l) => number >= l.range.start && number <= l.range.end) ?? null;
 
 export type DraftOption = { text: string; image_rid: string | null };
 export type DraftQuestion = {
@@ -71,24 +135,42 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
   const warnings: string[] = [];
   const fn = parseTopikFileName(fileName);
   if (!fn) {
-    errors.push(`file name does not match "TOPIK_(Reading|Listening)_Cau<N>[_<M>]_<source>_VERSION<v>.docx"`);
+    errors.push(
+      `file name matches neither "TOPIK_(Reading|Listening)_Cau<N>[_<M>]_<source>_VERSION<v>.docx" ` +
+        `nor "TOPIK_II_Test<N>_(Reading|Listening)_<source>.docx"`,
+    );
     return { fileName, block: "", questions: [], errors, warnings };
   }
 
-  const blockSize = fn.end - fn.start + 1;
-  const block = fn.start === fn.end ? String(fn.start) : `${fn.start}~${fn.end}`;
+  const paper = fn.kind === "paper";
+  const blockSize = paper ? 0 : fn.end - fn.start + 1;
+  // A whole paper has twenty blocks, so the file's own `block` is only a label for the report.
+  const block = paper ? `Test${fn.test}` : blockLabel({ start: fn.start, end: fn.end });
   const parsed = parseTopikDocument(documentXml);
   warnings.push(...parsed.warnings);
-  if (parsed.headingBlock && (parsed.headingBlock.start !== fn.start || parsed.headingBlock.end !== fn.end)) {
+  if (!paper && parsed.headingBlock && (parsed.headingBlock.start !== fn.start || parsed.headingBlock.end !== fn.end)) {
     warnings.push(
       `heading says block ${parsed.headingBlock.start}~${parsed.headingBlock.end}, file name says ${fn.start}~${fn.end} (file name is used)`,
     );
   }
+  // `Test35` in the name decides nothing — the round in the document does — but the two
+  // disagreeing means someone saved a copy under the wrong name, which is worth saying once.
+  if (paper) {
+    const rounds = [...new Set(parsed.exams.map((e) => e.round).filter((r): r is string => !!r))];
+    const expected = `${fn.test}회`;
+    if (rounds.length > 0 && !rounds.includes(expected)) {
+      warnings.push(`file name says Test${fn.test} but the document's round is ${rounds.join(", ")} (the document is used)`);
+    }
+  }
 
   const questions: DraftQuestion[] = [];
   for (const exam of parsed.exams) {
+    // A whole paper carries its own grouping; a block file has one block, stated by its name.
+    const blockLines = paper ? blockLinesOf(exam.items) : [];
     for (const item of exam.items) {
-      const number = fn.start + ((item.position - 1) % blockSize);
+      // A block file numbers by position inside its own range; a whole paper's questions are
+      // numbered by the paper, which is what the Heading3 label says.
+      const number = paper ? (item.paperNumber ?? item.labelNumber ?? item.position) : fn.start + ((item.position - 1) % blockSize);
       // When the item's own label names a real exam round ("36회"), that round IS the exam
       // identity: "<source>-<round>", with no "연습N" — every question from that exact real exam
       // (across however many files/blocks cover it) must share one label, or a later import of
@@ -104,16 +186,26 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       // sits in Heading2 and Heading3 stays a plain question number.
       const round = item.round ?? exam.round;
       const examLabel = round ? `${fn.source}-${round}` : `${fn.source}-연습${exam.groupIndex}`;
-      const readingFix = fn.section === "reading";
+      // The reading 1-4 patch belongs to the block shape only: it exists because one block file
+      // covers two tasks at once. A whole paper states every block itself.
+      const readingFix = !paper && fn.section === "reading";
       const notes: string[] = [];
-      if (item.labelNumber !== null && item.labelNumber !== number) {
+      if (!paper && item.labelNumber !== null && item.labelNumber !== number) {
         notes.push(`label says question ${item.labelNumber}, computed ${number} (computed is used)`);
+      }
+      if (paper && item.paperNumber === null && item.labelNumber === null) {
+        notes.push(`no question number label; counted as question ${number} from its position in the paper`);
       }
       // Imported, but surfaced first in the review screen (e.g. the underline disagrees with the
       // answer label on a listening question, where the label is what counts).
       notes.push(...item.warnings);
       const warning = notes.length > 0 ? notes.join("; ") : null;
-      const instruction = item.instruction;
+      // A whole paper's question takes the block line that covers its number, plus its own "HỎI:"
+      // line — never the line it happened to be parsed next to.
+      const ownLine = paper ? blockLineFor(blockLines, number) : null;
+      const instruction = paper
+        ? ([ownLine?.text ?? null, item.own_instruction].filter((x): x is string => !!x).join("\n") || null)
+        : item.instruction;
       for (const note of notes) warnings.push(`${examLabel} #${number}: ${note}`);
 
       // Nothing typed into a question may be thrown away in silence (M7.3). Three separate losses
@@ -135,6 +227,13 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
         );
         continue;
       }
+      // A whole paper's block comes from the question's own "[N~M]" line. No line, no block: a
+      // question nobody can place is refused, not filed under a made-up group.
+      const ownBlock = ownLine?.range ?? null;
+      if (paper && !ownBlock) {
+        errors.push(`${examLabel} #${number}: no "[N~M] …" block line to read the block from`);
+        continue;
+      }
       if (item.errors.length > 0) {
         errors.push(`${examLabel} #${number}: ${item.errors.join("; ")}`);
         continue;
@@ -143,7 +242,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
         section: fn.section,
         exam: examLabel,
         number,
-        block: (readingFix ? FIXED_NUMBER_BLOCK[number] : undefined) ?? block,
+        block: ownBlock ? blockLabel(ownBlock) : ((readingFix ? FIXED_NUMBER_BLOCK[number] : undefined) ?? block),
         instruction,
         points: pointsFromInstruction(instruction) ?? DEFAULT_QUESTION_POINTS,
         same_segment: item.same_segment,

@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildImportDraft, parseTopikFileName } from "./topikImport";
+import { blockRangeOf, buildImportDraft, parseTopikFileName } from "./topikImport";
 
 describe("parseTopikFileName", () => {
   it("parses a range file name", () => {
-    expect(parseTopikFileName("TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx")).toEqual({ section: "reading", start: 1, end: 2, source: "Yonsei" });
+    expect(parseTopikFileName("TOPIK_Reading_Cau01_02_Yonsei_VERSION1.docx")).toEqual({ kind: "block", section: "reading", start: 1, end: 2, source: "Yonsei" });
   });
 
   it("parses a single-number file name", () => {
     expect(parseTopikFileName("TOPIK_Reading_Cau09_8DeOfficial_VERSION1.docx")).toEqual({
+      kind: "block",
       section: "reading",
       start: 9,
       end: 9,
@@ -18,6 +19,7 @@ describe("parseTopikFileName", () => {
   // M7.1: the same convention with "Listening" in place of "Reading".
   it("parses a listening file name", () => {
     expect(parseTopikFileName("TOPIK_Listening_Cau01_03_8DeOfficial_VERSION1.docx")).toEqual({
+      kind: "block",
       section: "listening",
       start: 1,
       end: 3,
@@ -288,7 +290,8 @@ describe("buildImportDraft", () => {
 
   it("rejects a file name that does not follow the naming convention", () => {
     const draft = buildImportDraft("random.docx", doc(""));
-    expect(draft.errors).toEqual(['file name does not match "TOPIK_(Reading|Listening)_Cau<N>[_<M>]_<source>_VERSION<v>.docx"']);
+    expect(draft.errors).toHaveLength(1);
+    expect(draft.errors[0]).toContain("file name matches neither");
     expect(draft.questions).toEqual([]);
   });
 });
@@ -335,5 +338,121 @@ describe("buildImportDraft and paragraphs nothing used", () => {
     expect(draft.questions[0]!.instruction).toBe("[21~22] 다음을 듣고 물음에 답하십시오. (각 2점)\n남자의 중심 생각으로 맞는 것을 고르십시오.");
     // The points still come from the block's own line.
     expect(draft.questions[0]!.points).toBe(2);
+  });
+});
+
+// --- whole-paper files (M7.16) ------------------------------------------------------------------
+//
+// A complete exam arrives as one file of fifty questions in twenty blocks. No range can go in its
+// name, and none needs to: every question prints its own "[N~M] …" line, which is the paper's real
+// grouping rather than the stand-in the file name always was.
+
+describe("parseTopikFileName, whole-paper shape", () => {
+  it("reads the section and the source, and keeps the test number for cross-checking", () => {
+    expect(parseTopikFileName("TOPIK_II_Test35_Listening_OfficialTest.docx")).toEqual({
+      kind: "paper",
+      section: "listening",
+      source: "OfficialTest",
+      test: 35,
+    });
+  });
+
+  it("takes a reading paper the same way", () => {
+    expect(parseTopikFileName("TOPIK_II_Test64_Reading_OfficialTest.docx")).toMatchObject({ kind: "paper", section: "reading", test: 64 });
+  });
+
+  it("still rejects a name that is neither shape", () => {
+    expect(parseTopikFileName("TOPIK_II_Test35_Writing_OfficialTest.docx")).toBeNull();
+    expect(parseTopikFileName("Test35_Listening.docx")).toBeNull();
+  });
+});
+
+describe("blockRangeOf", () => {
+  it("reads a range and a single number", () => {
+    expect(blockRangeOf("[13~16] 다음을 듣고 물음에 답하십시오.")).toEqual({ start: 13, end: 16 });
+    expect(blockRangeOf("[9] 다음을 듣고 …")).toEqual({ start: 9, end: 9 });
+  });
+
+  it("accepts the wide tilde and the spacing real files use", () => {
+    expect(blockRangeOf("[21 ～ 22] …")).toEqual({ start: 21, end: 22 });
+    expect(blockRangeOf("  [1~3] …")).toEqual({ start: 1, end: 3 });
+  });
+
+  it("is null when there is no bracket to read, rather than guessing", () => {
+    expect(blockRangeOf("다음을 듣고 물음에 답하십시오.")).toBeNull();
+    expect(blockRangeOf(null)).toBeNull();
+    // Not at the start: that is a mention, not the block line.
+    expect(blockRangeOf("다음 [1~3] 을 보고")).toBeNull();
+  });
+});
+
+describe("buildImportDraft, whole paper", () => {
+  const paper = (round: string) =>
+    doc(
+      heading("Heading2", round) +
+        plain("[1~3] 다음을 듣고 알맞은 그림을 고르십시오. (각 2점)") +
+        question("1", 1) +
+        question("2", 2) +
+        question("3", 3) +
+        plain("[4~8] 다음 대화를 잘 듣고 이어질 수 있는 말을 고르십시오. (각 2점)") +
+        question("4", 4),
+    );
+
+  it("numbers by the paper and blocks by each question's own line", () => {
+    const draft = buildImportDraft("TOPIK_II_Test35_Listening_OfficialTest.docx", paper("35회"));
+    expect(draft.errors).toEqual([]);
+    expect(draft.questions.map((q) => [q.exam, q.number, q.block])).toEqual([
+      ["OfficialTest-35회", 1, "1~3"],
+      ["OfficialTest-35회", 2, "1~3"],
+      ["OfficialTest-35회", 3, "1~3"],
+      ["OfficialTest-35회", 4, "4~8"],
+    ]);
+  });
+
+  it("pairs a block line that sits between two questions with the questions it names, not the one it follows", () => {
+    // How every real whole-paper file is laid out: the "[4~8]" line comes after question 3's
+    // table, so the parser hands it to question 3. Question 3 is not in 4~8, and keeps 1~3.
+    const draft = buildImportDraft("TOPIK_II_Test35_Listening_OfficialTest.docx", paper("35회"));
+    const third = draft.questions.find((q) => q.number === 3)!;
+    const fourth = draft.questions.find((q) => q.number === 4)!;
+    expect(third.block).toBe("1~3");
+    expect(third.instruction).toContain("알맞은 그림을");
+    expect(third.instruction).not.toContain("[4~8]");
+    expect(fourth.block).toBe("4~8");
+    expect(fourth.instruction).toContain("[4~8]");
+  });
+
+  it("gives the exam the label the document's round says, which the bank already uses", () => {
+    const draft = buildImportDraft("TOPIK_II_Test35_Listening_OfficialTest.docx", paper("35회"));
+    expect(new Set(draft.questions.map((q) => q.exam))).toEqual(new Set(["OfficialTest-35회"]));
+  });
+
+  it("warns when the name and the document disagree about the round, and believes the document", () => {
+    const draft = buildImportDraft("TOPIK_II_Test36_Listening_OfficialTest.docx", paper("35회"));
+    expect(draft.warnings.some((w) => w.includes("Test36") && w.includes("35회"))).toBe(true);
+    expect(draft.questions[0]!.exam).toBe("OfficialTest-35회");
+  });
+
+  it("refuses a question with no block line rather than filing it under a made-up group", () => {
+    const xml = doc(heading("Heading2", "35회") + question("1", 1));
+    const draft = buildImportDraft("TOPIK_II_Test35_Listening_OfficialTest.docx", xml);
+    expect(draft.questions).toEqual([]);
+    expect(draft.errors[0]).toContain('no "[N~M] …" block line');
+  });
+
+  it("does not apply the reading 1-4 patch, which only exists for block files", () => {
+    const xml = doc(
+      heading("Heading2", "64회") +
+        plain("[1~4] 다음을 읽고 ( )에 들어갈 가장 알맞은 것을 고르십시오.") +
+        question("1", 1) +
+        question("3", 3),
+    );
+    const draft = buildImportDraft("TOPIK_II_Test64_Reading_OfficialTest.docx", xml);
+    // The paper says 1~4 for both, and the paper is right: the patch exists only because one
+    // *block file* covers two tasks at once.
+    expect(draft.questions.map((q) => [q.number, q.block])).toEqual([
+      [1, "1~4"],
+      [3, "1~4"],
+    ]);
   });
 });
