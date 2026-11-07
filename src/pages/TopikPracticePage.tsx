@@ -41,7 +41,9 @@ export function TopikPracticePage() {
         ) : session.data.questions.length === 0 ? (
           <NothingDue profileId={profile.id} section={section} from={from} to={to} mode={mode} />
         ) : (
-          <TopikSession key={session.dataUpdatedAt} profileId={profile.id} questions={session.data.questions} mode={mode} />
+          /* No `key` here: anything that changes it (a refetch did, through `dataUpdatedAt`) remounts
+             the session and throws away which question the learner was on. */
+          <TopikSession profileId={profile.id} questions={session.data.questions} mode={mode} />
         )}
       </section>
     </MarkedWordsProvider>

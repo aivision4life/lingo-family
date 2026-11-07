@@ -47,12 +47,23 @@ export const useTopikBlocks = (profileId: string, section: TopikSection) =>
     enabled: profileId !== "",
   });
 
+/**
+ * The questions of one practice session.
+ *
+ * Fetched **once** and never refetched while the session is on screen, the same way the review
+ * queue is: every call to `/topik/session` builds a brand-new session from whatever is due at that
+ * moment, so a refetch would swap the questions out from under the learner. Locking the phone and
+ * coming back used to do exactly that (the default `staleTime: 0` + refetch on window focus), and
+ * the progress of the session in hand was lost.
+ */
 export const useTopikSession = (profileId: string, section: TopikSection, from: number, to: number, mode: TopikSessionMode = "due") =>
   useQuery({
     queryKey: ["topik", "session", profileId, section, from, to, mode],
     queryFn: () =>
       api("GET", `/topik/session?profile_id=${profileId}&section=${section}&from=${from}&to=${to}&mode=${mode}`, topikSessionResponseSchema),
     enabled: from > 0 && to > 0,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 
 export const useSubmitTopikAttempt = () =>
