@@ -489,6 +489,14 @@ describe("a transcript wrapped by Word (M7.16)", () => {
     expect(mergeWrappedTranscript(null)).toBeNull();
   });
 
+  it("treats a mistyped speaker label as a turn rather than gluing two speakers together", () => {
+    // A real file has "남잠:" for "남자:". With a fixed list of labels that line was not a turn,
+    // so the rejoin merged two people's lines into one — worse than the problem it fixes.
+    const typo = "여자: 가고 싶었는데 못 갔어.\n남잠: 텐트같이 필요한 물건들이 있다던데?";
+    expect(wrappedTranscriptLines(typo)).toEqual([]);
+    expect(mergeWrappedTranscript(typo)).toBe(typo);
+  });
+
   it("handles a turn broken into several lines", () => {
     expect(mergeWrappedTranscript("남자 : 하나\n둘\n셋\n여자 : 넷")).toBe("남자 : 하나 둘 셋\n여자 : 넷");
   });

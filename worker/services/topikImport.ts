@@ -58,8 +58,16 @@ export function blockRangeOf(instruction: string | null): { start: number; end: 
 const blockLabel = (range: { start: number; end: number }) =>
   range.start === range.end ? String(range.start) : `${range.start}~${range.end}`;
 
-/** "남자 :", "여자2:" — how every turn of a listening transcript begins. */
-const SPEAKER_LABEL = /^\s*(남자|여자)\s*\d*\s*:/;
+/**
+ * A line that begins a speaker's turn: a short label, then a colon ("남자 :", "여자2:", "직원:").
+ *
+ * Deliberately not a list of the two labels we expect. One file has "남잠:" — a typo for "남자" —
+ * and with a fixed list that line was not a turn, so rejoining glued two speakers' turns into one.
+ * A rule that errs toward "this is a turn" only ever leaves a line where it was; a rule that errs
+ * the other way destroys the text. The colon has to come within a few characters and with no space
+ * before it, which no continuation of a sentence does.
+ */
+const SPEAKER_LABEL = /^[^\s:]{1,8}\s*:/;
 
 /**
  * Lines of a listening transcript that do not begin a speaker's turn (M7.16).
