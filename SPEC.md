@@ -933,3 +933,28 @@ Mọi `IN (...)` còn lại đều có trần rõ ràng: ≤50 album (`wordAlbum
 **Vì sao không ai thấy:** luật **không bao giờ báo lỗi**. Nó luôn tìm được một khoảng lặng và luôn trả về một con số trông hợp lý — bốn con số 43,7 / 44,1 / 50,8 / 1,07 đều "có vẻ là một mốc". Chỉ 1,07 đủ lệch để gây chú ý, và đúng chỗ đó thì nó lại **không** sai hơn ba đề kia, chỉ sai theo kiểu khác. Hai đề đã được người duyệt bằng tay vẫn mang nguyên lỗi này.
 
 **Luật rút ra:** một hàm dò tự động mà **không có trạng thái "không biết"** là một hàm không kiểm được. Nếu `pickIntroEnd` trả về `null` khi không tìm thấy khoảng lặng nào ≥2 giây (ngưỡng thật của một mốc cấu trúc, so với 0,8 giây của một chỗ ngắt câu), lỗi này sẽ lộ ở báo cáo dry-run ngay đề đầu tiên. Thà đòi `--intro` đặt tay còn hơn đoán một con số trông hợp lý. **Chưa vá** — vá bây giờ đòi cắt lại cả bốn đề, mà cắt lại là xoá mọi biên đã duyệt (xem dưới).
+
+### M7.17 — `CURRENT_TIMESTAMP` là chuỗi, và cột `timestamp()` nhận nó không một tiếng động (2026-11-08)
+
+**Việc đã làm:** hạ `verified` của hai đề bằng SQL trực tiếp trên production, kèm `updated_at = CURRENT_TIMESTAMP`:
+
+```sql
+UPDATE topik_audio SET verified = 0, updated_at = CURRENT_TIMESTAMP WHERE exam IN (...);
+```
+
+**Sai ở đâu:** `CURRENT_TIMESTAMP` của SQLite trả về **chuỗi** `"2026-11-08 04:57:12"`. Cột `topik_audio.updated_at` là drizzle `timestamp()`, tức **số epoch ms**. SQLite không có kiểu cột cứng, nên nó ghi thẳng chuỗi đó vào cột số và không báo gì.
+
+**Vì sao không lộ ra:**
+
+- SQLite nhận mọi kiểu vào mọi cột, nên không có lỗi ghi.
+- `updated_at` **không nằm trong `topikAudioSchema`**, nên zod ở biên API không bao giờ nhìn tới nó. Mọi màn hình vẫn chạy đúng.
+- Phía JS, `new Date("2026-11-08 04:57:12")` phân tích được, nên drizzle đọc ra một `Date` hợp lệ. Không có ngoại lệ nào ném ra.
+- Chỗ duy nhất nó lộ là **sắp xếp**: SQLite xếp `integer` trước `text` bất kể giá trị, nên một `ORDER BY updated_at` sẽ đặt hàng đó sai chỗ.
+
+**Nó tự khỏi, và đó là may chứ không phải thiết kế:** người dùng bấm duyệt lại đề đó qua giao diện, route tự ghi `updated_at` đúng kiểu và đè lên. Nếu không có cú bấm đó thì hàng kia nằm im với kiểu sai, chờ một lần sắp xếp nào đó trong tương lai.
+
+**Quy tắc:**
+
+- **Sửa dữ liệu qua API thay vì SQL trực tiếp khi có thể.** Route tự đặt `updated_at` đúng kiểu, và nó còn giữ các bất biến đi kèm mà SQL không biết — ví dụ `PATCH /topik/segments/:id` tự hạ `topik_audio.verified` khi biên đổi, điều mà bản SQL phải nhớ làm bằng tay.
+- Bắt buộc dùng SQL thì **`CAST(strftime('%s','now') AS INTEGER) * 1000`**, không bao giờ `CURRENT_TIMESTAMP`, cho mọi cột drizzle `timestamp()`.
+- Một cột không nằm trong schema zod của route là một cột **không có ai kiểm**. Ghi tay vào đó thì không có lưới nào đỡ.
