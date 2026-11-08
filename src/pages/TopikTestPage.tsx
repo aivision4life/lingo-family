@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router";
 import type { TopikTestResult, TopikTestRun as TopikTestRunData } from "@shared/topik";
+import type { MarkedTerm } from "@/features/topik/markedWords";
 import { LinkButton } from "@/components/LinkButton";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useTopikTest } from "@/features/topik/api";
 import { MarkedWordsProvider } from "@/features/topik/MarkedWordsProvider";
+import { readTestMarks, restoreTestMarks, writeTestMarks } from "@/features/topik/testMarks";
 import { UnsavedMarksGuard } from "@/features/topik/UnsavedMarksGuard";
 import { TopikTestResultView } from "@/features/topik/TopikTestResultView";
 import { TopikTestRun } from "@/features/topik/TopikTestRun";
@@ -23,6 +25,13 @@ export function TopikTestPage() {
   const id = useParams().id ?? "";
   const test = useTopikTest(id, profile?.id ?? "");
   const [justFinished, setJustFinished] = useState<TopikTestResult | null>(null);
+  const profileId = profile?.id ?? "";
+  // Words marked on the result screen live on the device (M7.19): the result itself comes back
+  // from the server after a reload, but the marking would be lost with nothing to show for it.
+  // Read once per page view, so this screen never reads back what it has just written.
+  const [savedMarks] = useState(() => (profileId ? readTestMarks(profileId) : null));
+  const initialMarked = useMemo(() => restoreTestMarks(savedMarks, profileId, id), [savedMarks, profileId, id]);
+  const persistMarks = useCallback((marked: MarkedTerm[]) => writeTestMarks(profileId, id, marked), [profileId, id]);
 
   if (!profile) return null;
   const level = profile.is_kid ? "kid" : "beginner";
@@ -31,7 +40,7 @@ export function TopikTestPage() {
   if (justFinished)
     return (
       <Shell title={t("topik.test.resultTitle")}>
-        <MarkedWordsProvider>
+        <MarkedWordsProvider initialMarked={initialMarked} onChange={persistMarks}>
           <TopikTestResultView result={justFinished} profileId={profile.id} level={level} />
           <UnsavedMarksGuard />
         </MarkedWordsProvider>
@@ -61,7 +70,7 @@ export function TopikTestPage() {
   }
   return (
     <Shell title={t("topik.test.resultTitle")}>
-      <MarkedWordsProvider>
+      <MarkedWordsProvider initialMarked={initialMarked} onChange={persistMarks}>
         <TopikTestResultView result={test.data as TopikTestResult} profileId={profile.id} level={level} />
         <UnsavedMarksGuard />
       </MarkedWordsProvider>

@@ -544,6 +544,7 @@
     "practice": {
       "title": "Questions {{from}}-{{to}}",
       "exit": "Exit",
+      "resumed": "Resumed the session saved on this device.",
       "nothingToday": "No questions to practice in this block.",
       "sessionDone": "Session done!",
       "progress": "Question {{current}}/{{total}}",

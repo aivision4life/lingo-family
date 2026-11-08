@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { TopikAttemptResult } from "@shared/topik";
-import { allAnswered, anyGivenUp, giveUp, markSkippedIfUnanswered, recordAnswer, statusOf, summarize, withExplanation } from "./sessionState";
+import {
+  allAnswered,
+  anyGivenUp,
+  giveUp,
+  markSkippedIfUnanswered,
+  recordAnswer,
+  statusOf,
+  summarize,
+  withExplanation,
+  type SessionStates,
+} from "./sessionState";
 
 const result = (over: Partial<TopikAttemptResult> = {}): TopikAttemptResult => ({
   is_correct: true,
@@ -129,5 +139,28 @@ describe("when a group may be read", () => {
   it("or once it has been given up on", () => {
     expect(anyGivenUp(giveUp({}, ["q22"]), ["q21", "q22"])).toBe(true);
     expect(anyGivenUp(markSkippedIfUnanswered({}, "q22"), ["q21", "q22"])).toBe(false);
+  });
+});
+
+describe("states restored from the device (M7.19)", () => {
+  // A restored session must not be able to send an attempt that was already recorded: the answers
+  // are in `topik_attempts`/`topik_cards` the moment they are given, and the saved record only
+  // redraws the screen. Both guards that make that true are here, named for the restore case.
+  const restored: SessionStates = {
+    q21: { kind: "answered", selected: 2, result: result() },
+    q22: { kind: "skipped" },
+    q23: { kind: "given_up" },
+  };
+
+  it("keeps an answered question answered, so the screen offers no option to tap", () => {
+    expect(statusOf(restored, "q21")).toBe("answered");
+  });
+
+  it("keeps a given-up question locked, transcript already read or not", () => {
+    expect(recordAnswer(restored, "q23", 1, result())).toBe(restored);
+  });
+
+  it("lets a skipped question be answered, which is the point of coming back", () => {
+    expect(statusOf(recordAnswer(restored, "q22", 1, result()), "q22")).toBe("answered");
   });
 });

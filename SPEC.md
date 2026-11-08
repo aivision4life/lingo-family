@@ -593,6 +593,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M7.5 | TOPIK: a recording's questions on one screen | Group = clip, in practice and in a sitting; transcript withheld until the group is answered, or deliberately given up | [x] |
 | M7.3 | TOPIK: paired listening questions | A question's own `HỎI:` line, an inherited transcript for the second of a pair, and no paragraph dropped in silence | [x] |
 | M6.13 | Per-profile session length | 5 / 10 / 15 / 20 questions per TOPIK practice session, beside the card-type switches | [x] |
+| M7.19 | A practice session survives being interrupted | Place, answers and marked words kept on the device; restored only onto the same block within 3 hours, and a finished session with words still waiting reopens its results screen | [x] |
 
 ---
 
@@ -616,6 +617,8 @@ Free-tier limits change, so check the providers' current pricing pages before re
 - **Việc cần vá sau (TOPIK import, 2026-10-18):** 2 file `Cau05_08` (MasterTopik, Yonsei) đánh dấu đáp án đúng bằng **chữ in đậm** chứ không gạch chân, nên cả 60 câu đều lỗi `expected exactly one underlined option, found 0`. Quy ước của parser là gạch chân (in đậm chỉ là phụ, và chính đề bài cũng hay in đậm nên không thể dùng làm dấu hiệu) → sửa ở file input, không sửa parser.
 
 - **Việc cần vá sau (TOPIK, 2026-11-04):** 20 ghi chú từ vựng chủ sở hữu tự gõ **sau phần đáp án** trong các file Word đang bị bỏ đi (M7.3 chỉ in chúng ra trong báo cáo import, không nhập). Chúng ở dạng "từ: nghĩa" ("관람료: phí, tiền vé", "는 김에: nhân tiện/ 는 사이에: giữa lúc", đôi khi kèm một câu ví dụ và bản dịch), và **đúng trọng tâm hơn** phần từ vựng AI sinh ra cho cùng câu hỏi đó, vì người gõ biết câu nào khó ở chỗ nào. Việc cần làm: nhập chúng vào `topik_questions.vocab` của chính câu hỏi đó (`surface`/`lemma`/`gloss_vi`, `pos` suy ra hoặc để "other"), **ưu tiên hơn** bản AI khi trùng `lemma`, thay vì để M6.2 sinh lại từ đầu. Hình dạng nhiều mục trên một dòng (phân cách bằng "/") và dòng không phải ghi chú (câu ví dụ, bản dịch trong ngoặc) phải phân biệt được, nên cần một bước duyệt bằng mắt trước khi ghi — cùng tinh thần "xem mẫu rồi mới chạy hết" của M6.2/M6.3. Chưa làm.
+
+- **Việc cần vá sau (thi thử, 2026-11-08):** `queue.pending` trong `TopikTestRun` — những đáp án **chưa được server xác nhận** — chỉ nằm trong bộ nhớ React. Mọi thứ khác của một lượt thi đã bền: từng đáp án ghi thẳng D1 lúc bấm, đồng hồ do server giữ (M7.13), nên tải lại trang là thi tiếp bình thường. Chỗ hở duy nhất: một đáp án mà POST đang bay lúc tab bị hệ điều hành giải phóng thì mất hẳn — `unsentAnswers` không còn gì để mang theo trong `/finish`. Hiếm, và mỗi lần chỉ mất một câu. Cách vá cùng kiểu M7.19: ghi `queue` xuống localStorage theo id lượt thi ở mỗi lần bấm, lúc mount thì gộp vào hàng đã nạp từ server và gửi lại những vị trí còn `pending`. Chưa làm.
 
 - **Việc cần vá sau (album TOPIK, 2026-11-07):** album trong app là **toàn cục cả nhà** — bảng `decks` không có cột hồ sơ, và `albumScopes` chỉ lọc theo `kind='album'` + `lang`. Hai album M7.12 ("TOPIK II Reading" / "TOPIK II Listening") vì thế dùng chung cho mọi hồ sơ: hiện chỉ một người trong nhà luyện TOPIK nên không sao. Khi có người thứ hai luyện TOPIK, hai người sẽ đổ từ vào cùng một album — lúc đó mới tính chuyện tách album theo hồ sơ, và đó là đổi mô hình album toàn cục (migration + sửa cả tính năng album), không phải việc riêng của TOPIK.
 
@@ -809,6 +812,51 @@ Hai điều đáng nhớ hơn bản vá:
 
 1. **Người dùng nhìn Word, parser nhìn XML — và XML chứa thứ Word không vẽ ra.** Mọi quy tắc đọc định dạng (gạch chân, in đậm) phải nói rõ nó tính *cái gì mang chữ*, không phải "có thẻ đó ở đâu đó bên dưới".
 2. **Luật cũ của phần đọc coi ">1 gạch chân" là LỖI CỨNG.** Quét lại toàn bộ để biết đã có câu nào bị loại oan chưa: phần đọc **0/227** bảng có hiện tượng này, nên chưa câu đọc nào từng bị loại oan — may, không phải nhờ thiết kế. Toàn bộ 10 ca đều ở phần nghe, nơi luật nhãn-làm-chuẩn (M7.1) đã che mất hậu quả. Nếu M7.9 không hạ lỗi xuống cảnh báo trước, bản vá M7.7-M7.9 cộng với lỗi đếm này sẽ loại thẳng 10 câu nghe.
+
+
+### M7.19 — Phiên luyện tập sống sót qua việc bị ngắt (2026-11-08)
+
+Cả phiên luyện TOPIK nằm trong `useState`: đang ở câu nào, đã chọn gì, nhóm nào đã lộ lời thoại,
+và **danh sách từ đã đánh dấu để thêm vào thư viện**. Mất sạch khi điện thoại giải phóng tab lúc
+chuyển sang app khác, khi phiên Cloudflare Access hết hạn làm trang tự tải lại, hoặc khi đóng nhầm
+tab.
+
+**Giá của mỗi thứ mất đi không bằng nhau, và đó là điều quyết định thiết kế.** Các câu trả lời
+thực ra *không* mất: chúng đã nằm trong `topik_attempts`/`topik_cards` ngay lúc bấm. Thứ duy nhất
+không dựng lại được từ đâu là danh sách từ đã đánh dấu — công người học vừa bỏ ra trong lúc làm
+bài. Nên bản lưu này chỉ để **vẽ lại màn hình**, không bao giờ là nguồn sự thật: đường khôi phục
+không gọi một mutation nào, và hai chốt sẵn có (`choose` chỉ nhận câu `unanswered`, `recordAnswer`
+từ chối câu `given_up`) khiến một trạng thái được khôi phục không thể sinh thêm lần ghi thứ hai.
+
+Lưu ở **localStorage**, không phải D1 — một phiên kéo dài vài phút trên một điện thoại, thêm một
+lần ghi mạng cho mỗi câu trả lời không mua được gì. `sessionProgress.ts` giữ một ô cho mỗi hồ sơ
+(`topik_session_v1_<profileId>`, nên hồ sơ này không thấy tiến độ hồ sơ kia); `testMarks.ts` giữ
+ô riêng cho màn kết quả bài thi, nơi duy nhất của một lượt thi còn thứ chỉ nằm trong bộ nhớ.
+
+Ba chi tiết đáng ghi lại, vì cả ba chỉ lộ ra khi hình dung mình đang thật sự dùng:
+
+- **Lưu cả nội dung câu, không chỉ id.** Ở `mode: "due"`, câu vừa trả lời đã bị FSRS đẩy hạn nên
+  lần fetch sau **không trả về nó nữa**. Nếu chỉ lưu id thì dải chấm co lại sau mỗi câu và bảng
+  tổng kết cuối phiên sẽ nói "7 câu" thay vì 10.
+- **Luật "còn khớp" phải cho phép câu đã trả lời biến mất.** Đây là hệ quả trực tiếp của điều
+  trên: đòi "đúng tập câu cũ" thì bản lưu bị vứt ngay sau câu trả lời đầu tiên — đúng lúc nó bắt
+  đầu có giá trị. `restoreSession` chỉ đòi mọi câu **chưa xử lý** còn trong tập server vừa phục
+  vụ; câu `answered`/`given_up` vắng mặt là bình thường. Thiếu một câu *chưa* xử lý mới có nghĩa
+  là khối đã đổi bên dưới (nhập lại, xoá) → bỏ cả bản lưu, không ghép nửa vời.
+- **Phiên đã xong mà còn từ chưa thêm thì phải mở lại được màn kết quả.** Khi ấy khối không còn
+  câu nào đến hạn, nên nhánh "Không có câu nào để luyện" sẽ chặn mất — và màn kết quả là nơi
+  **duy nhất** thêm được đống từ đó vào thư viện. Không có nhánh này thì bản lưu vô dụng đúng ở
+  tình huống cần nó nhất.
+
+Hạn 3 giờ (quay lại hôm sau là muốn phiên mới). Mọi lần đọc/ghi bọc `try/catch` — chế độ riêng tư,
+hết dung lượng, trình duyệt chặn đều chỉ làm mất tiện lợi, không làm hỏng màn hình; nếu quota từ
+chối bản đầy đủ thì ghi bản gọn giữ **nhóm đang làm + toàn bộ từ đã đánh dấu**. Và có một dòng
+"Đã tiếp tục phiên đang dở trên thiết bị này" tự tắt sau 8 giây: vào thẳng câu 4/5 mà không nói gì
+thì người dùng chỉ thấy khó hiểu.
+
+Phiên ôn **từ vựng** (`ReviewSession`) cố tình không làm gì cả: ở đó mỗi lần bấm điểm ghi D1 ngay
+và FSRS đẩy hạn thẻ, nên tải lại là hàng mới chứa đúng phần còn lại — không có gì không dựng lại
+được. Thêm bản lưu vào đó là thêm chỗ để sai mà không cứu được gì.
 
 
 ## 11. Lessons learned (sự cố production)

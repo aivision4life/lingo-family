@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import type { TopikSection } from "@shared/enums";
@@ -8,6 +9,7 @@ import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useTopikBlocks, useTopikSession } from "@/features/topik/api";
 import { formatDueFromNow } from "@/features/topik/dueIn";
 import { MarkedWordsProvider } from "@/features/topik/MarkedWordsProvider";
+import { readSession, restoreSession } from "@/features/topik/sessionProgress";
 import { UnsavedMarksGuard } from "@/features/topik/UnsavedMarksGuard";
 import { TopikSession } from "@/features/topik/TopikSession";
 
@@ -25,28 +27,77 @@ export function TopikPracticePage() {
   // "all" is only ever reached by tapping "practise anyway" on the empty screen, so it lives in
   // the URL: going back lands on the normal, scheduled session rather than silently repeating it.
   const mode: TopikSessionMode = params.get("mode") === "all" ? "all" : "due";
-  const session = useTopikSession(profile?.id ?? "", section, from, to, mode);
+  const profileId = profile?.id ?? "";
+  const session = useTopikSession(profileId, section, from, to, mode);
+  // Read once per page view, before the questions arrive: reading it again later could pick up a
+  // record this very screen has since written.
+  const [saved] = useState(() => (profileId ? readSession(profileId) : null));
+  const served = session.data?.questions;
+  /** Progress from an interrupted session on this device, if it still matches (M7.19). */
+  const restored = useMemo(
+    () => (served ? restoreSession(saved, { profileId, section, from, to, mode }, served.map((q) => q.id)) : null),
+    [saved, served, profileId, section, from, to, mode],
+  );
+
+  if (!profile) return null;
+  if (session.isPending) return <Shell from={from} to={to}>{<p className="text-muted-foreground">{t("common.loading")}</p>}</Shell>;
+  if (session.isError)
+    return (
+      <Shell from={from} to={to}>
+        <p className="text-destructive">{t("common.loadError")}</p>
+      </Shell>
+    );
+
+  // A session that was finished with words still marked keeps its record on purpose, and the block
+  // then has nothing due left to serve — so this branch has to come first, or the one screen that
+  // can still add those words to the library would be unreachable (M7.19).
+  const questions = restored?.questions ?? session.data.questions;
+  if (questions.length === 0)
+    return (
+      <Shell from={from} to={to}>
+        <NothingDue profileId={profile.id} section={section} from={from} to={to} mode={mode} />
+      </Shell>
+    );
 
   return (
-    <MarkedWordsProvider>
-      <section className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl font-bold">{t("topik.practice.title", { from, to })}</h1>
-          <ExitButton />
-        </div>
-        {!profile ? null : session.isPending ? (
-          <p className="text-muted-foreground">{t("common.loading")}</p>
-        ) : session.isError ? (
-          <p className="text-destructive">{t("common.loadError")}</p>
-        ) : session.data.questions.length === 0 ? (
-          <NothingDue profileId={profile.id} section={section} from={from} to={to} mode={mode} />
-        ) : (
-          /* No `key` here: anything that changes it (a refetch did, through `dataUpdatedAt`) remounts
-             the session and throws away which question the learner was on. */
-          <TopikSession profileId={profile.id} questions={session.data.questions} mode={mode} />
-        )}
-      </section>
+    // Mounted only now: the provider reads its initial list once, so it must not exist before the
+    // restore decision has been made.
+    <MarkedWordsProvider initialMarked={restored?.marked}>
+      <Shell from={from} to={to}>
+        {/* No `key` here: anything that changes it (a refetch did, through `dataUpdatedAt`) remounts
+            the session and throws away which question the learner was on. */}
+        <TopikSession
+          profileId={profile.id}
+          questions={questions}
+          section={section}
+          from={from}
+          to={to}
+          mode={mode}
+          restored={restored}
+        />
+        {/* Leaving with words still marked asks first — they live only on this device. */}
+        <UnsavedMarksGuard />
+      </Shell>
     </MarkedWordsProvider>
+  );
+}
+
+/** Title and exit button, shared by every branch. The unsaved-marks guard is *not* here: it needs
+ * the provider's context, so it belongs to the one branch that has one — the loading, error and
+ * nothing-due screens have nothing markable to lose. */
+function Shell({ from, to, children }: { from: number; to: number; children: React.ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <section className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-bold">{t("topik.practice.title", { from, to })}</h1>
+        <LinkButton to="/topik" variant="outline">
+          <X aria-hidden />
+          {t("topik.practice.exit")}
+        </LinkButton>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -102,17 +153,3 @@ function NothingDue({
   );
 }
 
-/** "Thoát": the confirmation when words are still marked lives in `UnsavedMarksGuard`, which the
- * sitting's result screen uses too (M7.12). */
-function ExitButton() {
-  const { t } = useTranslation();
-  return (
-    <>
-      <LinkButton to="/topik" variant="outline">
-        <X aria-hidden />
-        {t("topik.practice.exit")}
-      </LinkButton>
-      <UnsavedMarksGuard />
-    </>
-  );
-}

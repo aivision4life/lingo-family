@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
+import type { TopikSection } from "@shared/enums";
 import type { TopikPracticeQuestion, TopikRevealEntry, TopikSessionMode } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRevealTopikGroup, useSubmitTopikAttempt } from "./api";
 import { groupIndexOf, groupNumbers, groupQuestions, questionsBefore } from "./groups";
+import { useMarkedWords } from "./markedWords";
+import { clearSession, writeSession, type SavedSession } from "./sessionProgress";
 import {
   allAnswered,
   anyGivenUp,
@@ -24,6 +27,9 @@ import { TopikTranscript } from "./TopikTranscript";
 /** Outside the component so `react-hooks/purity` does not flag the `Date.now()` call itself. */
 const elapsedSince = (start: number) => Date.now() - start;
 
+/** How long "resumed where you left off" stays on screen. */
+const RESUMED_NOTICE_MS = 8000;
+
 /**
  * A practice session, one **group** of questions per screen (M7.5).
  *
@@ -36,24 +42,44 @@ const elapsedSince = (start: number) => Date.now() - start;
 export function TopikSession({
   profileId,
   questions,
+  section,
+  from,
+  to,
   mode = "due",
+  restored = null,
 }: {
   profileId: string;
   questions: TopikPracticeQuestion[];
+  /** The block this session came from — stored with the progress so a record can only ever be
+   * restored onto the screen it was made on (`restoreSession`). */
+  section: TopikSection;
+  from: number;
+  to: number;
   /** "all" = practising ahead of the schedule: answers are recorded but change no due dates. */
   mode?: TopikSessionMode;
+  /** Progress left on this device by an interrupted session, already checked against what the
+   * server just served (M7.19). The page decides; this component only resumes from it. */
+  restored?: SavedSession | null;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const [index, setIndex] = useState(0);
-  const [states, setStates] = useState<SessionStates>({});
-  /** The transcript + explanations of groups that may now be read, keyed by question id. */
+  const { marked } = useMarkedWords();
+  const groups = groupQuestions(questions);
+  // Clamped: a record is only restored onto the same question set, so this is a safety net, not
+  // an expected case.
+  const [index, setIndex] = useState(() => Math.min(restored?.index ?? 0, groups.length));
+  const [states, setStates] = useState<SessionStates>(() => restored?.states ?? {});
+  /** The transcript + explanations of groups that may now be read, keyed by question id.
+   * Deliberately not saved: it is the heaviest part of a session and `GET .../reveal` can serve
+   * it again, so a resumed session shows the clip's words only once they are asked for anew. */
   const [reveals, setReveals] = useState<Record<string, TopikRevealEntry>>({});
+  /** "Resumed where you left off" — without it, opening a block and landing on question 4 of 5
+   * with three answers already in is just confusing. */
+  const [resumed, setResumed] = useState(restored !== null);
   const startedAt = useRef(0);
   const submit = useSubmitTopikAttempt();
   const reveal = useRevealTopikGroup();
 
-  const groups = groupQuestions(questions);
   const group = groups[index];
   const done = index >= groups.length;
 
@@ -61,10 +87,46 @@ export function TopikSession({
     startedAt.current = Date.now();
   }, [index]);
 
+  // The notice goes away by itself; answering also clears it (see `choose`).
+  useEffect(() => {
+    if (!resumed) return;
+    const timer = setTimeout(() => setResumed(false), RESUMED_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [resumed]);
+
+  /**
+   * Progress, saved on the device after every change (M7.19).
+   *
+   * Runs on mount too, so a session that is interrupted before the first answer still comes back
+   * with its place. The record is dropped only once the session is over **and** no marked word is
+   * waiting: the results screen is where words are added to the library, and that list is the one
+   * thing here that cannot be rebuilt from the server.
+   */
+  useEffect(() => {
+    if (done && marked.length === 0) {
+      clearSession(profileId);
+      return;
+    }
+    writeSession({
+      v: 1,
+      profile_id: profileId,
+      section,
+      from,
+      to,
+      mode,
+      questions,
+      index,
+      states,
+      marked,
+      saved_at: Date.now(),
+    });
+  }, [done, profileId, section, from, to, mode, questions, index, states, marked]);
+
   if (done || !group) return <TopikSessionResults summary={summarize(questions.map((q) => q.id), states)} />;
 
   const ids = group.questions.map((q) => q.id);
-  const { from, to } = groupNumbers(group);
+  // The group's own question numbers — not to be confused with the block range in the props.
+  const { from: firstNumber, to: lastNumber } = groupNumbers(group);
   const answeredCount = questions.filter((q) => statusOf(states, q.id) === "answered").length;
   const readable = allAnswered(states, ids) || anyGivenUp(states, ids);
   const keepReveals = (entries: TopikRevealEntry[]) =>
@@ -86,6 +148,7 @@ export function TopikSession({
       },
       {
         onSuccess: (result) => {
+          setResumed(false);
           setStates((s) => recordAnswer(s, question.id, option, result));
           keepReveals(result.group_reveal);
           void qc.invalidateQueries({ queryKey: ["topik", "stats", question.id, profileId] });
@@ -127,14 +190,20 @@ export function TopikSession({
         </p>
       )}
 
+      {resumed && (
+        <p role="status" className="rounded-lg border bg-muted px-3 py-2 text-sm">
+          {t("topik.practice.resumed")}
+        </p>
+      )}
+
       <div className="flex flex-col gap-0.5">
         <p className="text-sm text-muted-foreground">{t("topik.practice.answeredCount", { answered: answeredCount, total: questions.length })}</p>
         {/* The exam's own numbers, not positions in this session: when something in a question
             looks wrong, that number is what finds it again in the source file. */}
         <p className="text-xs text-muted-foreground">
-          {from === to
-            ? t("topik.practice.examQuestion", { exam: group.questions[0]!.exam, number: from })
-            : t("topik.practice.examQuestions", { exam: group.questions[0]!.exam, from, to })}
+          {firstNumber === lastNumber
+            ? t("topik.practice.examQuestion", { exam: group.questions[0]!.exam, number: firstNumber })
+            : t("topik.practice.examQuestions", { exam: group.questions[0]!.exam, from: firstNumber, to: lastNumber })}
         </p>
       </div>
 

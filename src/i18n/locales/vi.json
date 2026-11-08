@@ -544,6 +544,7 @@
     "practice": {
       "title": "Câu {{from}}-{{to}}",
       "exit": "Thoát",
+      "resumed": "Đã tiếp tục phiên đang dở trên thiết bị này.",
       "nothingToday": "Không có câu nào để luyện trong khối này.",
       "sessionDone": "Đã xong buổi luyện tập!",
       "progress": "Câu {{current}}/{{total}}",
