@@ -958,3 +958,54 @@ UPDATE topik_audio SET verified = 0, updated_at = CURRENT_TIMESTAMP WHERE exam I
 - **Sửa dữ liệu qua API thay vì SQL trực tiếp khi có thể.** Route tự đặt `updated_at` đúng kiểu, và nó còn giữ các bất biến đi kèm mà SQL không biết — ví dụ `PATCH /topik/segments/:id` tự hạ `topik_audio.verified` khi biên đổi, điều mà bản SQL phải nhớ làm bằng tay.
 - Bắt buộc dùng SQL thì **`CAST(strftime('%s','now') AS INTEGER) * 1000`**, không bao giờ `CURRENT_TIMESTAMP`, cho mọi cột drizzle `timestamp()`.
 - Một cột không nằm trong schema zod của route là một cột **không có ai kiểm**. Ghi tay vào đó thì không có lưới nào đỡ.
+
+### M7.18 — Nhạc nền đè lên lời dẫn: kiểu sai thứ ba của `pickIntroEnd` (2026-11-08)
+
+Đề thứ năm (60회) đúng là cái bẫy mà mục `pickIntroEnd` ở trên cảnh báo, nhưng nó sai theo một kiểu **mới**, và con số nó đưa ra trông hợp lệ hơn cả bốn lần trước.
+
+| Đề | `pickIntroEnd` tính | Thực tế | Kiểu sai |
+|---|---|---|---|
+| 35회 | 43,7 s | 81,0 s | khoảng lặng nằm *giữa* lời dẫn |
+| 36회 | 44,1 s | 85,4 s | như trên |
+| 37회 | 50,8 s | 98,2 s | như trên |
+| 64회 | 1,07 s | 39,5 s | file mở đầu bằng im lặng |
+| **60회** | **95,7 s** | **121,87 s** | **nhạc nền lấp hết chỗ nghỉ** |
+
+95,7 s nằm gọn trong khoảng 39–98 s của bốn đề đã sửa, nên nó **không hề trông bất thường**. Thứ phát hiện ra nó là đếm khoảng lặng ở ngưỡng nhạy:
+
+```
+Khoảng lặng >= 0,2 s trong 100 giây đầu:
+  60회:  10 chỗ — chỗ đầu tiên ở 81,81 s
+  37회:  20 chỗ — rải đều từ đầu
+```
+
+**Nguyên nhân:** 60회 có **nhạc nền chạy đè lên lời dẫn**. Tiếng nói bắt đầu từ giây 10 (người dùng nghe xác nhận), nhưng nhạc lấp kín mọi chỗ ngắt câu, nên `silencedetect` không thấy một khoảng lặng nào cho tới 81,81 s — chỗ nhạc tắt. Dải 82 giây "liền mạch" **không phải vì người đọc không nghỉ**, mà vì nhạc che chỗ nghỉ. `pickIntroEnd` do đó lấy khoảng lặng ≥0,8 s đầu tiên và rơi vào *giữa phần nói*, không phải cuối lời dẫn.
+
+**Cùng gốc với sự cố 99 giây "tiếng nói" ở đuôi 64회** (mục M7.17 ở trên): `silencedetect` đo **độ to**, không phân biệt loại âm. Ở 64회 nhạc tạo ra một đoạn giả; ở 60회 nhạc làm *biến mất* các biên thật. Một nguyên nhân, hai biểu hiện trái ngược — nên đừng chỉ nhớ "nhạc sinh ra đoạn thừa".
+
+**Dấu hiệu nhận biết, đáng tin hơn mọi ngưỡng:**
+
+> **Tiếng người luôn có chỗ nghỉ.** Một dải dài quá ~50 giây mà không có một khoảng lặng nào ≥0,2 giây thì gần như chắc chắn có nhạc, và **mọi con số bộ dò đưa ra trong dải đó đều không tin được.**
+
+Đây là phép kiểm nên chạy trước khi tin bất kỳ mốc nào: nó không cần biết nội dung, không cần transcript, không cần tai, và nó bắt được cả hai biểu hiện. 37회 — đề có lời dẫn đọc liền một hơi dài nhất trong năm đề — vẫn chỉ 49,5 giây, nên ngưỡng 50 giây có chỗ dư thật.
+
+**Chỗ làm đúng lần này:** 60회 là đề duy nhất **chưa duyệt băng bao giờ**, nên mốc được truyền thẳng vào lúc cắt (`--apply --intro 2:01.870`) thay vì sửa `start_ms` sau. Không có lần hạ `verified` nào, không có lần sửa tay nào. Bốn đề trước buộc phải sửa tay chỉ vì băng đã duyệt rồi — **với một đề mới, luôn đặt `--intro` ngay lúc cắt.**
+
+### M7.18 — Chạy lại một lệnh ghi chỉ để đọc thông điệp lỗi (2026-11-08)
+
+**Việc đã làm:** lần chạy `npm run topik-audio -- --exam OfficialTest-60회 --apply --intro 2:01.870` đầu tiên ném stack trace, và dòng lỗi thật bị lọc mất vì cách bắt output sai. Thay vì **dừng lại** và tìm lỗi bằng đường khác, đã chạy lại chính lệnh ghi đó vài lần để nhìn cho ra thông điệp. **Một trong những lần đó ghi thật lên production** — lần cuối mới báo `SKIPPED: already has audio`.
+
+Tức là dữ liệu production được ghi trong một lần chạy **để chẩn đoán**, không phải một lần chạy có chủ ý. Không ai quyết định "ghi bây giờ".
+
+**Lần này không hỏng, vì hai thứ tình cờ:**
+
+- script có chốt "đề đã có băng thì bỏ qua, trừ khi `--force`", nên các lần sau không ghi thêm;
+- kiểm lại ra sạch: đúng 1 hàng `topik_audio`, 36 đoạn `idx` 1–36 liền mạch, 50 câu gán đủ, `start_ms` của đoạn 1 đúng 121 870.
+
+Lỗi ban đầu gần như chắc chắn là lỗi tạm thời ở khâu kết nối D1 (cùng loại 7403/network đã gặp trong ngày), vì cùng câu lệnh ở lần sau chạy trót lọt.
+
+**Nếu lệnh đó không idempotent thì đã nhân bản dữ liệu** — và nhiều lệnh ghi trong repo này không có chốt như vậy.
+
+**Luật:** một lệnh **GHI** mà lỗi thì **dừng lại**. Đọc cho ra lỗi bằng cách khác: xem lại output đã lưu, bắt toàn bộ stdout+stderr vào file thay vì lọc bằng `grep`, chạy phần **đọc** tương đương (`--diff`, dry-run, một `SELECT`), hoặc kiểm trạng thái hiện tại trước đã. Chỉ khi đã biết nguyên nhân mới chạy lại, và **đúng một lần**.
+
+**Không bao giờ chạy lại một lệnh ghi chỉ để nhìn thông điệp lỗi.** Lệnh ghi không phải công cụ chẩn đoán.
