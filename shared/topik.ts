@@ -299,11 +299,42 @@ export const topikAudioListSchema = z.array(topikAudioSummarySchema);
 
 const msField = z.number().int().nonnegative();
 
+/** A clip's three timestamps, in the order they must run. */
+export type SegmentBounds = { start_ms: number; speech_end_ms: number; end_ms: number };
+
+/**
+ * Why the three timestamps cannot be in this order, or null when they can (M7.17).
+ *
+ * `start_ms < speech_end_ms <= end_ms`: a clip has to contain some speech, and the real exam
+ * boundary is at or after where the talking stops. Checked on the **merged** row, not on the
+ * patch: a PATCH may carry one field alone, and a mistyped digit in it (81040 -> 810400) only
+ * contradicts the two fields that stay behind. A payload-only rule cannot see them, so this is
+ * also called in the route after reading the stored clip.
+ */
+export function segmentBoundsError(b: SegmentBounds): string | null {
+  if (b.start_ms >= b.speech_end_ms) return "start_ms must be before speech_end_ms";
+  if (b.speech_end_ms > b.end_ms) return "speech_end_ms must not be after end_ms";
+  return null;
+}
+
 /** PATCH /api/topik/segments/:id — any subset of the three timestamps. */
 export const topikSegmentUpdateSchema = z
   .object({ start_ms: msField, speech_end_ms: msField, end_ms: msField })
   .partial()
-  .refine((p) => Object.keys(p).length > 0, "nothing_to_update");
+  .refine((p) => Object.keys(p).length > 0, "nothing_to_update")
+  // Catches what the payload alone can prove wrong; the route re-checks against the stored row.
+  .refine((p) => p.start_ms === undefined || p.speech_end_ms === undefined || p.start_ms < p.speech_end_ms, {
+    message: "start_ms must be before speech_end_ms",
+    path: ["start_ms"],
+  })
+  .refine((p) => p.speech_end_ms === undefined || p.end_ms === undefined || p.speech_end_ms <= p.end_ms, {
+    message: "speech_end_ms must not be after end_ms",
+    path: ["speech_end_ms"],
+  })
+  .refine((p) => p.start_ms === undefined || p.end_ms === undefined || p.start_ms < p.end_ms, {
+    message: "start_ms must be before end_ms",
+    path: ["start_ms"],
+  });
 export type TopikSegmentUpdate = z.infer<typeof topikSegmentUpdateSchema>;
 
 /** PATCH /api/topik/questions/:id/segment — `segment_id: null` unlinks the question. */
@@ -498,6 +529,8 @@ export const TOPIK_ERRORS = {
   notRunning: "topik_test_not_running",
   /** Reading a cancelled sitting: it has no result, and must not leak the answers. */
   abandoned: "topik_test_abandoned",
+  /** A clip edit whose merged timestamps do not run start < speech_end <= end (M7.17). */
+  badBounds: "topik_segment_bad_bounds",
 } as const;
 
 // --- Mock test (M6.4) -------------------------------------------------------------------------

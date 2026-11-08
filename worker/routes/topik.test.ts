@@ -788,6 +788,34 @@ describe("listening audio", () => {
     expect(await t.env.DB.prepare("SELECT verified FROM topik_audio WHERE id = ?").bind(audioId).first()).toEqual({ verified: 0 });
   });
 
+  it("refuses a single timestamp that contradicts the two it leaves behind", async () => {
+    const audioId = await addAudio(true);
+    const segmentId = await addSegment(audioId, 1, 1000, 20000, 26000);
+
+    // The real typo: 81040 typed as 810400 while the other two fields stay as they were. A rule on
+    // the payload alone cannot see them, so only the merged row proves this wrong (M7.17).
+    const res = await t.api("PATCH", `/topik/segments/${segmentId}`, { profile_id: adult, start_ms: 810400 });
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toBe("topik_segment_bad_bounds");
+    // Nothing was written, and the approval it already had survives.
+    const row = await t.env.DB.prepare("SELECT start_ms, speech_end_ms, end_ms FROM topik_segments WHERE id = ?").bind(segmentId).first();
+    expect(row).toEqual({ start_ms: 1000, speech_end_ms: 20000, end_ms: 26000 });
+    expect(await t.env.DB.prepare("SELECT verified FROM topik_audio WHERE id = ?").bind(audioId).first()).toEqual({ verified: 1 });
+  });
+
+  it("refuses speech_end_ms after end_ms", async () => {
+    const audioId = await addAudio();
+    const segmentId = await addSegment(audioId, 1, 1000, 20000, 26000);
+    const res = await t.api("PATCH", `/topik/segments/${segmentId}`, { profile_id: adult, speech_end_ms: 26001 });
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts speech_end_ms exactly at end_ms", async () => {
+    const audioId = await addAudio();
+    const segmentId = await addSegment(audioId, 1, 1000, 20000, 26000);
+    expect((await t.api("PATCH", `/topik/segments/${segmentId}`, { profile_id: adult, speech_end_ms: 26000 })).status).toBe(200);
+  });
+
   it("keeps a listening question out of practice until its audio is approved", async () => {
     const q = await listening(1);
     const audioId = await addAudio();

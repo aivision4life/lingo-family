@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitUnderline, stripUnderline } from "./topik";
+import { segmentBoundsError, splitUnderline, stripUnderline, topikSegmentUpdateSchema } from "./topik";
 
 describe("splitUnderline", () => {
   it("returns one plain run for text with no markup", () => {
@@ -47,5 +47,42 @@ describe("stripUnderline", () => {
 
   it("leaves other bracketed text untouched", () => {
     expect(stripUnderline("다음 <보기>를 참고하시오.")).toBe("다음 <보기>를 참고하시오.");
+  });
+});
+
+describe("segmentBoundsError", () => {
+  const ok = { start_ms: 1000, speech_end_ms: 20000, end_ms: 26000 };
+
+  it("accepts timestamps that run start < speech_end < end", () => {
+    expect(segmentBoundsError(ok)).toBeNull();
+  });
+
+  it("accepts speech_end exactly at end — a clip may stop talking right on the boundary", () => {
+    expect(segmentBoundsError({ ...ok, speech_end_ms: 26000 })).toBeNull();
+  });
+
+  it("rejects a start at or after speech_end, so a clip can never be empty or negative", () => {
+    expect(segmentBoundsError({ ...ok, start_ms: 20000 })).toContain("before speech_end_ms");
+    expect(segmentBoundsError({ ...ok, start_ms: 810400 })).toContain("before speech_end_ms");
+  });
+
+  it("rejects speech_end after end", () => {
+    expect(segmentBoundsError({ ...ok, speech_end_ms: 26001 })).toContain("not be after end_ms");
+  });
+});
+
+describe("topikSegmentUpdateSchema", () => {
+  it("still refuses an empty patch", () => {
+    expect(topikSegmentUpdateSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("accepts one timestamp on its own — only the merged row can judge it", () => {
+    expect(topikSegmentUpdateSchema.safeParse({ start_ms: 810400 }).success).toBe(true);
+  });
+
+  it("rejects a pair that contradicts itself without needing the stored row", () => {
+    expect(topikSegmentUpdateSchema.safeParse({ start_ms: 20000, speech_end_ms: 1000 }).success).toBe(false);
+    expect(topikSegmentUpdateSchema.safeParse({ speech_end_ms: 30000, end_ms: 26000 }).success).toBe(false);
+    expect(topikSegmentUpdateSchema.safeParse({ start_ms: 30000, end_ms: 26000 }).success).toBe(false);
   });
 });

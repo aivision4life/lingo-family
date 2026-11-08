@@ -28,6 +28,7 @@ import {
   topikQuestionSegmentSchema,
   topikQuestionStatsSchema,
   topikQuestionUpdateSchema,
+  segmentBoundsError,
   topikSegmentUpdateSchema,
   topikSessionRequestSchema,
   topikVerifyBulkRequestSchema,
@@ -433,6 +434,14 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const denied = await requireAdult(c, profile_id);
       if (denied) return denied;
       const db = getDb(c.env);
+      // Read first: a patch may carry one timestamp alone, and only the merged row shows whether
+      // the three still run start < speech_end <= end (M7.17 — a mistyped digit used to be saved).
+      const current = await db.select().from(topik_segments).where(eq(topik_segments.id, id)).get();
+      if (!current) return c.json(err("not_found"), 404);
+      const boundsError = segmentBoundsError({ ...current, ...patch });
+      if (boundsError) {
+        return c.json({ ...err(TOPIK_ERRORS.badBounds), issues: [{ path: "", message: boundsError }] }, 400);
+      }
       const [row] = await db.update(topik_segments).set(patch).where(eq(topik_segments.id, id)).returning();
       if (!row) return c.json(err("not_found"), 404);
       // Editing a boundary invalidates the approval: the clips changed since they were checked.

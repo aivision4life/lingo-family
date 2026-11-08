@@ -898,3 +898,38 @@ Trần này bị chạm do **dữ liệu lớn lên**, không phải do code đ�
 Mọi `IN (...)` còn lại đều có trần rõ ràng: ≤50 album (`wordAlbumsSchema`), ≤30 câu một trang quản lý, ≤10 câu một phiên luyện, ≤5 từ khoá của một câu TOPIK, ≤3 cụm từ của một từ.
 
 **Hệ quả phụ cùng lúc:** hàng `topik_tests` được chèn **trước** các câu, nên mỗi lần chèn câu gãy là để lại một bài thi `running` không có câu nào — 5 hàng rác trên production, đúng 5 lần người dùng bấm nút. Giờ nếu chèn câu hỏng thì hàng bài thi bị xoá trước khi báo lỗi, và có test khẳng định không còn hàng nào 0 câu.
+
+### M7.17 — `silencedetect` coi nhạc là tiếng nói, và con số đó suýt làm lệch bản đồ 50 câu (2026-11-08)
+
+**Triệu chứng:** cắt băng nghe 64회, đoạn cuối (đoạn 36) hiện ra **99,9 giây "tiếng nói"**. Ba đề kia có đoạn 36 dài 14–15,5 giây và là lời kết thúc bài thi. Một trăm giây thì không thể là lời kết thúc, nên nó trông y như một **bài đọc dài — tức câu 49-50**. Và nếu câu 49-50 nằm ở đoạn 36 thì cả bản đồ đang lệch một đoạn: đoạn 1 là lời dẫn, câu 1 ở đoạn 2, và **toàn bộ 50 câu dính sai clip**.
+
+**Nguyên nhân:** `ffmpeg -af silencedetect=noise=-35dB` đo **mức âm lượng**, không phân biệt loại âm. 64회 kết thúc bằng 13,6 giây lời kết thúc + 81,5 giây **nhạc không lời**. Nhạc nằm trên ngưỡng −35 dB nên được tính là "có tiếng", và hai thứ cộng lại thành 99,9 giây "tiếng nói" liền mạch.
+
+**Vì sao suýt tin:** cách đọc "lệch một đoạn" **khít hoàn hảo về mặt số học** — 15 đoạn cặp sẽ nằm ở đoạn 22-36, không còn đoạn thừa nào, trong khi cách đọc đúng để lại một đoạn 99,9 giây không giải thích được. Một mô hình sai mà giải thích được nhiều dữ liệu hơn mô hình đúng là thứ khó cưỡng nhất.
+
+**Thứ đã cứu:** đối chiếu **độ dài transcript trong Word với độ dài tiếng nói từng đoạn**, lấy 37회 (bản đồ đã biết đúng) làm đối chứng. Câu 49 của 64회 có 308 ký tự; đoạn 35 nói 174,8s → 0,57 s/ký tự, khớp với 37회 (398 ký tự / 216,7s = 0,54). Đặt câu 49-50 vào đoạn 36 thì ra 0,32 s/ký tự, nhanh gần gấp đôi — vô lý. Nhưng phép đo ấy chỉ **nghiêng về**, không kết luận: tương quan `r` không phân biệt được (0,97 so với 0,92, vì mọi cách gán đều tương quan khi độ dài tăng dần theo đề) và CV của tốc độ đọc là 42–46% ở cả bốn tổ hợp. **Chốt lại là 10 giây nghe thật của người dùng.**
+
+**Luật rút ra:**
+
+- `silencedetect` trả lời "to hơn hay nhỏ hơn X dB", không trả lời "có ai đang nói hay không". Mọi suy luận về *nội dung* dựa trên đầu ra của nó đều là suy luận gián tiếp. Nhạc, tiếng vỗ tay, nhiễu nền đều thành "tiếng nói".
+- Một đoạn dài bất thường ở **đuôi** file phải được coi là "chưa biết là gì", không phải "chắc là câu cuối". Đuôi file là nơi hay có nhạc, lời cảm ơn, lời dẫn phần thi sau.
+- Khi hậu quả đoán sai là **im lặng** (lệch một đoạn thì băng nghe vẫn hoàn toàn bình thường, chỉ lộ khi đáp án không còn ăn nhập — xem ghi chú `topik_audio.verified` trong `db/schema.ts`), thì phép đo gián tiếp **không đủ**, dù có 35 điểm dữ liệu khớp. Phải có một quan sát trực tiếp, kể cả khi nó rẻ đến mức tầm thường.
+
+### M7.17 — `pickIntroEnd` ngầm giả định "file bắt đầu bằng tiếng nói" (2026-11-08)
+
+**Luật:** `pickIntroEnd` (`scripts/topikAudio/plan.ts`) lấy **khoảng lặng ≥0,8 giây đầu tiên trong 120 giây đầu** và coi điểm kết thúc của nó là chỗ hết lời dẫn mở đầu.
+
+**Nó sai ở cả bốn đề, theo hai kiểu khác nhau:**
+
+| Đề | Mốc nó chọn | Thực tế |
+|---|---|---|
+| 35회 | 43,70 s | khoảng lặng 4,15 s đó nằm *giữa* lời dẫn; hội thoại câu 1 mới bắt đầu quãng 82 s |
+| 36회 | 44,13 s | như trên, câu 1 quãng 86 s |
+| 37회 | 50,78 s | như trên, câu 1 quãng 98 s |
+| 64회 | **1,07 s** | file mở đầu bằng 1,07 giây im lặng, nên nó lấy ngay chỗ đó và không cắt được gì |
+
+**Hệ quả:** đoạn 1 của **mọi** đề mang 40–48 giây lời dẫn + hướng dẫn khối + câu ví dụ (보기) trước khi tới hội thoại câu 1. Đo được bằng tốc độ đọc: đoạn 1 có 0,76–0,92 s/ký tự, còn đoạn 2-3 cùng khối chỉ 0,20–0,31.
+
+**Vì sao không ai thấy:** luật **không bao giờ báo lỗi**. Nó luôn tìm được một khoảng lặng và luôn trả về một con số trông hợp lý — bốn con số 43,7 / 44,1 / 50,8 / 1,07 đều "có vẻ là một mốc". Chỉ 1,07 đủ lệch để gây chú ý, và đúng chỗ đó thì nó lại **không** sai hơn ba đề kia, chỉ sai theo kiểu khác. Hai đề đã được người duyệt bằng tay vẫn mang nguyên lỗi này.
+
+**Luật rút ra:** một hàm dò tự động mà **không có trạng thái "không biết"** là một hàm không kiểm được. Nếu `pickIntroEnd` trả về `null` khi không tìm thấy khoảng lặng nào ≥2 giây (ngưỡng thật của một mốc cấu trúc, so với 0,8 giây của một chỗ ngắt câu), lỗi này sẽ lộ ở báo cáo dry-run ngay đề đầu tiên. Thà đòi `--intro` đặt tay còn hơn đoán một con số trông hợp lý. **Chưa vá** — vá bây giờ đòi cắt lại cả bốn đề, mà cắt lại là xoá mọi biên đã duyệt (xem dưới).
