@@ -619,6 +619,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 - **Việc cần vá sau (TOPIK, 2026-11-04):** 20 ghi chú từ vựng chủ sở hữu tự gõ **sau phần đáp án** trong các file Word đang bị bỏ đi (M7.3 chỉ in chúng ra trong báo cáo import, không nhập). Chúng ở dạng "từ: nghĩa" ("관람료: phí, tiền vé", "는 김에: nhân tiện/ 는 사이에: giữa lúc", đôi khi kèm một câu ví dụ và bản dịch), và **đúng trọng tâm hơn** phần từ vựng AI sinh ra cho cùng câu hỏi đó, vì người gõ biết câu nào khó ở chỗ nào. Việc cần làm: nhập chúng vào `topik_questions.vocab` của chính câu hỏi đó (`surface`/`lemma`/`gloss_vi`, `pos` suy ra hoặc để "other"), **ưu tiên hơn** bản AI khi trùng `lemma`, thay vì để M6.2 sinh lại từ đầu. Hình dạng nhiều mục trên một dòng (phân cách bằng "/") và dòng không phải ghi chú (câu ví dụ, bản dịch trong ngoặc) phải phân biệt được, nên cần một bước duyệt bằng mắt trước khi ghi — cùng tinh thần "xem mẫu rồi mới chạy hết" của M6.2/M6.3. Chưa làm.
 
 - **Việc cần vá sau (thi thử, 2026-11-08):** `queue.pending` trong `TopikTestRun` — những đáp án **chưa được server xác nhận** — chỉ nằm trong bộ nhớ React. Mọi thứ khác của một lượt thi đã bền: từng đáp án ghi thẳng D1 lúc bấm, đồng hồ do server giữ (M7.13), nên tải lại trang là thi tiếp bình thường. Chỗ hở duy nhất: một đáp án mà POST đang bay lúc tab bị hệ điều hành giải phóng thì mất hẳn — `unsentAnswers` không còn gì để mang theo trong `/finish`. Hiếm, và mỗi lần chỉ mất một câu. Cách vá cùng kiểu M7.19: ghi `queue` xuống localStorage theo id lượt thi ở mỗi lần bấm, lúc mount thì gộp vào hàng đã nạp từ server và gửi lại những vị trí còn `pending`. Chưa làm.
+- **Việc cần vá sau (TOPIK import, 2026-11-08):** 37 câu **đọc** đã nhập từ trước lệch với parser hiện tại ở đúng một chỗ: dấu gạch chân bị **tách theo từ**. Bản trong D1 có `<u>가려던 참이었어요</u>`, parser bây giờ sinh `<u>가려던</u> <u>참이었어요</u>` — cùng số chữ, cùng chỗ bắt đầu và kết thúc, chỉ khác số thẻ `<u>`. **Vô hại**: nghĩa chữ không đổi, `stripUnderline` cho ra kết quả y nguyên (nên cả chốt an toàn "thêm formatting không được đổi ký tự" của `--apply --force` cũng không kêu), và trên màn hình hai bản gạch chân giống nhau. Vấn đề duy nhất là **nhiễu**: `stem_text (37)` sẽ hiện trong mọi bảng `--diff` về sau, che mất đúng loại thay đổi mà `--diff` tồn tại để nhìn ra. Cách dọn một lần: `npm run topik-import -- --apply --force --keep-verified --section reading` (`--keep-verified` giữ nguyên các câu đã duyệt — đây chính là trường hợp nó được làm ra cho; `--section reading` là bắt buộc, `--force` không có `--section` bị từ chối trước khi ghi). Cân nhắc trước khi chạy: dấu `<u>` nằm trong văn bản gửi cho AI, nên `--diff` sẽ đề nghị xoá `vocab_checked_at`/`explain_checked_at` của 37 câu đó để sinh lại — không cần thiết vì nghĩa không đổi, cứ bỏ qua câu SQL ấy. Chưa làm.
 
 - **Việc cần vá sau (album TOPIK, 2026-11-07):** album trong app là **toàn cục cả nhà** — bảng `decks` không có cột hồ sơ, và `albumScopes` chỉ lọc theo `kind='album'` + `lang`. Hai album M7.12 ("TOPIK II Reading" / "TOPIK II Listening") vì thế dùng chung cho mọi hồ sơ: hiện chỉ một người trong nhà luyện TOPIK nên không sao. Khi có người thứ hai luyện TOPIK, hai người sẽ đổ từ vào cùng một album — lúc đó mới tính chuyện tách album theo hồ sơ, và đó là đổi mô hình album toàn cục (migration + sửa cả tính năng album), không phải việc riêng của TOPIK.
 
@@ -1038,6 +1039,31 @@ Khoảng lặng >= 0,2 s trong 100 giây đầu:
 Đây là phép kiểm nên chạy trước khi tin bất kỳ mốc nào: nó không cần biết nội dung, không cần transcript, không cần tai, và nó bắt được cả hai biểu hiện. 37회 — đề có lời dẫn đọc liền một hơi dài nhất trong năm đề — vẫn chỉ 49,5 giây, nên ngưỡng 50 giây có chỗ dư thật.
 
 **Chỗ làm đúng lần này:** 60회 là đề duy nhất **chưa duyệt băng bao giờ**, nên mốc được truyền thẳng vào lúc cắt (`--apply --intro 2:01.870`) thay vì sửa `start_ms` sau. Không có lần hạ `verified` nào, không có lần sửa tay nào. Bốn đề trước buộc phải sửa tay chỉ vì băng đã duyệt rồi — **với một đề mới, luôn đặt `--intro` ngay lúc cắt.**
+
+**Ba đề thứ sáu–tám (41회, 47회, 52회, 2026-11-08) sai y hệt kiểu nhạc nền** — cùng một kiểu, cùng một ngày, nên phép kiểm trên đã thành phép kiểm thường quy chứ không còn là phát hiện riêng của 60회:
+
+| Đề | `pickIntroEnd` tính | Thực tế (đặt tay) | Lệch | Khoảng lặng ≥0,2 s trong 100 giây đầu |
+|---|---|---|---|---|
+| 41회 | 102,169 s | **142,253 s** | −40,1 s | **0 chỗ** |
+| 47회 | 102,208 s | **144,593 s** | −42,4 s | **0 chỗ** |
+| 52회 | 104,025 s | **165,882 s** | −61,9 s | **0 chỗ** |
+
+Không chỗ nào, không phải "ít chỗ": một trăm giây đầu của cả ba đề không có nổi một khoảng lặng 0,2 giây (trừ 0,25–0,30 giây ở đúng đầu file). Nhạc nền chạy liền từ giây 0 tới ~101 s, và `pickIntroEnd` lại bắt đúng chỗ **nhạc tắt** ở cả ba. Tổng kết đến nay: **8/8 đề sai, theo 4 kiểu** (lặng giữa lời dẫn ×3, im lặng đầu file ×1, nhạc nền ×4).
+
+**Mốc đúng suy được bằng tốc độ đọc, và cách này đo được sai số của chính nó.** Cách làm: lấy đoạn 2 và đoạn 3 của *chính đề đó* làm thước (biên của chúng sinh ra từ khoảng lặng trả lời ~12 giây, không phụ thuộc mốc lời dẫn), tính âm tiết Hangul / giây, rồi suy ngược độ dài đoạn 1 từ `speech_end` của nó: `start ≈ speech_end − (âm tiết câu 1 / tốc độ)`. Đếm cả 18 âm tiết của `instruction` ở **cả ba** đoạn — băng chỉ đọc lời dẫn một lần cho cả khối, nhưng đếm nhất quán thì phần lệch tự triệt tiêu, và đó là biến thể cho sai số nhỏ nhất trong ba biến thể đã thử. Kiểm hậu nghiệm trên 5 đề đã duyệt: sai **+0,6 → +2,0 giây** (trung bình +1,4, lệch chuẩn 0,6) — luôn muộn hơn mốc thật, vì mốc thật nằm ở biên khoảng lặng, có một quãng lấy đà trước tiếng nói. Trừ 1,4 giây rồi lấy **điểm kết thúc của khoảng lặng thật gần nhất** là ra mốc để nghe thử. Cả ba đề mới đều khớp ngay lần đầu (lệch 0,5 / 0,7 / 1,2 giây so với con số suy ra), và người dùng nghe xác nhận cả ba mẩu 14 giây.
+
+**Luật "trả về null thay vì đoán" chỉ bắt được 3/8 — đo rồi mới biết.** Luật đề xuất: trả `null` khi (a) không có khoảng lặng nào ≥2 giây trong 120 giây đầu, **hoặc** (b) 100 giây đầu không có khoảng lặng nào ≥0,2 giây. Chạy thử trên cả tám đề:
+
+| | 35회 | 36회 | 37회 | 41회 | 47회 | 52회 | 60회 | 64회 |
+|---|---|---|---|---|---|---|---|---|
+| Lệch của bộ dò | −37,3 | −41,2 | −47,5 | −40,1 | −42,4 | −61,9 | −26,2 | −38,4 |
+| Luật mới | nhận | nhận | nhận | **từ chối** | **từ chối** | **từ chối** | nhận | nhận |
+
+Nó bắt đúng ba đề nhạc nền và **bỏ sót năm đề còn lại**, vốn sai 26–47 giây. Lý do không phải ngưỡng chọn sai mà là **không có dấu hiệu nào để bắt**: ở năm đề đó lời dẫn là tiếng nói có chỗ nghỉ thật, và một chỗ ngắt câu *bên trong* lời dẫn không khác gì chỗ nghỉ *trước câu 1* nếu chỉ nhìn độ dài khoảng lặng. Hai điều rút ra, cho lần vá:
+- Điều kiện (b) phải **bỏ khoảng lặng bắt đầu ở giây 0** (chính là kiểu sai "im lặng đầu file"). Nếu không, 52회 không bị bắt: nó có một khoảng lặng 2,92 giây nên (a) không nổ, và (b) chỉ nổ khi ta phớt đi 0,30 giây im lặng ở đầu file.
+- Một luật chỉ bắt 3/8 vẫn để lại đúng cái nó định chữa: năm đề kia vẫn được cắt sai trong im lặng. Hoặc **đòi `--intro` vô điều kiện cho mọi đề mới** (8/8 đề thật đều cần người nghe, nên nhánh "tìm được chỗ đáng tin" chưa một lần nào đáng tin), hoặc để bộ dò **in ra mốc suy từ tốc độ đọc** ở trên — thứ đã đúng 8/8 — rồi vẫn bắt người xác nhận.
+
+**Chưa vá.** Và đừng lặp lại chỗ tôi nhầm khi bàn việc này: sửa luật dò **không** đòi cắt lại tám đề. Tám đề đã nằm trong D1 với mốc đã duyệt; `pickIntroEnd` chỉ chạy lúc cắt một đề mới, nên sửa nó chỉ ảnh hưởng tới đề thứ chín trở đi.
 
 ### M7.18 — Chạy lại một lệnh ghi chỉ để đọc thông điệp lỗi (2026-11-08)
 
