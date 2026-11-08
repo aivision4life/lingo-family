@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -28,7 +27,14 @@ import { describe, expect, it } from "vitest";
  * the right question, or that the button appears. Only a rendered screen shows that, and the
  * browser is still where that gets verified.
  */
-const read = (path: string) => readFileSync(`src/features/topik/${path}`, "utf8");
+// Vite's own raw import rather than `node:fs`: everything under src/ compiles against the DOM
+// tsconfig, which has no Node types, and this test is beside the code it reads on purpose.
+const SOURCES = import.meta.glob("./*.{ts,tsx}", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+const read = (path: string) => {
+  const text = SOURCES[`./${path}`];
+  if (text === undefined) throw new Error(`no such file beside this test: ${path}`);
+  return text;
+};
 
 describe("useMarkSource never throws (M7.22)", () => {
   it("returns the context as it is, null included", () => {
