@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { blockRangeOf, buildImportDraft, hasOptionNumber, parseTopikFileName, stripOptionNumber, wrappedTranscriptLines } from "./topikImport";
+import {
+  assignGroupKeys,
+  blockRangeOf,
+  buildImportDraft,
+  driftNotes,
+  hasOptionNumber,
+  parseTopikFileName,
+  stripOptionNumber,
+  wrappedTranscriptLines,
+} from "./topikImport";
 
 describe("parseTopikFileName", () => {
   it("parses a range file name", () => {
@@ -514,5 +523,118 @@ describe("an option typed with its own number (M7.16)", () => {
     expect(stripOptionNumber("1시간 후에 만나요.", 1)).toBe("1시간 후에 만나요.");
     expect(hasOptionNumber("1시간 후에 만나요.")).toBe(false);
     expect(hasOptionNumber("1. 그래?")).toBe(true);
+  });
+});
+
+describe("a shared source becomes a group (M7.21)", () => {
+  const draft = (over: { section?: string; exam?: string; number: number; same_segment: boolean; stem?: string | null }) =>
+    ({
+      section: (over.section ?? "reading") as "reading" | "listening",
+      exam: over.exam ?? "8DeOfficial-35회",
+      number: over.number,
+      block: "19~20",
+      instruction: null,
+      points: 2,
+      same_segment: over.same_segment,
+      group_key: null,
+      stem: { text: over.stem === undefined ? "passage" : over.stem, image_rid: null },
+      options: [],
+      correct_option: 1,
+      warning: null,
+    }) as Parameters<typeof assignGroupKeys>[0][number];
+
+  it("gives both questions of a pair the first one's key", () => {
+    const questions = [draft({ number: 19, same_segment: false }), draft({ number: 20, same_segment: true })];
+    assignGroupKeys(questions);
+    expect(questions.map((q) => q.group_key)).toEqual(["reading|8DeOfficial-35회|19", "reading|8DeOfficial-35회|19"]);
+  });
+
+  // Null, not a key of its own: `topikGroupId` already treats a question with no group as a group
+  // of one, and null is what lets a backfill tell "the file said nothing" from "the file said this".
+  it("leaves a question that shares nothing at null", () => {
+    const questions = [draft({ number: 5, same_segment: false }), draft({ number: 6, same_segment: false })];
+    assignGroupKeys(questions);
+    expect(questions.map((q) => q.group_key)).toEqual([null, null]);
+  });
+
+  it("handles a run of three", () => {
+    const questions = [
+      draft({ number: 48, same_segment: false }),
+      draft({ number: 49, same_segment: true }),
+      draft({ number: 50, same_segment: true }),
+    ];
+    assignGroupKeys(questions);
+    expect(new Set(questions.map((q) => q.group_key)).size).toBe(1);
+    expect(questions[2]!.group_key).toBe("reading|8DeOfficial-35회|48");
+  });
+
+  it("never lets a chain run across two exams", () => {
+    // A CHUNG ĐOẠN mark on the first question of an exam has nothing to attach to; it must not
+    // reach back into the previous exam's last question.
+    const questions = [draft({ number: 20, same_segment: false }), draft({ exam: "8DeOfficial-36회", number: 19, same_segment: true })];
+    assignGroupKeys(questions);
+    expect(questions.map((q) => q.group_key)).toEqual([null, null]);
+  });
+
+  it("keeps the same key when the same file is imported again", () => {
+    const once = [draft({ number: 19, same_segment: false }), draft({ number: 20, same_segment: true })];
+    const twice = [draft({ number: 19, same_segment: false }), draft({ number: 20, same_segment: true })];
+    assignGroupKeys(once);
+    assignGroupKeys(twice);
+    expect(once.map((q) => q.group_key)).toEqual(twice.map((q) => q.group_key));
+  });
+
+  it("reports a group whose two stems are not the same text, printing both", () => {
+    const questions = [draft({ number: 19, same_segment: false }), draft({ number: 20, same_segment: true, stem: "other passage" })];
+    assignGroupKeys(questions);
+    const notes = driftNotes(questions);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain("#19 and #20 share a passage but their stem text differs");
+    expect(notes[0]).toContain('"passage"');
+    expect(notes[0]).toContain('"other passage"');
+  });
+
+  it("says nothing when the second question inherited the first one's passage", () => {
+    const questions = [draft({ number: 19, same_segment: false }), draft({ number: 20, same_segment: true })];
+    assignGroupKeys(questions);
+    expect(driftNotes(questions)).toEqual([]);
+  });
+});
+
+describe("the reading pair in a real file (M7.21)", () => {
+  // The shape of TOPIK_Reading_Cau19_20_8DeOfficial_VERSION1.docx: the block line uses the
+  // **full-width** tilde a Korean IME produces, which is why the parser must accept it — spelled
+  // `~` only, the line was not recognised, and question 19 was refused as an unaccounted-for
+  // paragraph while 20 imported happily.
+  const xml = doc(
+    heading("Heading2", "35회") +
+      heading("Heading3", "19") +
+      plain("[19\uff5e20] 다음을 읽고 물음에 답하십시오. (각 2점)") +
+      answer(2) +
+      plain("HỎI:( )에 들어갈 알맞은 것을 고르십시오.") +
+      table("과일을 빨리 익히기 위해", ["또는", "또한", "그래도", "그러면"], 2) +
+      heading("Heading3", "20") +
+      answer(4) +
+      plain("CHUNG ĐOẠN") +
+      plain("HỎI:이 글의 내용과 같은 것을 고르십시오.") +
+      `<w:tbl><w:tr>${cell("")}</w:tr><w:tr>${cell("a")}${cell("b")}</w:tr><w:tr>${cell("c")}${cell("d", true)}</w:tr></w:tbl>`,
+  );
+
+  it("imports both questions, as one group, sharing one passage", () => {
+    const draft = buildImportDraft("TOPIK_Reading_Cau19_20_8DeOfficial_VERSION1.docx", xml);
+    expect(draft.errors).toEqual([]);
+    expect(draft.questions.map((q) => q.number)).toEqual([19, 20]);
+    expect(draft.questions[0]!.group_key).toBe("reading|8DeOfficial-35회|19");
+    expect(draft.questions[1]!.group_key).toBe(draft.questions[0]!.group_key);
+    expect(draft.questions[1]!.stem.text).toBe(draft.questions[0]!.stem.text);
+    expect(draft.questions[0]!.correct_option).toBe(2);
+    expect(draft.questions[1]!.correct_option).toBe(4);
+  });
+
+  it("reads each question's own HỎI line under the shared block line", () => {
+    const draft = buildImportDraft("TOPIK_Reading_Cau19_20_8DeOfficial_VERSION1.docx", xml);
+    expect(draft.questions[0]!.instruction).toContain("( )에 들어갈 알맞은 것을 고르십시오.");
+    expect(draft.questions[1]!.instruction).toContain("이 글의 내용과 같은 것을 고르십시오.");
+    expect(draft.questions[0]!.instruction).toContain("(각 2점)");
   });
 });

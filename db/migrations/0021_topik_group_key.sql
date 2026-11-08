@@ -1,0 +1,1 @@
+ALTER TABLE `topik_questions` ADD `group_key` text;

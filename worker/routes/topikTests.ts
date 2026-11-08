@@ -27,8 +27,9 @@ import { z } from "zod";
 import { topikSectionSchema } from "../../shared/enums";
 import { applyReview, emptyCardFields } from "../../shared/scheduling";
 import {
-  topikTestCreateSchema,
+  topikGroupId,
   topikTestAnswerSchema,
+  topikTestCreateSchema,
   topikTestFinishSchema,
   topikTestPauseSchema,
   topikTestRangeQuerySchema,
@@ -569,11 +570,11 @@ type Picked =
   | { questions: QuestionRow[]; range: NumberRange }
   | { error: { error: string; missing_position?: number; missing_number?: number } };
 
-/** The groups of a paper: a clip's questions, or a question on its own (M7.5/M7.14). */
+/** The groups of a paper: a clip's questions, a passage's questions, or one on its own (M7.21). */
 function groupsOf(questions: readonly QuestionRow[]): QuestionGroup[] {
   const byGroup = new Map<string, number[]>();
   for (const q of questions) {
-    const key = q.segment_id ?? q.id;
+    const key = topikGroupId(q);
     byGroup.set(key, [...(byGroup.get(key) ?? []), q.number]);
   }
   return [...byGroup.values()];
@@ -674,22 +675,28 @@ async function rangeLengthMs(db: Db, section: "reading" | "listening", kind: "or
  * What a mixed draw may take, as groups (M7.11).
  *
  * Listening groups by the clip: two questions about one recording are one unit, because the tape
- * plays once. Reading has no clip and, in this bank, no shared passage either — every question
- * carries its own text — so each one is a group of itself and the draw is per question.
+ * plays once. Reading groups by its passage once the bank has pairs in it (19-20 and friends,
+ * M7.21) — the comment here used to say reading had none, and a mixed sitting would have drawn one
+ * half of a pair and left the other behind. Both sections now ask `topikGroupId`.
  */
 async function mixedCandidates(db: Db, section: "reading" | "listening"): Promise<MixedCandidate[]> {
   const rows = await db
-    .select({ id: topik_questions.id, exam: topik_questions.exam, number: topik_questions.number, segment_id: topik_questions.segment_id })
+    .select({
+      id: topik_questions.id,
+      exam: topik_questions.exam,
+      number: topik_questions.number,
+      segment_id: topik_questions.segment_id,
+      group_key: topik_questions.group_key,
+    })
     .from(topik_questions)
     .where(and(eq(topik_questions.section, section), readyQuestions(section)))
     .orderBy(asc(topik_questions.number));
 
   const byGroup = new Map<string, MixedCandidate>();
   for (const r of rows) {
-    // A listening question with no clip never passes `readyQuestions`, so the fallback here is
-    // reading's own rule rather than a silent repair of missing data.
-    const groupId = section === "listening" ? r.segment_id : r.id;
-    if (!groupId) continue;
+    // A listening question with no clip never passes `readyQuestions`, so the group a listening
+    // row lands in is always its clip; for reading it is the passage's key, or the question alone.
+    const groupId = topikGroupId(r);
     const found = byGroup.get(groupId) ?? { group_id: groupId, exam: r.exam, numbers: [], question_ids: [] };
     found.numbers.push(r.number);
     found.question_ids.push(r.id);
@@ -793,8 +800,8 @@ function runPayload(
         points: pointsOf(q.points),
         instruction: q.instruction,
         exam: q.exam,
-        // Two questions about one clip are one screen: the tape plays once (M7.5).
-        group_id: q.segment_id ?? q.id,
+        // Questions about one clip, or one passage, are one screen (M7.5/M7.21).
+        group_id: topikGroupId(q),
         stem: { text: test.section === "listening" ? null : q.stem_text, image_key: q.stem_image_key },
         options: q.options,
         selected_option: answered.get(q.number) ?? null,

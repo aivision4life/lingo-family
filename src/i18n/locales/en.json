@@ -619,7 +619,8 @@
       "giveUp": "Give up and read the transcript",
       "giveUpHint": "The unanswered questions are locked and not scored.",
       "givenUp": "You gave this question up to read the transcript.",
-      "giveUpError": "Could not load the transcript. Try again."
+      "giveUpError": "Could not load the transcript. Try again.",
+      "passageNote": "Both questions are about the same passage. Answer them in any order; the explanations appear once both are done."
     },
     "manage": {
       "title": "Manage TOPIK questions",
@@ -832,7 +833,8 @@
       "historyRange": "Questions {{from}}-{{to}} · {{score}}/{{total}} points",
       "historyScore": "{{score}}/{{total}} points",
       "atQuestionInRange": "Question {{number}} · range {{from}}–{{to}}",
-      "atQuestionsInRange": "Questions {{first}}–{{last}} · range {{from}}–{{to}}"
+      "atQuestionsInRange": "Questions {{first}}–{{last}} · range {{from}}–{{to}}",
+      "passageNote": "Both questions are about the same passage."
     }
   }
 }

@@ -15,6 +15,7 @@ import { topikSectionSchema } from "../../shared/enums";
 import { z } from "zod";
 import { applyReview, emptyCardFields } from "../../shared/scheduling";
 import {
+  segmentBoundsError,
   TOPIK_ERRORS,
   TOPIK_IMAGE_MAX_BYTES,
   TOPIK_IMAGE_MAX_SIDE,
@@ -22,13 +23,13 @@ import {
   topikAttemptRequestSchema,
   topikAudioVerifySchema,
   topikGenerateContentResponseSchema,
+  topikGroupId,
   topikQuestionContentSchema,
   topikQuestionInputSchema,
   topikQuestionListQuerySchema,
   topikQuestionSegmentSchema,
   topikQuestionStatsSchema,
   topikQuestionUpdateSchema,
-  segmentBoundsError,
   topikSegmentUpdateSchema,
   topikSessionRequestSchema,
   topikVerifyBulkRequestSchema,
@@ -115,13 +116,21 @@ const toQuestion = (r: QuestionRow, clip: TopikClip | null = null): TopikQuestio
 /**
  * Everything that was withheld while the group was being answered, for every question in it.
  *
- * The group is the clip: `segment_id` is shared by the questions asked about one recording, so no
- * flag has to be kept in step with the data. A question with no clip is a group of one.
+ * The group is whatever the questions share, in `topikGroupId`'s order: the clip (`segment_id`,
+ * listening) or the passage (`group_key`, reading — M7.21). No flag has to be kept in step with
+ * the data, and a question that shares neither is a group of one.
+ *
+ * This read was `segment_id` only, which made a reading pair reveal one half of itself: question
+ * 19's answer came back with 19's explanation and nothing for 20, so the screen had no way to show
+ * the pair as finished. Caught by a test, not by reading the code — the expression it had looked
+ * complete on its own.
  */
 async function revealGroup(db: ReturnType<typeof getDb>, profileId: string, question: QuestionRow) {
   const siblings = question.segment_id
     ? await db.select().from(topik_questions).where(eq(topik_questions.segment_id, question.segment_id)).orderBy(asc(topik_questions.number))
-    : [question];
+    : question.group_key
+      ? await db.select().from(topik_questions).where(eq(topik_questions.group_key, question.group_key)).orderBy(asc(topik_questions.number))
+      : [question];
   return await Promise.all(
     siblings.map(async (q) => ({
       question_id: q.id,
@@ -151,8 +160,8 @@ const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): Topi
     vocab: hideTranscript ? [] : (r.vocab ?? []),
     vocab_ready: r.vocab_checked_at !== null,
     audio: clip,
-    // The clip two questions share is their group (M7.5); a question with none is its own group.
-    group_id: r.segment_id ?? r.id,
+    // One definition for every reader: clip, then the source file's group, then alone (M7.21).
+    group_id: topikGroupId(r),
   };
 };
 
@@ -560,7 +569,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const cardByQuestion = new Map(cardRows.map((r) => [r.question_id, toCardFields(r)]));
       const candidates: TopikCandidate[] = questions.map((q) => ({
         question_id: q.id,
-        group_id: q.segment_id ?? q.id,
+        group_id: topikGroupId(q),
         card: cardByQuestion.get(q.id) ?? null,
       }));
 

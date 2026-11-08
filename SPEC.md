@@ -619,6 +619,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 - **Việc cần vá sau (TOPIK, 2026-11-04):** 20 ghi chú từ vựng chủ sở hữu tự gõ **sau phần đáp án** trong các file Word đang bị bỏ đi (M7.3 chỉ in chúng ra trong báo cáo import, không nhập). Chúng ở dạng "từ: nghĩa" ("관람료: phí, tiền vé", "는 김에: nhân tiện/ 는 사이에: giữa lúc", đôi khi kèm một câu ví dụ và bản dịch), và **đúng trọng tâm hơn** phần từ vựng AI sinh ra cho cùng câu hỏi đó, vì người gõ biết câu nào khó ở chỗ nào. Việc cần làm: nhập chúng vào `topik_questions.vocab` của chính câu hỏi đó (`surface`/`lemma`/`gloss_vi`, `pos` suy ra hoặc để "other"), **ưu tiên hơn** bản AI khi trùng `lemma`, thay vì để M6.2 sinh lại từ đầu. Hình dạng nhiều mục trên một dòng (phân cách bằng "/") và dòng không phải ghi chú (câu ví dụ, bản dịch trong ngoặc) phải phân biệt được, nên cần một bước duyệt bằng mắt trước khi ghi — cùng tinh thần "xem mẫu rồi mới chạy hết" của M6.2/M6.3. Chưa làm.
 
 - **Việc cần vá sau (thi thử, 2026-11-08):** `queue.pending` trong `TopikTestRun` — những đáp án **chưa được server xác nhận** — chỉ nằm trong bộ nhớ React. Mọi thứ khác của một lượt thi đã bền: từng đáp án ghi thẳng D1 lúc bấm, đồng hồ do server giữ (M7.13), nên tải lại trang là thi tiếp bình thường. Chỗ hở duy nhất: một đáp án mà POST đang bay lúc tab bị hệ điều hành giải phóng thì mất hẳn — `unsentAnswers` không còn gì để mang theo trong `/finish`. Hiếm, và mỗi lần chỉ mất một câu. Cách vá cùng kiểu M7.19: ghi `queue` xuống localStorage theo id lượt thi ở mỗi lần bấm, lúc mount thì gộp vào hàng đã nạp từ server và gửi lại những vị trí còn `pending`. Chưa làm.
+- **Việc cần vá sau (TOPIK đoạn văn dùng chung, 2026-11-08):** một đoạn văn của cặp câu đọc (19-20, và sau này 23-24, 42-43, 48-50…) đang **lưu hai bản**, mỗi câu một bản trong `stem_text` của chính nó — 191 ký tự ×2 cho cặp đầu tiên. Lúc nhập thì `inheritStem` chép sang nên chúng giống hệt nhau; sau đó **không gì canh**: sửa một lỗi chính tả trên màn duyệt là sửa một bản, bản kia trôi đi lặng lẽ. Chốt rẻ đã làm trong M7.21: cả `topik-import` lẫn `topik-groups` so `stem_text` của các câu cùng `group_key` và **cảnh báo, in cả hai bản** — phát hiện được, nhưng không ngăn được. Và từ M7.21 nó còn **hiện ra trên màn hình**: hai câu giờ nằm chung một màn, nên đoạn văn được vẽ hai lần liên tiếp (xem ảnh trong M7.21). Hai việc, nên tách: (a) vẽ một lần cho cả cụm khi mọi câu trong cụm có `stem_text` giống nhau — nhỏ, nằm trong `TopikQuestionCard`/`TopikSession`; (b) lưu một bản, nghĩa là một bảng `topik_groups` (phương án P5 đã bàn) giữ đoạn văn, `stem_text` của câu thành null và màn hình đọc từ cụm — đổi mô hình dữ liệu, migration, sửa cả màn duyệt lẫn import. Làm (a) trước; (b) chỉ khi có lý do khác nữa. Chưa làm.
 - **Việc cần vá sau (TOPIK import, 2026-11-08):** 37 câu **đọc** đã nhập từ trước lệch với parser hiện tại ở đúng một chỗ: dấu gạch chân bị **tách theo từ**. Bản trong D1 có `<u>가려던 참이었어요</u>`, parser bây giờ sinh `<u>가려던</u> <u>참이었어요</u>` — cùng số chữ, cùng chỗ bắt đầu và kết thúc, chỉ khác số thẻ `<u>`. **Vô hại**: nghĩa chữ không đổi, `stripUnderline` cho ra kết quả y nguyên (nên cả chốt an toàn "thêm formatting không được đổi ký tự" của `--apply --force` cũng không kêu), và trên màn hình hai bản gạch chân giống nhau. Vấn đề duy nhất là **nhiễu**: `stem_text (37)` sẽ hiện trong mọi bảng `--diff` về sau, che mất đúng loại thay đổi mà `--diff` tồn tại để nhìn ra. Cách dọn một lần: `npm run topik-import -- --apply --force --keep-verified --section reading` (`--keep-verified` giữ nguyên các câu đã duyệt — đây chính là trường hợp nó được làm ra cho; `--section reading` là bắt buộc, `--force` không có `--section` bị từ chối trước khi ghi). Cân nhắc trước khi chạy: dấu `<u>` nằm trong văn bản gửi cho AI, nên `--diff` sẽ đề nghị xoá `vocab_checked_at`/`explain_checked_at` của 37 câu đó để sinh lại — không cần thiết vì nghĩa không đổi, cứ bỏ qua câu SQL ấy. Chưa làm.
 
 - **Việc cần vá sau (album TOPIK, 2026-11-07):** album trong app là **toàn cục cả nhà** — bảng `decks` không có cột hồ sơ, và `albumScopes` chỉ lọc theo `kind='album'` + `lang`. Hai album M7.12 ("TOPIK II Reading" / "TOPIK II Listening") vì thế dùng chung cho mọi hồ sơ: hiện chỉ một người trong nhà luyện TOPIK nên không sao. Khi có người thứ hai luyện TOPIK, hai người sẽ đổ từ vào cùng một album — lúc đó mới tính chuyện tách album theo hồ sơ, và đó là đổi mô hình album toàn cục (migration + sửa cả tính năng album), không phải việc riêng của TOPIK.
@@ -1125,3 +1126,51 @@ Hai chốt nữa trong cùng lần vá:
 - Ngưỡng dò khoảng lặng hạ từ 0,8 s xuống **0,2 s**. Không phải để an toàn hơn: "100 giây đầu không có khoảng lặng nào ≥0,2 s" là **dấu hiệu duy nhất** nhận ra đề bị nhạc nền (4/8 đề), và bộ suy mốc bám vào đúng danh sách này. Việc cắt không đổi — `boundarySilences` vẫn lọc ở 5 giây — và đã kiểm lại: 41회 với `--intro 142.253` ra đúng 36 đoạn, đoạn 1 y nguyên bản đã duyệt.
 
 **Thứ làm việc vá này kiểm được:** tám đề thật giờ là tám ca kiểm trong `scripts/topikAudio/plan.test.ts`, mỗi ca gồm khoảng lặng thật của mp3 đó, số âm tiết thật của câu 1–3, và mốc người đã duyệt trong D1 production. Đây chính là bài kiểm mà `pickIntroEnd` **không bao giờ có thể có**: nó sai cả tám. Đề thứ chín nào đánh đổ được bộ suy mốc thì cũng phải vào bảng đó.
+
+### M7.21 — Cặp câu đọc dùng chung đoạn văn, và hai biểu thức cho một khái niệm (2026-11-08)
+
+Phần đọc từ câu 19 có cặp câu hỏi về cùng một đoạn văn. Dữ liệu thật đầu tiên (`TOPIK_Reading_Cau19_20_8DeOfficial_VERSION1.docx`) làm lộ **hai lớp vấn đề**: một lỗi cụ thể chặn câu 19 không nhập được, và một kiểu lỗi lặp lại đứng sau nó.
+
+**Lỗi cụ thể: một ký tự.** Dòng khối trong file gõ bằng dấu ngã toàn chiều rộng `～` (U+FF5E) — thứ bàn phím tiếng Hàn cho ra. Hai biểu thức cùng đọc một khái niệm "dải `[N~M]`" nhưng viết khác nhau:
+
+| Nơi | Biểu thức | Nhận `～`? |
+|---|---|---|
+| `topikParse.ts` — *đây có phải dòng khối không* | `/^\[\s*\d+\s*(~\s*\d+)?\s*\]/` | **không** |
+| `topikImport.ts` — *dải trong dòng khối là gì* | `/^\s*\[\s*(\d+)\s*(?:[~～-]\s*(\d+))?\s*\]/` | có |
+
+Lớp nhận dạng không nhận ra dòng đó, nên nó thành "đoạn văn không thuộc phần nào của câu hỏi" — và theo luật M7.3, đó là **lỗi cứng**: câu 19 bị từ chối, câu 20 nhập bình thường. Một nửa cặp vào kho, không ai báo gì ngoài một dòng lỗi dễ đọc nhầm thành lỗi của người gõ.
+
+**Kiểu lỗi đứng sau nó: cùng một khái niệm, hai biểu thức, ở hai nơi.** Quét hết hai file parser tìm những cặp như vậy, ra **ba**:
+
+| Khái niệm | Bản A | Bản B | Khác nhau ở |
+|---|---|---|---|
+| dải `[N~M]` | `topikParse` | `topikImport` | `～` |
+| dòng mở lượt thoại | `SPEAKER_PREFIX` `/^[^:：]{1,12}[:：]/` | `SPEAKER_LABEL` `/^[^\s:]{1,8}\s*:/` | dấu hai chấm toàn chiều rộng, độ dài tên, khoảng trắng trong tên |
+| số thứ tự lựa chọn người gõ tự đánh | `topikParse` `.replace(/^\d+\)\s*/, "")` | `topikImport#stripOptionNumber` | A cắt **vô điều kiện**, mọi chữ số, chỉ `)`; B chỉ cắt `1-4` khi **khớp đúng vị trí** và chấp nhận `. ) ． ）` |
+
+Cặp thứ ba đáng sợ hơn cặp đầu: hai bản **mâu thuẫn nhau về ý định**. Chú thích của B viết rõ *"đánh số lại trong im lặng là cách một bảng đáp án lặng lẽ thôi khớp với các lựa chọn của nó"* — và A làm đúng việc đó, trước khi B kịp nhìn thấy. Cách sửa không phải gộp hai biểu thức mà là **xoá bản sai**: lớp parse để nguyên văn bản, một mình `stripOptionNumber` quyết định và báo cáo.
+
+Đo tác động trên cả 22 file trước/sau, như M7.7 đã chốt: lỗi 1 → 0 (câu 19 nhập được), cảnh báo +15 — đúng 15 câu mà bản A vẫn âm thầm cắt số và chưa bao giờ ai được biết. Cột `options` **không đổi một ô nào**: 15 câu đó số đều khớp vị trí, nên kết quả y hệt, chỉ khác là bây giờ nó được nói ra.
+
+> **Một khái niệm được nhận dạng ở hai nơi bằng hai biểu thức là một lỗi đang chờ ngày.** Chúng không bao giờ sai cùng lúc: một bên nhận, bên kia không, và chỗ gãy hiện ra cách xa nguyên nhân. Ba cặp ở đây đã tồn tại nhiều tháng và chỉ lộ khi gặp file đầu tiên gõ bằng ký tự khác.
+
+**Nhóm cho phần đọc: cột `group_key`.** Phần nghe nói "hai câu này chung một nguồn" bằng `segment_id`. Đoạn văn không có đoạn băng để trỏ tới, nên cặp 19-20 **không có cách nào nói ra** — `same_segment` (dấu `CHUNG ĐOẠN` trong file Word) được đọc ra, dùng cho script cắt băng, rồi **vứt đi**, không bao giờ vào D1. Thêm `topik_questions.group_key` (nullable, migration `0021`, một câu `ALTER TABLE` nên không dựng lại bảng và không mất trigger nào), khoá suy từ câu đầu cụm (`section|exam|number`) để nhập lại cùng file ra cùng khoá.
+
+**Và một hàm duy nhất cho `group_id`:** `topikGroupId()` (`shared/topik.ts`), thứ tự **`segment_id` → `group_key` → id của chính câu**. Định đi gộp "ba chỗ" viết `segment_id ?? id`; cách tìm ra số thật là **bắt `group_key` thành bắt buộc trong kiểu tham số** rồi để trình biên dịch gọi tên từng nơi — ra **sáu**:
+
+1. phiên luyện tập (`toPracticeQuestion`), 2. danh sách ứng viên của phiên, 3. nới dải của mini test (`groupsOf`), 4. câu hỏi của một lượt thi, 5. bốc đề trộn (`mixedCandidates`), 6. `revealGroup` — chỗ quyết định ẩn/hiện giải thích.
+
+Chỗ 5 đã mọc **biến thể thứ sáu của luật** (`section === "listening" ? segment_id : id`) kèm chú thích "phần đọc không có đoạn văn dùng chung" — đúng vào ngày nó được viết, và nó sẽ bốc một nửa cặp 19-20 vào bài thi trộn rồi bỏ nửa kia lại. Chỗ 6 thì **test bắt được, không phải mắt đọc được**: biểu thức ở đó trông hoàn chỉnh một mình, chỉ khi chạy thật mới thấy trả lời xong cả cặp mà chỉ hiện giải thích của một câu.
+
+> Gộp một biểu thức lặp lại thì **đừng tin `grep`**: bắt kiểu dữ liệu đòi trường mới là bắt buộc, rồi để trình biên dịch liệt kê. `grep "segment_id ??"` ra ba; trình biên dịch ra sáu, và cái thứ năm là cái sẽ hỏng nặng nhất.
+
+**Chốt phát hiện hai bản đoạn văn trôi khỏi nhau** (`driftNotes`): hai câu cùng `group_key` mà `stem_text` khác nhau thì cảnh báo và in cả hai bản — chạy cả trên file vừa đọc lẫn trên hàng đang có trong D1, vì chỉ bản trong D1 mới lộ được drift **xảy ra sau khi nhập**. Không chặn, chỉ nói ra; sửa tận gốc là việc riêng ở §10.
+
+**Backfill** `npm run topik-groups` (dry-run mặc định, `--apply`, `--local`): ghi **đúng một cột**, không đụng `verified`, `stem_text`, kể cả `updated_at` — điền một thứ hàng đó vốn đã mang nghĩa thì không phải là một lần sửa câu hỏi. Hàng nào không file Word nào phủ thì **báo là mồ côi và bỏ qua**, không bao giờ xoá khoá của nó. Chạy lần hai ra 0 thay đổi.
+
+**Kiểm chứng trên dữ liệu thật** (local D1 + trình duyệt, cộng test API):
+- mini test dải 1-19 → **tự nới thành 1-20**, và câu 19/20 cùng `group_id` trong lượt thi;
+- màn ôn tập hiện **câu 19 và 20 trên cùng một màn**;
+- trả lời câu 19 → **không có giải thích**; trả lời nốt câu 20 → giải thích của cả hai hiện ra.
+
+Hai thứ màn hình thật chỉ ra mà test không: câu ghi chú viết "cùng một **đoạn nghe**" nằm trên một đoạn văn đọc (sửa luôn: chọn câu chữ theo cụm đó có băng hay không), và **đoạn văn được vẽ hai lần** trên một màn — hệ quả trực tiếp của việc gộp nhóm, ghi vào §10. Không có bước mở trình duyệt thì cả hai lọt.

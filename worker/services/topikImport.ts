@@ -3,8 +3,8 @@
 // grouping (M6.1). Pure: image references stay as docx relationship ids (`rId9`, …) — resolving
 // them to R2 keys needs the zip's media bytes, done by the caller (scripts/topikImport).
 import type { TopikSection } from "../../shared/enums";
-import { DEFAULT_QUESTION_POINTS, pointsFromInstruction } from "../../shared/topik";
-import { parseTopikDocument } from "./topikParse";
+import { DEFAULT_QUESTION_POINTS, pointsFromInstruction, topikGroupKey } from "../../shared/topik";
+import { BRACKETED_RANGE, parseTopikDocument, SPEAKER_LINE } from "./topikParse";
 
 /**
  * The two shapes a source file comes in (M7.16).
@@ -49,7 +49,9 @@ export function parseTopikFileName(fileName: string): TopikFileName | null {
  * group in the practice picker and nobody would notice.
  */
 export function blockRangeOf(instruction: string | null): { start: number; end: number } | null {
-  const m = /^\s*\[\s*(\d+)\s*(?:[~～-]\s*(\d+))?\s*\]/.exec(instruction ?? "");
+  // One expression for this shape, exported by the parser — see `BRACKETED_RANGE` for the file
+  // that went unimported because this had its own, differently-spelled copy.
+  const m = BRACKETED_RANGE.exec(instruction ?? "");
   if (!m) return null;
   const start = Number(m[1]);
   return { start, end: m[2] ? Number(m[2]) : start };
@@ -67,7 +69,8 @@ const blockLabel = (range: { start: number; end: number }) =>
  * the other way destroys the text. The colon has to come within a few characters and with no space
  * before it, which no continuation of a sentence does.
  */
-const SPEAKER_LABEL = /^[^\s:]{1,8}\s*:/;
+/** One expression for "this line starts a turn", exported by the parser. */
+const SPEAKER_LABEL = SPEAKER_LINE;
 
 /**
  * Lines of a listening transcript that do not begin a speaker's turn (M7.16).
@@ -149,6 +152,12 @@ export type DraftQuestion = {
   points: number;
   /** Listening (M7.1): shares the previous question's audio clip instead of opening a new one. */
   same_segment: boolean;
+  /**
+   * `topik_questions.group_key` (M7.21): the questions that share one source — a clip, or a reading
+   * passage — all carry the same key, and a question that shares nothing carries null. Filled by
+   * `assignGroupKeys` once the whole file is parsed, because a group's size is only known then.
+   */
+  group_key: string | null;
   stem: { text: string | null; image_rid: string | null };
   options: DraftOption[];
   correct_option: number;
@@ -323,6 +332,9 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
         instruction,
         points: pointsFromInstruction(instruction) ?? DEFAULT_QUESTION_POINTS,
         same_segment: item.same_segment,
+        // Filled by `assignGroupKeys` below: a group's first question is only identifiable once
+        // the chain of CHUNG ĐOẠN marks after it has been seen.
+        group_key: null,
         stem: { text: item.stem_text, image_rid: item.stem_image_rid },
         options: options.map((o) => ({ text: o.text, image_rid: o.image_rid })),
         warning,
@@ -330,5 +342,70 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       });
     }
   }
+  assignGroupKeys(questions);
+  for (const note of driftNotes(questions)) warnings.push(note);
   return { fileName, block, questions, errors, warnings };
+}
+
+/**
+ * Gives every question of a shared-source group the same `group_key` (M7.21).
+ *
+ * `same_segment` — the file's `CHUNG ĐOẠN` mark — says "this question is about the same thing as
+ * the one before it". That made it as far as the audio script and was then thrown away, so a
+ * reading pair like 19-20 had nothing in D1 to say they belong together. A chain is broken by a
+ * question that is not marked, and by a change of exam: a mark on the first question of an exam
+ * has nothing to attach to.
+ *
+ * A group of one keeps `null` rather than a key of its own — `topikGroupId` already treats a
+ * question with no group as a group of itself, and null means "the file said nothing", which is
+ * what a backfill and a re-import both need to be able to tell apart.
+ */
+export function assignGroupKeys(questions: DraftQuestion[]): void {
+  let chain: DraftQuestion[] = [];
+  const close = () => {
+    if (chain.length > 1) {
+      const first = chain[0]!;
+      const key = topikGroupKey(first.section, first.exam, first.number);
+      for (const q of chain) q.group_key = key;
+    }
+    chain = [];
+  };
+  for (const q of questions) {
+    if (!q.same_segment || chain.length === 0 || chain[0]!.exam !== q.exam) close();
+    chain.push(q);
+  }
+  close();
+}
+
+/**
+ * Two questions of one group whose stem text is not the same thing (M7.21).
+ *
+ * One passage, one transcript: the file leaves the second question's stem cell empty and
+ * `inheritStem` copies it, so at import time they agree by construction. What this catches is the
+ * case that has no other guard — the text stored **twice** in D1, drifting apart the first time one
+ * of the two rows is corrected by hand on the review screen. Nothing compares them again except an
+ * import, so an import says so, and prints both.
+ *
+ * Deliberately a warning, not an error: the question is still perfectly answerable, and refusing
+ * to import a whole paper over a stray space would be a worse trade. The passage being stored twice
+ * at all is a separate, bigger job (SPEC §10).
+ */
+export function driftNotes(questions: readonly { exam: string; number: number; group_key: string | null; stem: { text: string | null } }[]): string[] {
+  const byKey = new Map<string, typeof questions>();
+  for (const q of questions) {
+    if (q.group_key === null) continue;
+    byKey.set(q.group_key, [...(byKey.get(q.group_key) ?? []), q]);
+  }
+  const notes: string[] = [];
+  for (const members of byKey.values()) {
+    const first = members[0]!;
+    const odd = members.find((m) => m.stem.text !== first.stem.text);
+    if (!odd) continue;
+    notes.push(
+      `${first.exam} #${first.number} and #${odd.number} share a passage but their stem text differs:\n` +
+        `    #${first.number}: ${JSON.stringify(first.stem.text)}\n` +
+        `    #${odd.number}: ${JSON.stringify(odd.stem.text)}`,
+    );
+  }
+  return notes;
 }

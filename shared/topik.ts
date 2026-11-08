@@ -9,6 +9,38 @@ export { TOPIK_ALBUM, topikWordSourceSchema, TOPIK_SOURCES_MAX, type TopikWordSo
 
 export const TOPIK_OPTION_COUNT = 4;
 
+/**
+ * Which group of questions one question belongs to — the single definition (M7.21).
+ *
+ * A group is the questions that share one source and are therefore answered together: a clip and
+ * the two questions about it (listening, from number 21), or a passage and the two questions about
+ * it (reading, 19-20 and friends). One screen, one range in a mock test, never split across two
+ * sessions.
+ *
+ * **Order: `segment_id` → `group_key` → the question's own id.** A clip is the strongest statement
+ * there is, because its timestamps were reviewed by hand; `group_key` is what the source file said
+ * (`topik_questions.group_key`); and a question that shares nothing is a group of one, which keeps
+ * every caller free of "has a group / has no group" branching.
+ *
+ * This lived as `segment_id ?? id`, written out in **five** separate places — the practice
+ * session, the session's own candidate list, the mock test's range widening, a sitting's questions,
+ * and the mixed draw. I set out to merge "three" and found five by making this parameter's
+ * `group_key` required so the compiler had to name every reader. The fifth, `mixedCandidates`, had
+ * grown a sixth variant of the rule (`section === "listening" ? segment_id : id`) with a comment
+ * stating reading had no shared passages — true when it was written, and it would have drawn one
+ * half of a 19-20 pair into a mixed sitting and left the other behind.
+ */
+export const topikGroupId = (q: { id: string; segment_id: string | null; group_key: string | null }): string =>
+  q.segment_id ?? q.group_key ?? q.id;
+
+/**
+ * The `group_key` of a group, from its own first question. Deliberately derived, not a uuid: the
+ * import is re-run on the same file routinely, and a random key would make every re-import look
+ * like a change. `section` and `exam` are both in it because `number` alone repeats across papers.
+ */
+export const topikGroupKey = (section: string, exam: string, firstNumber: number): string =>
+  `${section}|${exam}|${firstNumber}`;
+
 /** Looser than the general upload limits (SPEC F3): exam scans need to stay legible. */
 export const TOPIK_IMAGE_MAX_SIDE = 1600;
 export const TOPIK_IMAGE_MAX_BYTES = 1_000_000;

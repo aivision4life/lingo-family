@@ -1070,6 +1070,74 @@ describe("a pair of questions sharing one clip", () => {
     expect(res.group_reveal.map((r) => r.explanation_vi)).toEqual(["giải thích câu 21", "giải thích câu 22"]);
   });
 
+  // M7.21: a reading passage with two questions about it. There is no clip to point at, so the
+  // group comes from `topik_questions.group_key`, which the import fills from the file's CHUNG
+  // ĐOẠN mark. Everything below here is the same contract as the listening pair above — that is
+  // the point of the shared `topikGroupId`, and these tests exist to prove the two really are one
+  // mechanism and not two that happen to agree today.
+  describe("a pair of reading questions sharing one passage", () => {
+    const PASSAGE = "과일을 빨리 익히기 위해 화학 물질이 사용되기도 한다.";
+    const GROUP_KEY = "reading|Read-35회|19";
+
+    const readingPair = async () => {
+      const q19 = await createQuestion({ section: "reading", exam: "Read-35회", number: 19, block: "19~20", stem: { text: PASSAGE, image_key: null } });
+      const q20 = await createQuestion({ section: "reading", exam: "Read-35회", number: 20, block: "19~20", stem: { text: PASSAGE, image_key: null } });
+      const now = Date.now();
+      for (const [number, q] of [[19, q19], [20, q20]] as const) {
+        // `group_key` is set by the importer, never by the question API — a hand-made question has
+        // no file to say what it shares, so this is the one honest way to seed it.
+        await t.env.DB.prepare("UPDATE topik_questions SET group_key = ?, explanation_vi = ?, explain_checked_at = ? WHERE id = ?")
+          .bind(GROUP_KEY, `giải thích câu ${number}`, now, q.id)
+          .run();
+      }
+      return { q19, q20 };
+    };
+
+    it("gives both questions the same group, from group_key", async () => {
+      const { q19, q20 } = await readingPair();
+      const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=19&to=20`)).body as {
+        questions: { id: string; group_id: string }[];
+      }).questions;
+      expect(questions.map((q) => q.group_id)).toEqual([GROUP_KEY, GROUP_KEY]);
+      expect(questions.map((q) => q.id)).toEqual([q19.id, q20.id]);
+    });
+
+    // The leak this closes: question 20 asks which statement matches the passage, and question
+    // 19's explanation talks about what the passage says.
+    it("withholds the explanation while the other question of the passage is unanswered", async () => {
+      const { q19 } = await readingPair();
+      const res = await answer(q19.id, 1, true);
+      expect(res.explanation_vi).toBeNull();
+      expect(res.group_reveal).toEqual([]);
+      // The verdict itself still comes back: knowing 19 is wrong says nothing about 20.
+      expect(res).toMatchObject({ is_correct: false, correct_option: 3 });
+      expect(JSON.stringify(res)).not.toContain("giải thích");
+    });
+
+    it("reveals both explanations once the second question is answered", async () => {
+      const { q19, q20 } = await readingPair();
+      await answer(q19.id, 1, true);
+      const res = await answer(q20.id, 3, false);
+      expect(res.group_reveal.map((r) => r.number)).toEqual([19, 20]);
+      expect(res.group_reveal.map((r) => r.explanation_vi)).toEqual(["giải thích câu 19", "giải thích câu 20"]);
+    });
+
+    it("is one block, so the practice link always covers the whole pair", async () => {
+      // A session is asked for by *block*, and `GET /blocks` reads the stored `block` column — both
+      // questions of the pair say "19~20", so the range the screen asks for can never be half of
+      // the pair. (The session window itself only ever contains what the range selected: this is
+      // the rule that makes the range right, and it is why the block is stored rather than derived.)
+      await readingPair();
+      const blocks = (await t.api("GET", `/topik/blocks?profile_id=${adult}&section=reading`)).body as {
+        block: string;
+        from: number;
+        to: number;
+        count: number;
+      }[];
+      expect(blocks).toEqual(expect.arrayContaining([expect.objectContaining({ block: "19~20", from: 19, to: 20, count: 2 })]));
+    });
+  });
+
   it("reveals a lone question's own group of one", async () => {
     const q = await createQuestion({ section: "reading", number: 5, block: "5~8" });
     const res = await answer(q.id, 3, false);

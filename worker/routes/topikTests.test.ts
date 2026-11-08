@@ -836,6 +836,63 @@ describe("sitting a range of questions", () => {
     expect((await preview(21, 22)).body).toMatchObject({ from: 21, to: 22, expanded: false, added: [] });
   });
 
+  // M7.21: reading has no clip to share, so a passage's pair says so with `group_key`. Same
+  // `expandToGroups`, same promise — which is the whole point of there being one group rule.
+  describe("a reading paper whose 19-20 share a passage", () => {
+    /** Questions 1..20 of a reading paper, with 19 and 20 marked as one passage. */
+    async function readingPaper() {
+      for (let n = 1; n <= 20; n++) {
+        await t.api("POST", "/topik/questions", {
+          ...input({ section: "reading", exam: "Read-35회", number: n, block: n >= 19 ? "19~20" : String(n) }),
+          profile_id: adult,
+        });
+      }
+      // What the importer writes from the file's CHUNG ĐOẠN mark; the question API has no field
+      // for it, because a hand-made question has no file to say what it shares.
+      await t.env.DB.prepare("UPDATE topik_questions SET group_key = ? WHERE exam = 'Read-35회' AND number IN (19, 20)")
+        .bind("reading|Read-35회|19")
+        .run();
+    }
+
+    const readingPreview = async (from: number, to: number) => {
+      const qs = new URLSearchParams({ profile_id: adult, section: "reading", exam: "Read-35회", from: String(from), to: String(to) });
+      return (await t.api("GET", `/topik/tests/range?${qs}`)).body as RangePreview;
+    };
+
+    it("widens 1-19 to 1-20 instead of cutting the passage in half", async () => {
+      await readingPaper();
+      expect(await readingPreview(1, 19)).toMatchObject({ from: 1, to: 20, expanded: true, added: [20], question_count: 20, missing_number: null });
+    });
+
+    it("widens 20-20 backwards to 19-20", async () => {
+      await readingPaper();
+      expect(await readingPreview(20, 20)).toMatchObject({ from: 19, to: 20, expanded: true, added: [19] });
+    });
+
+    it("leaves 1-18 alone — nothing there shares anything", async () => {
+      await readingPaper();
+      expect(await readingPreview(1, 18)).toMatchObject({ from: 1, to: 18, expanded: false, added: [] });
+    });
+
+    it("creates the widened sitting, both questions of the passage in it", async () => {
+      await readingPaper();
+      const run = (await t.api("POST", "/topik/tests", {
+        profile_id: adult,
+        section: "reading",
+        exam: "Read-35회",
+        from: 1,
+        to: 19,
+      })).body as { from_number: number; to_number: number; questions: { number: number; group_id: string }[] };
+      expect(run).toMatchObject({ from_number: 1, to_number: 20 });
+      expect(run.questions.map((q) => q.number)).toEqual([...Array(20)].map((_, i) => i + 1));
+      // And on the sitting screen they are one group, so they are drawn on one page with the
+      // passage above them exactly once.
+      const pair = run.questions.filter((q) => q.number >= 19);
+      expect(pair[0]!.group_id).toBe(pair[1]!.group_id);
+      expect(run.questions.filter((q) => q.number === 18)[0]!.group_id).not.toBe(pair[0]!.group_id);
+    });
+  });
+
   it("names the missing question and refuses the sitting", async () => {
     for (const n of [1, 2, 4]) await question(n);
     expect((await preview(1, 4)).body).toMatchObject({ missing_number: 3, length_ms: 0 });

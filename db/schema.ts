@@ -457,6 +457,22 @@ export const topik_questions = sqliteTable(
      * its review history — when a segment is deleted or re-cut.
      */
     segment_id: text("segment_id").references((): AnySQLiteColumn => topik_segments.id, { onDelete: "set null" }),
+    /**
+     * Questions that share one source and must be answered together (M7.21).
+     *
+     * Listening says this with `segment_id` — one clip, two questions — but a reading passage has
+     * no clip to point at, so a pair like 19-20 had no way to say it at all: `same_segment` (the
+     * Word file's CHUNG ĐOẠN mark) was read at import and then thrown away. This is where it is
+     * kept: every question of one group carries the same key, a question that shares nothing
+     * carries null. The key is derived from the group's own first question
+     * (`section|exam|number`), so re-importing the same file produces the same key.
+     *
+     * The group a screen, a session and a mock-test range all work from is `topikGroupId()`
+     * (shared/topik.ts), whose order is **`segment_id` → `group_key` → the question's own id**:
+     * one concept, one function, three readers. Set for listening too, although `segment_id` wins
+     * there — a listening paper whose audio has not been cut yet still groups correctly.
+     */
+    group_key: text("group_key"),
     created_by_profile: text("created_by_profile").references(() => profiles.id, { onDelete: "set null" }),
     created_at: createdAt(),
     updated_at: timestamp("updated_at")

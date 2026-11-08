@@ -183,7 +183,9 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
           {from === to ? t("topik.test.itemNumber", { number: from }) : t("topik.test.groupQuestions", { from, to })}
         </p>
       )}
-      {group.questions.length > 1 && <p className="text-sm text-muted-foreground">{t("topik.test.pairNote")}</p>}
+      {group.questions.length > 1 && (
+        <p className="text-sm text-muted-foreground">{t(group.questions[0]?.clip ? "topik.test.pairNote" : "topik.test.passageNote")}</p>
+      )}
 
       {group.questions.map((q) => (
         <TopikTestQuestionCard

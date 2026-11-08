@@ -59,7 +59,7 @@ import { getPlatformProxy } from "wrangler";
 import type { TopikSection } from "../../shared/enums";
 import { stripUnderline, type TopikOptions } from "../../shared/topik";
 import { imageInfo } from "../../worker/lib/imageInfo";
-import { buildImportDraft, parseTopikFileName, type DraftQuestion } from "../../worker/services/topikImport";
+import { buildImportDraft, driftNotes, parseTopikFileName, type DraftQuestion } from "../../worker/services/topikImport";
 import {
   changedLines,
   checkImageBytes,
@@ -181,13 +181,15 @@ type ExistingRow = {
   options: string;
   correct_option: number;
   warning: string | null;
+  /** M7.21: which questions share one source. Null on every row until the backfill has run. */
+  group_key: string | null;
   /** Whether the AI columns have ever been filled — what decides if an overwrite leaves them stale. */
   vocab_done: number;
   explain_done: number;
 };
 
 const EXISTING_COLUMNS =
-  "id, verified, block, instruction, stem_text, stem_image_key, options, correct_option, warning, " +
+  "id, verified, block, instruction, stem_text, stem_image_key, options, correct_option, warning, group_key, " +
   "(vocab_checked_at IS NOT NULL) AS vocab_done, (explain_checked_at IS NOT NULL) AS explain_done";
 /** One draft question paired with the row it matches (null = it will be inserted). */
 type ImportRow = { f: ParsedFile; q: DraftQuestion; existing: ExistingRow | null };
@@ -253,6 +255,7 @@ async function snapshotOf(keys: KeyResolver, q: DraftQuestion, mediaByRid: Media
     options: JSON.stringify(await resolveOptions(keys, q, mediaByRid)),
     correct_option: q.correct_option,
     warning: q.warning,
+    group_key: q.group_key,
   };
 }
 
@@ -264,6 +267,7 @@ const existingSnapshot = (row: ExistingRow): QuestionSnapshot => ({
   options: row.options,
   correct_option: row.correct_option,
   warning: row.warning,
+  group_key: row.group_key,
 });
 
 const tick = (on: boolean) => (on ? "có" : "chưa");
@@ -446,6 +450,20 @@ async function main() {
       }
     }
 
+    // One passage stored twice, drifting apart (M7.21). The same check runs on the parsed file (as
+    // a warning per question), but only the bank's own rows can show a drift that happened *after*
+    // the import — a hand edit on the review screen touches one row of a pair, and nothing else in
+    // the app ever compares the two again. Prints both texts; never blocks the run.
+    const stored = rows
+      .filter((r) => r.existing !== null)
+      .map((r) => ({ exam: r.q.exam, number: r.q.number, group_key: r.existing!.group_key, stem: { text: r.existing!.stem_text } }));
+    const drifted = driftNotes(stored);
+    console.log(`\n=== Hai bản của một đoạn văn đã trôi khỏi nhau (${drifted.length}) ===`);
+    if (drifted.length === 0) {
+      console.log("  (không có — mọi cụm dùng chung nguồn trong cơ sở dữ liệu vẫn khớp từng ký tự)");
+    }
+    for (const note of drifted) console.log(`  ${note}`);
+
     // --diff stops here: it has everything it needs, and it is the one mode that must be provably
     // incapable of writing — no scope guard to pass, no backup, no UPDATE below it.
     if (diffOnly) {
@@ -565,23 +583,50 @@ async function main() {
             options: optionsJson,
             correct_option: q.correct_option,
             warning: q.warning,
+            group_key: q.group_key,
           }),
         });
         const verified = verifiedAfterOverwrite(existing.verified === 1, keepVerified);
         await db
           .prepare(
-            `UPDATE topik_questions SET block=?1, instruction=?2, stem_text=?3, stem_image_key=?4, options=?5, correct_option=?6, warning=?7, verified=?8, updated_at=?9 WHERE id=?10`,
+            `UPDATE topik_questions SET block=?1, instruction=?2, stem_text=?3, stem_image_key=?4, options=?5, correct_option=?6, warning=?7, verified=?8, group_key=?9, updated_at=?10 WHERE id=?11`,
           )
-          .bind(q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, verified ? 1 : 0, Date.now(), existing.id)
+          .bind(
+            q.block,
+            q.instruction,
+            q.stem.text,
+            stemImageKey,
+            optionsJson,
+            q.correct_option,
+            q.warning,
+            verified ? 1 : 0,
+            q.group_key,
+            Date.now(),
+            existing.id,
+          )
           .run();
         overwritten++;
       } else {
         await db
           .prepare(
-            `INSERT INTO topik_questions (id, section, exam, number, block, instruction, stem_text, stem_image_key, options, correct_option, warning, verified, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12, ?12)`,
+            `INSERT INTO topik_questions (id, section, exam, number, block, instruction, stem_text, stem_image_key, options, correct_option, warning, group_key, verified, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, ?13, ?13)`,
           )
-          .bind(crypto.randomUUID(), q.section, q.exam, q.number, q.block, q.instruction, q.stem.text, stemImageKey, optionsJson, q.correct_option, q.warning, Date.now())
+          .bind(
+            crypto.randomUUID(),
+            q.section,
+            q.exam,
+            q.number,
+            q.block,
+            q.instruction,
+            q.stem.text,
+            stemImageKey,
+            optionsJson,
+            q.correct_option,
+            q.warning,
+            q.group_key,
+            Date.now(),
+          )
           .run();
         inserted++;
       }

@@ -25,6 +25,7 @@
     "topik-import": "node benchmarks/run.mjs scripts/topikImport/run.ts",
     "topik-audio": "node benchmarks/run.mjs scripts/topikAudio/run.ts",
     "topik-speech-end": "node benchmarks/run.mjs scripts/topikSpeechEnd/run.ts",
+    "topik-groups": "node benchmarks/run.mjs scripts/topikGroups/run.ts",
     "topik-words": "node benchmarks/run.mjs scripts/topikWords/run.ts",
     "topik-explain": "node benchmarks/run.mjs scripts/topikExplain/run.ts"
   },

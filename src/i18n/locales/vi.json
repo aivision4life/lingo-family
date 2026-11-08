@@ -619,7 +619,8 @@
       "giveUp": "Bỏ qua và xem lời thoại",
       "giveUpHint": "Các câu chưa trả lời sẽ bị khoá, không tính điểm.",
       "givenUp": "Bạn đã bỏ qua câu này để xem lời thoại.",
-      "giveUpError": "Không lấy được lời thoại. Thử lại."
+      "giveUpError": "Không lấy được lời thoại. Thử lại.",
+      "passageNote": "Hai câu này hỏi về cùng một đoạn văn. Trả lời câu nào trước cũng được; giải thích chỉ hiện khi xong cả hai."
     },
     "manage": {
       "title": "Quản lý câu hỏi TOPIK",
@@ -832,7 +833,8 @@
       "historyRange": "Câu {{from}}-{{to}} · {{score}}/{{total}} điểm",
       "historyScore": "{{score}}/{{total}} điểm",
       "atQuestionInRange": "Câu {{number}} · khoảng {{from}}–{{to}}",
-      "atQuestionsInRange": "Câu {{first}}–{{last}} · khoảng {{from}}–{{to}}"
+      "atQuestionsInRange": "Câu {{first}}–{{last}} · khoảng {{from}}–{{to}}",
+      "passageNote": "Hai câu này hỏi về cùng một đoạn văn."
     }
   }
 }

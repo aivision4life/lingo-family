@@ -45,6 +45,7 @@ const question = (over: Partial<DraftQuestion> = {}): DraftQuestion => ({
   points: 2,
   instruction: null,
   same_segment: false,
+  group_key: null,
   stem: { text: "stem", image_rid: null },
   options: [
     { text: "a", image_rid: null },
@@ -308,6 +309,7 @@ const snap = (over: Partial<QuestionSnapshot> = {}): QuestionSnapshot => ({
   options: '[{"text":"1","image_key":null}]',
   correct_option: 2,
   warning: null,
+  group_key: null,
   ...over,
 });
 
@@ -345,7 +347,18 @@ describe("diffColumns", () => {
   it("does not compare anything the UPDATE does not write", () => {
     // `verified`, the AI columns and the timestamps are reported separately or left alone; the
     // table must not claim an overwrite "changes" something it never names.
-    expect(Object.keys(snap())).toEqual(["block", "instruction", "stem_text", "stem_image_key", "options", "correct_option", "warning"]);
+    // `group_key` joined the list in M7.21, and the UPDATE names it too — this test is the thing
+    // that would have caught adding one without the other.
+    expect(Object.keys(snap())).toEqual([
+      "block",
+      "instruction",
+      "stem_text",
+      "stem_image_key",
+      "options",
+      "correct_option",
+      "warning",
+      "group_key",
+    ]);
   });
 });
 

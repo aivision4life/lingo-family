@@ -230,11 +230,22 @@ const OWN_INSTRUCTION = /^(hỏi|hoi)\s*:\s*(.+)$/is;
  * question's instruction rather than silently dropped, which is what happened until M7.3 — the
  * reading import only hid it by overriding the instruction per question number.
  */
-const BLOCK_INSTRUCTION = /^\[\s*\d+\s*(~\s*\d+)?\s*\]/;
+export const RANGE_DASH = "[~\uff5e\u301c\u2013\u2014-]";
+/**
+ * A bracketed range at the start of a line: "[19~20] 다음을 읽고…", or "[9] …" for one question.
+ *
+ * **One expression, two readers.** `topikImport.ts#blockFromInstruction` reads the numbers out of
+ * this same regex; it used to have its own copy that accepted `～` while this one did not, so a
+ * real file typed with the full-width tilde had its block line go unrecognised here — and an
+ * unrecognised paragraph is a hard error, so question 19 of Cau19_20 was simply not imported
+ * (M7.21). Any reader of this shape imports it from here.
+ */
+export const BRACKETED_RANGE = new RegExp(`^\\s*\\[\\s*(\\d+)\\s*(?:${RANGE_DASH}\\s*(\\d+))?\\s*\\]`);
+const BLOCK_INSTRUCTION = BRACKETED_RANGE;
 /** A real exam round anywhere in a heading: "35회", "(35회)", "연습1 (35회)". */
 const ROUND_IN_TEXT = /(\d+회)/;
 /** "유형1: 문항 1~2" / "문항 9" — the block is always the trailing number(s). */
-const HEADING1_BLOCK = /(\d+)\s*(?:~\s*(\d+))?\s*$/;
+const HEADING1_BLOCK = new RegExp(`(\\d+)\\s*(?:${RANGE_DASH}\\s*(\\d+))?\\s*$`);
 
 /**
  * All text in a table cell, one line per direct `<w:p>` paragraph (joined with "\n"): a cell can
@@ -320,8 +331,13 @@ function parseTable(tbl: OrderedNode): { stem_text: string; stem_image_rid: stri
     .flatMap(cellsOf)
     .filter((cell) => cellText(cell).trim() !== "" || embedIdOf(cell) !== null);
   const options: ParsedOption[] = optionCells.slice(0, TOPIK_OPTION_COUNT).map((cell) => ({
-    // Cell text is "1) 일어나는데" etc.; drop the leading "N) " marker, it is not part of the option.
-    text: cellText(cell).replace(/^\d+\)\s*/, ""),
+    // The option's own number ("1) 일어나는데") is left exactly as typed. Stripping it here was the
+    // second copy of that rule, and the weaker one: it took any digits with a ")" and stripped them
+    // unconditionally, while `topikImport.ts#stripOptionNumber` — which this text goes through next
+    // — strips "N." / "N)" / full-width forms only when N matches the option's own position, and
+    // reports every case. Silently renumbering an option is how an answer key stops matching its
+    // options, which is exactly what that function's own comment says must never happen (M7.21).
+    text: cellText(cell),
     marked: hasUnderline(cell),
     image_rid: embedIdOf(cell),
   }));
@@ -379,10 +395,19 @@ function parseListShape(paras: OrderedNode[]): {
  * and every one would have been written into that question's warning field for good.
  */
 const POLITE_IMPERATIVE = /(고르|답하|쓰|완성하|서술하|작성하)십시오[.。]?$/;
-const SPEAKER_PREFIX = /^[^:：]{1,12}[:：]/;
+/**
+ * A line that starts a speaker's turn: "남자: …", "여자 1： …".
+ *
+ * **One expression, two readers** (same lesson as `BRACKETED_RANGE`): this file uses it to keep a
+ * dialogue line out of the "looks like an instruction" warning, and
+ * `topikImport.ts#wrappedTranscriptLines` uses it to find line breaks typed inside a turn. Those
+ * were two different regexes — one accepted the full-width colon and names with spaces, the other
+ * did not — so the same transcript could be a dialogue to one reader and not to the other.
+ */
+export const SPEAKER_LINE = /^[^\s:：][^:：]{0,11}[:：]/;
 
 export function commandLikeStemLines(lines: readonly string[]): string[] {
-  return lines.map((l) => l.trim()).filter((l) => POLITE_IMPERATIVE.test(l) && !SPEAKER_PREFIX.test(l));
+  return lines.map((l) => l.trim()).filter((l) => POLITE_IMPERATIVE.test(l) && !SPEAKER_LINE.test(l));
 }
 
 /** Parses one question item starting right after its Heading3 label, consuming until the next heading. */
