@@ -7,6 +7,14 @@
 //   npm run topik-audio -- --apply --force  also replaces an exam's existing audio + segments
 //   npm run topik-audio -- --apply --local         writes to the local dev D1/R2 instead (try it out first)
 //   npm run topik-audio -- --exam 8DeOfficial-60회   only this exam
+//   npm run topik-audio -- --exam ... --intro 2:22.253   where the spoken introduction ends
+//
+// `--intro` is REQUIRED for every exam, and there is no automatic fallback: see
+// `plan.ts#estimateIntroEnd` for the eight papers that killed the old detector. Run the command
+// once without it and it stops, having cut a 14-second sample at the mark it proposes (with the
+// mark at second 6) into data/topik-audio/_check/ and printed the silences around it. Listen,
+// then run it again with `--intro`. Nothing is read from D1 and nothing is written on that first
+// run.
 //   npm run topik-audio -- --link-only              attach newly imported questions to clips that
 //                                                   already exist; no mp3, no re-cutting, no
 //                                                   approval lost (see `planLinks`)
@@ -38,7 +46,9 @@ import {
   mergeShortSegments,
   formatMs,
   parseSilenceLog,
-  pickIntroEnd,
+  countHangul,
+  estimateIntroEnd,
+  silencesNear,
   planAudio,
   planLinks,
   silenceHistogram,
@@ -67,17 +77,26 @@ const PROD_MEDIA_BUCKET = "lingo-family-media";
  */
 const DEFAULT_NOISE_DB = -35;
 const DEFAULT_SILENCE_S = 5;
-/** Detection itself runs sensitive, so the short pause after the instructions is still seen. */
-const DETECT_SILENCE_S = 0.8;
+/**
+ * Detection itself runs sensitive. 0.2s is not a comfort margin: "no silence at all above 0.2s in
+ * the first 100 seconds" is the one signal that identifies a paper whose introduction is covered by
+ * background music (4 of 8 papers), and `estimateIntroEnd` snaps its proposal onto this same list,
+ * which is what gets it within milliseconds of the mark a human picks.
+ */
+const DETECT_SILENCE_S = 0.2;
 /**
  * A "clip" with less speech than this is the narrator announcing the second question of a pair,
  * not a clip (see plan.ts `mergeShortSegments`). Real clips in the measured paper are 14s+, the
  * announcements ~1s, so 5s sits in the middle of a very wide gap.
  */
 const DEFAULT_MIN_SPEECH_S = 5;
-/** The spoken introduction is looked for in the first two minutes only. */
-const INTRO_WINDOW_MS = 120_000;
-const INTRO_MIN_PAUSE_MS = 800;
+/** The sample cut at the proposed mark: 14 seconds, with the mark itself at second 6. */
+const CHECK_CLIP_S = 14;
+const CHECK_CLIP_LEAD_S = 6;
+/** Where those samples go. Gitignored with the rest of data/, and never scanned for mp3s. */
+const CHECK_DIR = "data/topik-audio/_check";
+/** How far either side of the proposal to list real silences, so another mark can be picked at once. */
+const CHECK_SILENCE_WINDOW_MS = 12_000;
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
@@ -121,13 +140,20 @@ function ffmpegSilenceLog(file: string): string {
 async function listeningQuestions(exam: string) {
   if (!existsSync(DOCX_DIR)) return [];
   const files = (await readdir(DOCX_DIR)).filter((f) => f.toLowerCase().endsWith(".docx") && !f.startsWith("~$"));
-  const questions: { number: number; same_segment: boolean; file: string }[] = [];
+  const questions: { number: number; same_segment: boolean; file: string; syllables: number }[] = [];
   for (const fileName of files) {
     const zip = await JSZip.loadAsync(await readFile(path.join(DOCX_DIR, fileName)));
     const documentXml = await zip.file("word/document.xml")?.async("string");
     if (!documentXml) continue;
     for (const q of buildImportDraft(fileName, documentXml).questions) {
-      if (q.section === "listening" && q.exam === exam) questions.push({ number: q.number, same_segment: q.same_segment, file: fileName });
+      if (q.section === "listening" && q.exam === exam)
+        // `syllables` is only ever used to propose an --intro mark; see plan.ts#estimateIntroEnd.
+        questions.push({
+          number: q.number,
+          same_segment: q.same_segment,
+          file: fileName,
+          syllables: countHangul(q.instruction) + countHangul(q.stem.text),
+        });
     }
   }
   return questions;
@@ -398,6 +424,67 @@ async function writeExam(db: D1Like, bucket: R2Like, p: ExamPlan) {
   return { inserted: existing ? 0 : 1, replaced: existing ? 1 : 0 };
 }
 
+/** Cuts the sample a human listens to, with the proposed mark at second `CHECK_CLIP_LEAD_S`. */
+function cutCheckClip(file: string, markMs: number, exam: string): string | null {
+  mkdirSync(CHECK_DIR, { recursive: true });
+  const out = path.join(CHECK_DIR, `${exam.replace(/[^\w가-힣-]/g, "_")}-intro-${formatMs(markMs).replace(/[:.]/g, "")}.mp3`);
+  const from = Math.max(0, markMs - CHECK_CLIP_LEAD_S * 1000) / 1000;
+  const r = spawnSync(
+    "ffmpeg",
+    ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(from), "-t", String(CHECK_CLIP_S), "-i", file, "-c:a", "libmp3lame", "-q:a", "4", out],
+    { encoding: "utf8" },
+  );
+  if (r.status !== 0) {
+    console.log(`  (could not cut the sample: ${r.stderr?.trim() || r.error?.message})`);
+    return null;
+  }
+  return out;
+}
+
+/**
+ * What to print for an exam that has no `--intro` yet. Never cuts the paper, never reads D1.
+ *
+ * The proposal, the sample and the surrounding silences go out together on purpose: the proposal
+ * alone is just a number to be believed, which is the whole failure this replaced.
+ */
+function reportMissingIntro(exam: string, file: string, silences: readonly Silence[], syllables: readonly number[]) {
+  console.log(`\n=== ${exam} — ${path.basename(file)} ===`);
+  console.log(`  THIẾU --intro: không cắt gì cả. Mốc hết lời dẫn phải do người nghe quyết định.`);
+  const quiet = silences.filter((s) => s.start_ms > 500 && s.start_ms < 100_000).length;
+  if (quiet === 0) {
+    console.log(`  Dấu hiệu nhạc nền: 100 giây đầu KHÔNG có khoảng lặng nào ≥${DETECT_SILENCE_S}s — mọi mốc dò theo khoảng lặng đều sai ở đây.`);
+  }
+  const est = estimateIntroEnd(silences, silenceMs, syllables);
+  if (!est.ok) {
+    console.log(`  Không suy được mốc đề xuất: ${est.reason}`);
+    console.log(`  Khoảng lặng ≥${DETECT_SILENCE_S}s trong 3 phút đầu (chọn một điểm "hết" làm --intro):`);
+    for (const sil of silencesNear(silences, 90_000, 90_000))
+      console.log(`    ${formatMs(sil.start_ms)} → ${formatMs(sil.end_ms)}  (${((sil.end_ms - sil.start_ms) / 1000).toFixed(2)}s)`);
+    return;
+  }
+  console.log(
+    `  Mốc đề xuất: ${formatMs(est.suggested_ms)}  (${(est.suggested_ms / 1000).toFixed(3)})` +
+      ` — suy từ tốc độ đọc ${est.rate.toFixed(2)} âm tiết/giây của chính đề này`,
+  );
+  console.log(
+    `  Tự kiểm: đoạn 1 sẽ dài ${(est.clip1_ms / 1000).toFixed(1)}s, văn bản câu 1 đòi ${(
+      (est.speech_end1_ms - est.raw_ms) /
+      1000
+    ).toFixed(1)}s. Lệch nhiều là mốc sai.`,
+  );
+  const clip = cutCheckClip(file, est.suggested_ms, exam);
+  if (clip) console.log(`  Mẩu 14 giây để nghe (mốc ở đúng giây thứ ${CHECK_CLIP_LEAD_S}): ${clip}`);
+  console.log(`  Nếu nghe thấy lệch, chọn một điểm "hết" khác trong số này:`);
+  for (const sil of silencesNear(silences, est.suggested_ms, CHECK_SILENCE_WINDOW_MS)) {
+    const mark = sil.end_ms === est.suggested_ms ? " ← đề xuất" : "";
+    console.log(
+      `    ${formatMs(sil.start_ms)} → ${formatMs(sil.end_ms)}  (${((sil.end_ms - sil.start_ms) / 1000).toFixed(2)}s)` +
+        `  --intro ${(sil.end_ms / 1000).toFixed(3)}${mark}`,
+    );
+  }
+  console.log(`  Chạy lại: npm run topik-audio -- --exam ${exam} --intro ${(est.suggested_ms / 1000).toFixed(3)}${apply ? " --apply" : ""}`);
+}
+
 async function main() {
   if (linkOnly) {
     console.log(apply ? `APPLY --link-only: will write to ${local ? "the LOCAL dev database" : "production"}` : "DRY RUN --link-only: nothing is written");
@@ -417,8 +504,26 @@ async function main() {
     apply ? `APPLY${force ? " --force" : ""}: will write to ${local ? "the LOCAL dev database" : "production"}` : "DRY RUN: nothing is written",
   );
 
+  // One `--intro` is one paper's mark. Letting it apply to every mp3 in the folder would cut seven
+  // other papers at a mark measured on the eighth, and each one would look perfectly plausible.
+  if (introOverride !== undefined) {
+    const matched = files.filter((f) => {
+      const named = examFromAudioName(f);
+      return named.ok && (!onlyExam || named.exam === onlyExam);
+    });
+    if (matched.length > 1) {
+      console.error(
+        `--intro names one paper's mark, but ${matched.length} mp3(s) match: ${matched.join(", ")}.` +
+          ` Add --exam <label> so the mark goes to the paper it was measured on.`,
+      );
+      process.exit(1);
+    }
+  }
+
   const plans: ExamPlan[] = [];
   let failedNames = 0;
+  /** Exams whose mark is still missing. One `--intro` cannot serve two papers, so this stops the run. */
+  let needIntro = 0;
   for (const fileName of files) {
     const named = examFromAudioName(fileName);
     if (!named.ok) {
@@ -434,10 +539,22 @@ async function main() {
     const file = path.join(AUDIO_DIR, fileName);
     const durationMs = ffprobeDurationMs(file);
     const silences = parseSilenceLog(ffmpegSilenceLog(file), durationMs);
-    const introEnd = introOverride ?? pickIntroEnd(silences, INTRO_MIN_PAUSE_MS, INTRO_WINDOW_MS);
+    const questionsForIntro = await listeningQuestions(exam);
+    if (introOverride === undefined) {
+      // No guessing, not even a dry run: a proposed cut is what people act on.
+      reportMissingIntro(
+        exam,
+        file,
+        silences,
+        [1, 2, 3].map((n) => questionsForIntro.find((q) => q.number === n)?.syllables ?? 0),
+      );
+      needIntro += 1;
+      continue;
+    }
+    const introEnd = introOverride;
     const detected = buildSegments(boundarySilences(silences, silenceMs), durationMs, introEnd);
     const { segments, merged } = mergeShortSegments(detected, minSpeechMs);
-    const questions = await listeningQuestions(exam);
+    const questions = questionsForIntro;
     plans.push({
       exam,
       file,
@@ -451,6 +568,13 @@ async function main() {
     });
   }
 
+  if (needIntro > 0) {
+    console.error(
+      `\n${needIntro} exam(s) have no --intro. Nothing was read from D1 and nothing was written.` +
+        ` Listen to the sample(s) above, then run one exam at a time with --exam … --intro ….`,
+    );
+    process.exit(1);
+  }
   for (const p of plans) report(p);
   const clean = plans.filter((p) => p.plan.problems.length === 0 && p.plan.coverage !== "none");
   const partial = clean.filter((p) => p.plan.coverage === "partial").length;

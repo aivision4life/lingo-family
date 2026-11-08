@@ -43,9 +43,9 @@ export function parseSilenceLog(log: string, durationMs: number): Silence[] {
  * self-paced practice plays to.
  *
  * Everything before the first clip — the paper's spoken introduction and the pause after it — is
- * dropped: it belongs to no question. `introEndMs` is where the first clip's speech begins; it is
- * chosen by the caller (see `pickIntroEnd`), because only a human can tell the introduction from
- * the first question.
+ * dropped: it belongs to no question. `introEndMs` is where the first clip's speech begins, and it
+ * always comes from a human (`--intro`): see `estimateIntroEnd` for why nothing in the signal can
+ * decide it.
  */
 export function buildSegments(silences: readonly Silence[], durationMs: number, introEndMs: number): Segment[] {
   // Only the gaps that fall after the introduction separate one clip from the next.
@@ -74,18 +74,116 @@ export const boundarySilences = (silences: readonly Silence[], minMs: number): S
   silences.filter((s) => s.end_ms - s.start_ms >= minMs);
 
 /**
- * Where the spoken introduction ends: at the start of speech after the *first* pause of at least
- * `minPauseMs`, searched only in the opening `windowMs` of the file.
+ * Why there is no `pickIntroEnd` any more (M7.20).
  *
- * Not the longest early pause: the gap after the instructions can be short (1.7s in the first real
- * paper) while the answer gaps that follow are ten times longer, so "longest" would skip the whole
- * first question. 0 means no pause was found and the caller should treat the file as starting
- * straight into question 1 — which the review screen will show as a suspiciously long segment 1.
+ * There used to be one: "the end of the first pause of at least 0.8s in the opening two minutes".
+ * It was wrong on **all eight** real papers, by 26 to 62 seconds, in four different ways (a pause
+ * inside the introduction, silence at the very start of the file, background music covering every
+ * pause, and music covering them while a short gap still existed). Each failure was patched by
+ * widening a threshold, and the next paper broke it again.
+ *
+ * The reason is not a badly chosen threshold. On five of the eight papers the introduction is
+ * ordinary speech with ordinary pauses, and **a pause inside the introduction is indistinguishable
+ * from the pause before question 1** by anything `silencedetect` measures: 35회 has 21 silences in
+ * its first 100 seconds, the longest 12.3s, and the real mark is at 81.0s. No duration rule
+ * separates them, because the difference is in the *meaning* of the words on either side. A problem
+ * with no automatic solution is answered by saying so, not by guessing better: the mark is now
+ * always `--intro`, from a human who listened.
+ *
+ * What a machine *can* do is propose a number that carries its own check, which is what the
+ * function below is for. It never decides anything.
  */
-export function pickIntroEnd(silences: readonly Silence[], minPauseMs: number, windowMs: number): number {
-  const first = silences.find((s) => s.start_ms <= windowMs && s.end_ms - s.start_ms >= minPauseMs);
-  return first?.end_ms ?? 0;
+
+/** A paper's narration speed is measured in Hangul syllables; everything else is punctuation. */
+export const countHangul = (text: string | null | undefined): number => (text ?? "").match(/[가-힣]/g)?.length ?? 0;
+
+/** How much later the estimate lands than the mark a human picks, measured on all eight papers. */
+export const INTRO_BIAS_MS = 1_400;
+/** How far from the estimate a real silence may be and still be the mark it was pointing at. */
+export const INTRO_SNAP_MS = 5_000;
+/** A silence this early is the file's own leading quiet, never a structural mark (64회). */
+const LEADING_QUIET_MS = 500;
+
+export type IntroEstimate =
+  | {
+      ok: true;
+      /** The mark to offer, snapped onto a real silence boundary. */
+      suggested_ms: number;
+      /** Before snapping and before `INTRO_BIAS_MS`, for the report to show its own arithmetic. */
+      raw_ms: number;
+      /** Syllables per second, measured on clips 2 and 3 of this very paper. */
+      rate: number;
+      /** How long clip 1 would be if the suggestion is right — the number that self-checks. */
+      clip1_ms: number;
+      /** Where clip 1's speech stops; the one anchor taken straight from the signal. */
+      speech_end1_ms: number;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * Proposes where the introduction ends, by reading speed rather than by silence.
+ *
+ * Clips 2 and 3 are a ruler the paper made itself: their boundaries come from the ~12-second answer
+ * gaps, which do not depend on the introduction at all. Their syllables over their seconds give
+ * this narrator's pace, and question 1's own syllable count then says how long clip 1 must be — so
+ * `speech_end(clip 1) − that length` is where clip 1 began.
+ *
+ * Measured against the eight marks a human approved: inside 4 **milliseconds** on all eight, once
+ * `INTRO_BIAS_MS` is taken off and the result is snapped onto the nearest real silence boundary
+ * (the human was choosing a silence boundary too). Without snapping it is 0.6-2.0s late.
+ *
+ * That accuracy is not a licence to cut automatically, and the caller must not use it that way.
+ * The point is that the proposal arrives with `clip1_ms` beside it: "clip 1 would be 16s, the text
+ * needs 16s" is checkable, and "clip 1 would be 56s" is what gave away every one of the eight
+ * failures. The estimate is printed, a 14-second sample is cut at it, and a human still types it in.
+ *
+ * Assumes no silence of `boundaryMs` or longer sits before the real mark — true on all eight papers
+ * (the first such gap is always question 1's own answer gap), and a paper that breaks it shows a
+ * nonsense `clip1_ms` rather than a plausible mark.
+ *
+ * Counts the instruction's syllables in all three questions although the audio reads it once per
+ * block: counted consistently, the error cancels, and of the three variants tried this was the one
+ * with the smallest spread (the other two were 2-4s out, see SPEC §11 M7.20).
+ */
+export function estimateIntroEnd(
+  silences: readonly Silence[],
+  boundaryMs: number,
+  /** Syllables of questions 1, 2 and 3 (instruction + transcript), in that order. */
+  syllables: readonly number[],
+): IntroEstimate {
+  if (syllables.length < 3 || syllables.slice(0, 3).some((n) => n <= 0))
+    return { ok: false, reason: "needs questions 1-3 of this exam in data/topik/ to measure reading speed" };
+  const gaps = boundarySilences(
+    silences.filter((s) => s.start_ms > LEADING_QUIET_MS),
+    boundaryMs,
+  ).sort((a, b) => a.start_ms - b.start_ms);
+  if (gaps.length < 3) return { ok: false, reason: `only ${gaps.length} answer gap(s) found — too few to measure reading speed` };
+  const [g1, g2, g3] = gaps as [Silence, Silence, Silence];
+  const rulerMs = g2.start_ms - g1.end_ms + (g3.start_ms - g2.end_ms);
+  if (rulerMs <= 0) return { ok: false, reason: "clips 2 and 3 came out empty — the gap threshold is wrong for this paper" };
+  const rate = ((syllables[1]! + syllables[2]!) / rulerMs) * 1000;
+  const rawMs = g1.start_ms - (syllables[0]! / rate) * 1000;
+  if (rawMs <= 0) return { ok: false, reason: "question 1's text is longer than the audio before its answer gap" };
+  const target = rawMs - INTRO_BIAS_MS;
+  const near = silences
+    .filter((s) => s.start_ms > LEADING_QUIET_MS && Math.abs(s.end_ms - target) <= INTRO_SNAP_MS)
+    .sort((a, b) => Math.abs(a.end_ms - target) - Math.abs(b.end_ms - target));
+  const suggested = Math.round(near[0]?.end_ms ?? target);
+  return {
+    ok: true,
+    suggested_ms: suggested,
+    raw_ms: Math.round(rawMs),
+    rate,
+    clip1_ms: g1.start_ms - suggested,
+    speech_end1_ms: g1.start_ms,
+  };
 }
+
+/** The silences a human can choose from instead, when the sample says the suggestion is off. */
+export const silencesNear = (silences: readonly Silence[], markMs: number, windowMs: number): Silence[] =>
+  silences
+    .filter((s) => s.start_ms > LEADING_QUIET_MS && Math.abs(s.end_ms - markMs) <= windowMs)
+    .sort((a, b) => a.start_ms - b.start_ms);
 
 /** Counts silences per duration band, for the report: the threshold should land in an empty band. */
 export function silenceHistogram(silences: readonly Silence[]): { label: string; count: number }[] {

@@ -1063,7 +1063,7 @@ Nó bắt đúng ba đề nhạc nền và **bỏ sót năm đề còn lại**, 
 - Điều kiện (b) phải **bỏ khoảng lặng bắt đầu ở giây 0** (chính là kiểu sai "im lặng đầu file"). Nếu không, 52회 không bị bắt: nó có một khoảng lặng 2,92 giây nên (a) không nổ, và (b) chỉ nổ khi ta phớt đi 0,30 giây im lặng ở đầu file.
 - Một luật chỉ bắt 3/8 vẫn để lại đúng cái nó định chữa: năm đề kia vẫn được cắt sai trong im lặng. Hoặc **đòi `--intro` vô điều kiện cho mọi đề mới** (8/8 đề thật đều cần người nghe, nên nhánh "tìm được chỗ đáng tin" chưa một lần nào đáng tin), hoặc để bộ dò **in ra mốc suy từ tốc độ đọc** ở trên — thứ đã đúng 8/8 — rồi vẫn bắt người xác nhận.
 
-**Chưa vá.** Và đừng lặp lại chỗ tôi nhầm khi bàn việc này: sửa luật dò **không** đòi cắt lại tám đề. Tám đề đã nằm trong D1 với mốc đã duyệt; `pickIntroEnd` chỉ chạy lúc cắt một đề mới, nên sửa nó chỉ ảnh hưởng tới đề thứ chín trở đi.
+**Đã vá ở M7.20 bên dưới** (bỏ hẳn `pickIntroEnd`). Và chỗ tôi nhầm khi bàn việc này, đừng lặp lại: sửa luật dò **không** đòi cắt lại tám đề. Tám đề đã nằm trong D1 với mốc đã duyệt; `pickIntroEnd` chỉ chạy lúc cắt một đề mới, nên sửa nó chỉ ảnh hưởng tới đề thứ chín trở đi.
 
 ### M7.18 — Chạy lại một lệnh ghi chỉ để đọc thông điệp lỗi (2026-11-08)
 
@@ -1083,3 +1083,45 @@ Lỗi ban đầu gần như chắc chắn là lỗi tạm thời ở khâu kết
 **Luật:** một lệnh **GHI** mà lỗi thì **dừng lại**. Đọc cho ra lỗi bằng cách khác: xem lại output đã lưu, bắt toàn bộ stdout+stderr vào file thay vì lọc bằng `grep`, chạy phần **đọc** tương đương (`--diff`, dry-run, một `SELECT`), hoặc kiểm trạng thái hiện tại trước đã. Chỉ khi đã biết nguyên nhân mới chạy lại, và **đúng một lần**.
 
 **Không bao giờ chạy lại một lệnh ghi chỉ để nhìn thông điệp lỗi.** Lệnh ghi không phải công cụ chẩn đoán.
+
+### M7.20 — Bỏ `pickIntroEnd`: một bài toán không có lời giải tự động (2026-11-08)
+
+**Kết cục:** `pickIntroEnd` sai **8/8 đề thật, theo 4 kiểu**, lệch 26 đến 62 giây. Nó đã bị bỏ hẳn. Mốc hết lời dẫn bây giờ **luôn** là `--intro` do người nghe quyết định; không có đường dự phòng tự động nào.
+
+| Đề | Bộ dò tính | Mốc thật | Lệch | Kiểu sai |
+|---|---|---|---|---|
+| 35회 | 43,7 s | 81,0 s | −37,3 | khoảng lặng *giữa* lời dẫn |
+| 36회 | 44,1 s | 85,4 s | −41,2 | như trên |
+| 37회 | 50,8 s | 98,2 s | −47,5 | như trên |
+| 64회 | 1,07 s | 39,5 s | −38,4 | im lặng ở đúng đầu file |
+| 60회 | 95,7 s | 121,9 s | −26,2 | nhạc nền che chỗ nghỉ |
+| 41회 | 102,2 s | 142,3 s | −40,1 | như trên |
+| 47회 | 102,2 s | 144,6 s | −42,4 | như trên |
+| 52회 | 104,0 s | 165,9 s | −61,9 | như trên |
+
+**Lý do bỏ không phải vì chọn ngưỡng kém.** Luật từng được vá bốn lần, mỗi lần nới một ngưỡng, và đề sau lại phá. Trước khi bỏ, một luật "trả về `null` thay vì đoán" đã được **đo trên cả tám đề**: `null` khi không có khoảng lặng nào ≥2 s trong 120 giây đầu, **hoặc** 100 giây đầu không có khoảng lặng nào ≥0,2 s. Nó từ chối đúng ba đề nhạc nền và **bỏ sót năm đề còn lại**, vốn sai 26–47 giây.
+
+Lý do thật: ở năm đề đó **tín hiệu không chứa dấu hiệu nào** để phân biệt chỗ nghỉ *trong* lời dẫn với chỗ nghỉ *trước câu 1*. 35회 có 21 khoảng lặng trong 100 giây đầu, dài nhất 12,3 giây, mốc thật ở 81,0 s — không một luật nào theo độ dài khoảng lặng tách được chúng, vì khác biệt nằm ở **nghĩa của lời nói hai bên**, thứ `silencedetect` không đo. (Chi tiết phụ: điều kiện ≥0,2 s còn phải bỏ khoảng lặng bắt đầu ở giây 0, nếu không 52회 không bị bắt — chính là kiểu sai của 64회 quay lại cửa sau.)
+
+> **Một bài toán không có lời giải tự động thì cách đúng là nói ra điều đó, không phải đoán hay hơn.** Một hàm dò đưa ra con số trông hợp lý rồi chờ người ta tin thì tệ hơn là không có hàm nào: nó chuyển việc kiểm từ "phải làm" thành "chắc là xong rồi".
+
+**Thay bằng một con số tự kiểm được, không phải một con số để tin.** `estimateIntroEnd` (`scripts/topikAudio/plan.ts`) **đề xuất** mốc bằng tốc độ đọc, và không quyết định gì:
+
+- Đoạn 2 và đoạn 3 là **thước do chính đề đó tạo ra**: biên của chúng sinh từ khoảng lặng trả lời ~12 giây, hoàn toàn không phụ thuộc mốc lời dẫn. Âm tiết Hangul của chúng chia cho số giây ra tốc độ của người đọc này (thật tế 2,9–4,2 âm tiết/giây giữa tám đề — một hằng số cố định không thể dùng).
+- Số âm tiết của câu 1 nói đoạn 1 phải dài bao nhiêu, nên `speech_end(đoạn 1) − độ dài đó` là chỗ đoạn 1 bắt đầu. `speech_end(đoạn 1)` là **mốc duy nhất lấy trực tiếp từ tín hiệu**: khoảng lặng ≥5 giây đầu tiên luôn là khoảng lặng trả lời của chính câu 1 (đúng cả tám đề — trước mốc thật không đề nào có khoảng lặng ≥5 giây).
+- Trừ `INTRO_BIAS_MS` = 1,4 giây rồi **bám vào biên khoảng lặng thật gần nhất**. Sai số đo lại trên tám mốc người đã duyệt: **≤4 mili-giây, cả tám** — vì người cũng đang chọn một biên khoảng lặng. Không bám thì muộn 0,6–2,0 giây.
+- Đếm 18 âm tiết của `instruction` ở **cả ba** câu, dù băng chỉ đọc lời dẫn khối một lần: đếm nhất quán thì phần lệch tự triệt tiêu. Ba biến thể đã thử, đo trên 5 đề đã duyệt lúc hiệu chỉnh — đếm cả ba (lệch +0,6…+2,0 s), chỉ đếm cho câu 1 (−2,1…−4,7 s), không đếm đâu cả (+2,7…+3,9 s) — biến thể đầu cho khoảng lệch hẹp nhất, nên nó được chọn **vì số đo**, không vì nó đúng về mặt ngữ nghĩa.
+
+**Độ chính xác đó không phải giấy phép cắt tự động**, và chỗ này dễ trượt nhất: 4 mili-giây trên tám đề trông như "thôi tin nó đi". Giá trị thật của bộ suy mốc là nó in kèm `clip1_ms`: *"đoạn 1 sẽ dài 16,2 s, văn bản câu 1 đòi 15,7 s"*. Hai số sát nhau là dấu hiệu tin được; chính tỉ lệ này tố giác cả tám lần sai trước (đoạn 1 dài 56 / 62 / 82 giây trong khi văn bản chỉ đòi 16–18). Còn "102,169" thì không tự tố giác được gì.
+
+**Quy trình một đề mới giờ đúng hai bước** (trước đây là ba, bước giữa phải nhờ cắt mẩu nghe thử bằng tay):
+
+1. `npm run topik-audio -- --exam <nhãn>` — **không cắt gì, không đọc D1, thoát mã 1**. In: dấu hiệu nhạc nền (nếu có), mốc đề xuất, dòng tự kiểm, **một mẩu 14 giây cắt sẵn tại mốc đó** (mốc ở đúng giây thứ 6) trong `data/topik-audio/_check/`, và dải khoảng lặng quanh mốc — mỗi dòng kèm luôn `--intro <số>` để chọn mốc khác mà không phải hỏi lại.
+2. Nghe mẩu, rồi `npm run topik-audio -- --exam <nhãn> --intro <số> --apply`.
+
+Hai chốt nữa trong cùng lần vá:
+
+- `--intro` **là mốc của một đề**. Chạy `--intro` mà không `--exam` lúc trong `data/topik-audio` có nhiều mp3 thì **từ chối**, kể cả dry-run: trước đây con số đó sẽ lặng lẽ cắt cả tám đề tại mốc đo trên một đề, và từng đề đều trông hợp lệ.
+- Ngưỡng dò khoảng lặng hạ từ 0,8 s xuống **0,2 s**. Không phải để an toàn hơn: "100 giây đầu không có khoảng lặng nào ≥0,2 s" là **dấu hiệu duy nhất** nhận ra đề bị nhạc nền (4/8 đề), và bộ suy mốc bám vào đúng danh sách này. Việc cắt không đổi — `boundarySilences` vẫn lọc ở 5 giây — và đã kiểm lại: 41회 với `--intro 142.253` ra đúng 36 đoạn, đoạn 1 y nguyên bản đã duyệt.
+
+**Thứ làm việc vá này kiểm được:** tám đề thật giờ là tám ca kiểm trong `scripts/topikAudio/plan.test.ts`, mỗi ca gồm khoảng lặng thật của mp3 đó, số âm tiết thật của câu 1–3, và mốc người đã duyệt trong D1 production. Đây chính là bài kiểm mà `pickIntroEnd` **không bao giờ có thể có**: nó sai cả tám. Đề thứ chín nào đánh đổ được bộ suy mốc thì cũng phải vào bảng đó.

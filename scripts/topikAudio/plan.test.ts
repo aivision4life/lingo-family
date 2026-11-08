@@ -8,7 +8,9 @@ import {
   lastSpeechEnd,
   mergeShortSegments,
   parseSilenceLog,
-  pickIntroEnd,
+  countHangul,
+  estimateIntroEnd,
+  silencesNear,
   planAudio,
   planLinks,
   silenceHistogram,
@@ -67,26 +69,161 @@ describe("buildSegments", () => {
   });
 });
 
-describe("pickIntroEnd", () => {
-  // Measured on the first real paper: the instructions run for 100s and are followed by a pause of
-  // only 1.7s, while every answer gap after that is 15-18s. Taking the *longest* early pause would
-  // therefore skip past question 1 entirely.
-  const realistic: Silence[] = [
-    { start_ms: 100_833, end_ms: 102_487 }, // 1.7s, right after the instructions
-    { start_ms: 154_436, end_ms: 169_786 }, // 15.3s, the first answer gap
+describe("countHangul", () => {
+  it("counts Hangul syllables and nothing else", () => {
+    expect(countHangul("다음을 듣고 알맞은 그림을 고르십시오. (각 2점)")).toBe(18);
+    expect(countHangul("")).toBe(0);
+    expect(countHangul(null)).toBe(0);
+  });
+});
+
+/**
+ * `estimateIntroEnd` against all eight real papers (M7.20).
+ *
+ * Each row is measured, not invented: `silences` are the real `silencedetect` boundaries of that
+ * paper's mp3 (the first three answer gaps, plus every silence near the answer, trimmed to keep the
+ * fixture readable), `syllables` are the Hangul counts of questions 1-3 in data/topik/, and
+ * `approved` is the mark a human actually listened to and approved — the one in production D1.
+ *
+ * This is the test the old `pickIntroEnd` could never have had: it was wrong on all eight of these
+ * papers, by 26 to 62 seconds. A paper that defeats the estimate belongs in this table too.
+ */
+describe("estimateIntroEnd", () => {
+  const papers = [
+  {
+    exam: "35회",
+    syllables: [77, 91, 126],
+    approved: 81040,
+    silences: [{ start_ms: 76565, end_ms: 77559 }, { start_ms: 78230, end_ms: 78467 }, { start_ms: 79318, end_ms: 81041 }, { start_ms: 81634, end_ms: 82878 }, { start_ms: 84784, end_ms: 85939 }, { start_ms: 103128, end_ms: 115395 }, { start_ms: 140368, end_ms: 152565 }, { start_ms: 184502, end_ms: 196926 }],
+  },
+  {
+    exam: "36회",
+    syllables: [64, 83, 124],
+    approved: 85370,
+    silences: [{ start_ms: 79593, end_ms: 81770 }, { start_ms: 82415, end_ms: 82883 }, { start_ms: 83697, end_ms: 85366 }, { start_ms: 85977, end_ms: 87066 }, { start_ms: 88083, end_ms: 88453 }, { start_ms: 102958, end_ms: 120173 }, { start_ms: 143844, end_ms: 161253 }, { start_ms: 190792, end_ms: 208460 }],
+  },
+  {
+    exam: "37회",
+    syllables: [74, 81, 116],
+    approved: 98240,
+    silences: [{ start_ms: 91661, end_ms: 95154 }, { start_ms: 95826, end_ms: 98236 }, { start_ms: 98445, end_ms: 100066 }, { start_ms: 101094, end_ms: 101609 }, { start_ms: 101748, end_ms: 101949 }, { start_ms: 103026, end_ms: 103862 }, { start_ms: 125318, end_ms: 139516 }, { start_ms: 170470, end_ms: 184664 }, { start_ms: 220341, end_ms: 234997 }],
+  },
+  {
+    exam: "41회",
+    syllables: [56, 76, 144],
+    approved: 142253,
+    silences: [{ start_ms: 136787, end_ms: 138353 }, { start_ms: 139763, end_ms: 142253 }, { start_ms: 142888, end_ms: 145675 }, { start_ms: 158487, end_ms: 171006 }, { start_ms: 192850, end_ms: 205812 }, { start_ms: 245714, end_ms: 259485 }],
+  },
+  {
+    exam: "47회",
+    syllables: [77, 64, 119],
+    approved: 144593,
+    silences: [{ start_ms: 138637, end_ms: 140295 }, { start_ms: 141929, end_ms: 144594 }, { start_ms: 145315, end_ms: 147790 }, { start_ms: 163924, end_ms: 176233 }, { start_ms: 192996, end_ms: 205294 }, { start_ms: 232798, end_ms: 245302 }],
+  },
+  {
+    exam: "52회",
+    syllables: [65, 73, 122],
+    approved: 165882,
+    silences: [{ start_ms: 163798, end_ms: 165882 }, { start_ms: 167477, end_ms: 169830 }, { start_ms: 186207, end_ms: 197437 }, { start_ms: 219026, end_ms: 229865 }, { start_ms: 261586, end_ms: 273008 }],
+  },
+  {
+    exam: "60회",
+    syllables: [61, 66, 105],
+    approved: 121870,
+    silences: [{ start_ms: 117589, end_ms: 118791 }, { start_ms: 119456, end_ms: 119659 }, { start_ms: 120690, end_ms: 121866 }, { start_ms: 122462, end_ms: 124254 }, { start_ms: 125307, end_ms: 125775 }, { start_ms: 142359, end_ms: 151930 }, { start_ms: 174684, end_ms: 184437 }, { start_ms: 217408, end_ms: 227086 }],
+  },
+  {
+    exam: "64회",
+    syllables: [56, 58, 104],
+    approved: 39480,
+    silences: [{ start_ms: 34354, end_ms: 35241 }, { start_ms: 35986, end_ms: 36282 }, { start_ms: 37005, end_ms: 37408 }, { start_ms: 38281, end_ms: 39484 }, { start_ms: 41223, end_ms: 42401 }, { start_ms: 57981, end_ms: 66692 }, { start_ms: 85253, end_ms: 93944 }, { start_ms: 124641, end_ms: 135266 }],
+  },
+  ] as const;
+
+  const estimate = (paper: (typeof papers)[number]) => estimateIntroEnd(paper.silences, 5_000, paper.syllables);
+
+  for (const paper of papers) {
+    it(`lands on the approved mark for ${paper.exam}`, () => {
+      const est = estimate(paper);
+      expect(est.ok).toBe(true);
+      if (!est.ok) return;
+      // Milliseconds, not seconds: the suggestion snaps onto a real silence boundary, and that is
+      // the same boundary the human picked by ear. A regression here is a changed rule, not drift.
+      expect(Math.abs(est.suggested_ms - paper.approved)).toBeLessThanOrEqual(5);
+    });
+  }
+
+  it("reports a clip-1 length that can be checked against the text", () => {
+    // 41회: the detector's old answer (102.169s) would have made clip 1 56s long while question 1's
+    // text only needs ~16s. That ratio is what gives a wrong mark away, so it has to be reported.
+    const est = estimate(papers[3]);
+    expect(est.ok).toBe(true);
+    if (!est.ok) return;
+    expect(est.clip1_ms).toBeGreaterThan(12_000);
+    expect(est.clip1_ms).toBeLessThan(22_000);
+    expect(est.speech_end1_ms).toBe(158_487);
+  });
+
+  it("measures the narrator's pace from this paper, not from an average", () => {
+    const rates = papers.map((p) => {
+      const est = estimate(p);
+      return est.ok ? est.rate : 0;
+    });
+    // Real spread across the eight papers: 2.9-4.2 syllables/second. A fixed constant cannot work.
+    expect(Math.min(...rates)).toBeGreaterThan(2.5);
+    expect(Math.max(...rates)).toBeLessThan(4.5);
+    expect(Math.max(...rates) - Math.min(...rates)).toBeGreaterThan(1);
+  });
+
+  it("says it does not know when questions 1-3 are not imported yet", () => {
+    const est = estimateIntroEnd(papers[0].silences, 5_000, [0, 0, 0]);
+    expect(est).toEqual({ ok: false, reason: "needs questions 1-3 of this exam in data/topik/ to measure reading speed" });
+  });
+
+  it("says it does not know when there are not three answer gaps to measure with", () => {
+    const est = estimateIntroEnd([{ start_ms: 10_000, end_ms: 25_000 }], 5_000, [56, 76, 144]);
+    expect(est.ok).toBe(false);
+  });
+
+  it("ignores the quiet at the very start of a file (the 64회 failure mode)", () => {
+    // A leading silence is not a structural mark: counted as one, it made the old detector answer
+    // 1.07s for a paper whose introduction ends at 39.5s.
+    const withLeadingQuiet: Silence[] = [{ start_ms: 0, end_ms: 400 }, ...papers[7].silences];
+    const est = estimateIntroEnd(withLeadingQuiet, 5_000, papers[7].syllables);
+    expect(est.ok).toBe(true);
+    if (!est.ok) return;
+    expect(Math.abs(est.suggested_ms - papers[7].approved)).toBeLessThanOrEqual(5);
+  });
+
+  it("falls back to the bare arithmetic when no silence is near enough to snap to", () => {
+    const far: Silence[] = [
+      { start_ms: 158_487, end_ms: 171_006 },
+      { start_ms: 192_850, end_ms: 205_812 },
+      { start_ms: 245_714, end_ms: 259_485 },
+    ];
+    const est = estimateIntroEnd(far, 5_000, [56, 76, 144]);
+    expect(est.ok).toBe(true);
+    if (!est.ok) return;
+    expect(est.suggested_ms).toBe(est.raw_ms - 1_400);
+  });
+});
+
+describe("silencesNear", () => {
+  const silences: Silence[] = [
+    { start_ms: 1_000, end_ms: 2_000 },
+    { start_ms: 10_000, end_ms: 11_000 },
+    { start_ms: 12_000, end_ms: 13_000 },
   ];
 
-  it("takes the first pause long enough to count, not the longest one", () => {
-    expect(pickIntroEnd(realistic, 800, 120_000)).toBe(102_487);
+  it("lists the silences a human could pick instead, in time order", () => {
+    expect(silencesNear(silences, 11_500, 2_000)).toEqual([
+      { start_ms: 10_000, end_ms: 11_000 },
+      { start_ms: 12_000, end_ms: 13_000 },
+    ]);
   });
 
-  it("ignores pauses shorter than the minimum and ones past the window", () => {
-    expect(pickIntroEnd(realistic, 5_000, 120_000)).toBe(0);
-    expect(pickIntroEnd(realistic, 800, 60_000)).toBe(0);
-  });
-
-  it("starts at zero when the file opens straight into the first question", () => {
-    expect(pickIntroEnd([], 800, 120_000)).toBe(0);
+  it("never offers the file's own leading quiet", () => {
+    expect(silencesNear([{ start_ms: 0, end_ms: 300 }], 300, 5_000)).toEqual([]);
   });
 });
 
