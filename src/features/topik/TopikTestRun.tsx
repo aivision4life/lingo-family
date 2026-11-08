@@ -13,11 +13,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { imageUrl } from "@/features/images/api";
 import { Button } from "@/components/ui/button";
 import { useAbandonTopikTest, useFinishTopikTest, useSaveTopikTestAnswer } from "./api";
 import { answerAcknowledged, answerGiven, answeredCount, emptyQueue, unsentAnswers, type AnswerQueue } from "./answerQueue";
 import { groupNumbers, groupQuestions } from "./groups";
 import { isInLastMinutes, READING_WARNING_MS } from "./readingClock";
+import { sharedStem, stemView } from "./questionStem";
+import { KoreanText } from "./KoreanText";
 import { TopikTestGrid } from "./TopikTestGrid";
 import { formatRemaining, isParked, positionAt, progressFraction, shownPosition, type ParkedAt } from "./testClock";
 import { sittingHeader, type SittingHeader } from "./sittingHeader";
@@ -90,6 +93,9 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
   const parked = isParked(park, shown, tapePosition);
   const goTo = (position: number) => setPark({ position: head(position) ?? position, tapeWhenParked: tapePosition ?? position });
   const groupIndex = groups.findIndex((g) => g === group);
+  // One passage for the whole group, drawn once above the cards (M7.21). Null for listening (the
+  // stem is the transcript, withheld) and for a group of one.
+  const passage = sharedStem((group?.questions ?? []).map((q) => stemView(q.stem, { hasClip: q.clip !== null })));
 
   const submit = (): void => {
     if (submitted.current) return;
@@ -187,12 +193,25 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         <p className="text-sm text-muted-foreground">{t(group.questions[0]?.clip ? "topik.test.pairNote" : "topik.test.passageNote")}</p>
       )}
 
+      {/* Drawn once for the whole group, same reason as the practice screen (M7.21). */}
+      {passage && (
+        <div className="flex flex-col gap-2 rounded-lg border p-3">
+          {passage.image_key && <img src={imageUrl(passage.image_key)} alt="" className="w-full rounded-md object-contain" />}
+          {passage.text && (
+            <p className="text-lg">
+              <KoreanText text={passage.text} />
+            </p>
+          )}
+        </div>
+      )}
+
       {group.questions.map((q) => (
         <TopikTestQuestionCard
           key={q.question_id}
           question={q}
           selected={queue.answers[q.position] ?? null}
           showNumber={group.questions.length > 1}
+          hideStem={passage !== null}
           onChoose={(option) => choose(q, option)}
         />
       ))}

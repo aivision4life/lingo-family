@@ -11,11 +11,18 @@ import type { TopikWordSource } from "@shared/topik";
 export const MarkSourceContext = createContext<TopikWordSource | null>(null);
 
 /**
- * The question a mark would come from. Throws when there is none: a term marked without its
- * question could not be filed in an album, and failing here is better than silently dropping it.
+ * The question a mark would come from, or null where the screen cannot say which question it is.
+ *
+ * This used to throw, on the reasoning that a term marked without its question could not be filed
+ * in an album and failing loudly beat dropping it silently. The reasoning was right and the place
+ * was wrong: it threw during **render**, so a screen that merely *could* offer a mark it cannot
+ * attribute died completely — the listening transcript took down the whole practice screen the
+ * moment a word in it was tapped (M7.22).
+ *
+ * The invariant survives without the throw, structurally: `TopikMarkToggle` renders nothing when
+ * this is null, so there is no button, so nothing can be marked without a source. The failure mode
+ * is now a missing button on a working screen.
  */
-export function useMarkSource(): TopikWordSource {
-  const source = useContext(MarkSourceContext);
-  if (!source) throw new Error("useMarkSource must be used inside a MarkSourceContext provider");
-  return source;
+export function useMarkSource(): TopikWordSource | null {
+  return useContext(MarkSourceContext);
 }

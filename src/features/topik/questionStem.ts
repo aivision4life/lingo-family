@@ -24,3 +24,22 @@ export function stemView(stem: Stem, { hasClip }: { hasClip: boolean }): Stem | 
   if (stem.text === null && stem.image_key === null) return null;
   return stem;
 }
+
+/**
+ * The one stem a whole group shares, or null when each question has its own (M7.21).
+ *
+ * A reading pair is two questions about one passage, and the passage is stored on **both** of them
+ * (SPEC §10 — one copy each, which is its own problem). Before they were grouped that was invisible,
+ * because each question had its own screen; putting them on one screen printed the same 191
+ * characters twice, one above the other. So the group draws it once and the cards leave it out.
+ *
+ * Every condition has to hold, and "every" is the point: two questions whose stems merely *look*
+ * alike are two questions, and a group of one has nothing to share. An image-only stem counts too
+ * (both keys must match), because a chart asked about twice is still one chart.
+ */
+export function sharedStem(stems: readonly (Stem | null)[]): Stem | null {
+  if (stems.length < 2) return null;
+  const [first] = stems;
+  if (!first || (first.text === null && first.image_key === null)) return null;
+  return stems.every((s) => s !== null && s.text === first.text && s.image_key === first.image_key) ? first : null;
+}

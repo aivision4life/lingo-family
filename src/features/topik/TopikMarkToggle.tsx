@@ -8,8 +8,13 @@ import { useMarkSource } from "./markSource";
 export function TopikMarkToggle({ lemma, gloss_vi }: { lemma: string; gloss_vi: string }) {
   const { t } = useTranslation();
   const { isMarked, toggle } = useMarkedWords();
+  // Null only where the screen genuinely cannot attribute the word — a question deleted since
+  // the sitting it was met in. Nothing to file it under, so nothing to offer (M7.22).
   const source = useMarkSource();
   const marked = isMarked(lemma);
+  // The invariant `useMarkSource` used to defend with a throw, kept as a render decision instead:
+  // no source, no button, so `toggle` can never be reached without one.
+  if (!source) return null;
   return (
     <button
       type="button"

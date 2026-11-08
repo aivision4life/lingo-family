@@ -1174,3 +1174,40 @@ Chỗ 5 đã mọc **biến thể thứ sáu của luật** (`section === "liste
 - trả lời câu 19 → **không có giải thích**; trả lời nốt câu 20 → giải thích của cả hai hiện ra.
 
 Hai thứ màn hình thật chỉ ra mà test không: câu ghi chú viết "cùng một **đoạn nghe**" nằm trên một đoạn văn đọc (sửa luôn: chọn câu chữ theo cụm đó có băng hay không), và **đoạn văn được vẽ hai lần** trên một màn — hệ quả trực tiếp của việc gộp nhóm, ghi vào §10. Không có bước mở trình duyệt thì cả hai lọt.
+
+### M7.22 — Một hàm ném lỗi lúc render, và màn ôn tập phần nghe sập (2026-11-08)
+
+**Hiện tượng (production, bản `603cf5cf`):** chạm vào một từ trong **lời thoại** ở màn ôn tập phần nghe → cả màn hình chết:
+
+```
+Unexpected Application Error!
+useMarkSource must be used inside a MarkSourceContext provider
+URL: /topik/practice?section=listening&from=9&to=12
+```
+
+**Không phải lỗi của việc C** (M7.19, bản vừa deploy), dù bản đó đúng là đã dời `MarkedWordsProvider`. Bằng chứng: ở commit `d9b56c6` (M7.12, chỗ sinh ra `MarkSourceContext`) dòng vẽ lời thoại trong `TopikSession.tsx` **đã** nằm ngoài mọi thẻ câu hỏi, và commit của việc C **không đụng vào dòng đó** (`git show 19d3e55 -- TopikSession.tsx` không có dòng nào khớp `Transcript`). Lỗi đã sống từ M7.12; việc C chỉ tình cờ là bản deploy mà người dùng gặp nó.
+
+**Nguyên nhân:** `MarkSourceContext` được cung cấp bởi **`TopikQuestionCard`**, tức mỗi thẻ câu hỏi một nguồn. Nhưng không phải thứ gì trên màn ôn tập cũng nằm trong một thẻ: **lời thoại là của cả cụm**, nên `TopikSession` vẽ nó ở ngoài. Từ trong lời thoại vẫn chạm được → popover → `TopikMarkToggle` → `useMarkSource()` → **ném lỗi giữa lúc render**.
+
+Và `useMarkSource` ném lỗi là có chủ ý, với lý lẽ ghi sẵn trong chú thích: *"một từ được đánh dấu mà không biết thuộc câu nào thì không xếp album được, nên hỏng to còn hơn bỏ qua trong im lặng"*. Lý lẽ đúng, **chỗ đặt sai**: nó chạy trong pha render, nên một màn hình chỉ *có thể* mời đánh dấu một từ nó không quy được về câu nào thì chết hẳn, kéo theo cả phiên.
+
+**Cách sửa, hai phần tách bạch:**
+1. **Bất biến giữ nguyên nhưng đổi chỗ**: `useMarkSource()` trả `null` thay vì ném, và `TopikMarkToggle` **không vẽ gì** khi không có nguồn. Không có nút thì không thể bấm, nên vẫn không thể đánh dấu mà thiếu nguồn — nhưng cái giá của một chỗ quên provider tụt từ *màn hình trắng* xuống *thiếu một cái nút*.
+2. **Vá đúng chỗ thủng**: `TopikSession` tự cấp `groupSource` (câu đầu của cụm — một đoạn băng, một đoạn văn, mọi câu trong cụm chia đều) cho những khối **nó tự vẽ**. Nút hiện thật, từ được xếp đúng album.
+
+**Quét ra ba chỗ, không phải một:**
+
+| Nơi vẽ chữ chạm được | Nguồn |
+|---|---|
+| `TopikQuestionCard` | tự cấp, cho câu của chính nó ✓ |
+| `TopikTranscript` (lời thoại, do `TopikSession` vẽ) | **không có** → đây là lỗi production |
+| `TopikSession` — đoạn văn dùng chung (M7.21, thêm cùng buổi chiều hôm đó) | **không có** → cùng một lỗ, mở lại sau vài giờ |
+| `TopikTestResultView` | có, trừ khi câu đã bị xoá (`exam === null`) → trước đây là **sập**, giờ là thiếu nút |
+
+Chỗ thứ ba đáng nhớ nhất: tôi vừa vá xong chỗ thứ hai thì phát hiện chính thay đổi mình làm hai giờ trước đã mở lại đúng cái lỗ đó. Một context bắt buộc mà **không có gì ở mức kiểu dữ liệu nhắc người ta cấp nó** thì mỗi khối vẽ chữ mới là một lần tung đồng xu.
+
+> **Đừng ném lỗi trong pha render để bảo vệ một bất biến.** React không có chỗ nào bắt lỗi đó ngoài error boundary, và error boundary nghĩa là mất cả màn hình. Bất biến nào diễn đạt được bằng "không đủ điều kiện thì không vẽ nút" thì diễn đạt như vậy: hỏng thành thiếu một chức năng, chứ không thành mất cả phiên làm việc.
+
+**Dữ liệu:** không mất gì. Lỗi nằm hoàn toàn trong pha render, không đường ghi nào bị đụng — các lần trả lời đã nằm trong `topik_attempts`/`topik_cards`, và danh sách từ đã đánh dấu **sống sót** nhờ chính việc C: `marked` nằm trong bản ghi localStorage (`topik_session_v1_<profile>`), ghi lại sau mỗi lần đổi, nên tải lại trang là phiên và danh sách từ trở về. Trớ trêu là bản deploy bị nghi gây ra lỗi lại chính là bản làm cho nó không mất gì.
+
+**Test chặn tái phát, và nó kiểm được đúng những gì** (`src/features/topik/markSource.test.ts`): dự án **không có test component**, nên không có gì ở đây render React. Test đúng ra phải mount `TopikSession` với một cặp câu nghe, trả lời cả hai, mở lời thoại, bấm vào một từ — sáu bước render thật. Thay vào đó là hai phép kiểm rẻ tiền đọc mã nguồn: (1) hook **không ném lỗi** — đây mới là tính chất biến lỗi từ màn hình trắng thành thiếu nút, và nó hỏng ngay nếu ai đó khôi phục `throw`; (2) **danh sách các file vẽ chữ chạm được là cố định**, mỗi mục kèm một dòng nói nguồn ở đâu ra — thêm chỗ mới là test đỏ, buộc phải trả lời câu hỏi đó. Chính danh sách này là thứ sẽ hỏi khi đoạn văn dùng chung ra đời. Chúng **không** kiểm được provider có thật trong cây lúc chạy, giá trị có đúng câu không, hay nút có hiện không — chỉ màn hình thật mới nói được, và đó vẫn là nơi tôi xác nhận bản vá này (chạm vào 자전거 trong lời thoại: popover mở, không sập, từ được ghi với `source` đúng là câu 21).

@@ -18,16 +18,20 @@ export function TopikTestQuestionCard({
   question,
   selected,
   showNumber,
+  hideStem = false,
   onChoose,
 }: {
   question: TopikTestQuestion;
   selected: number | null;
   /** A pair labels each question; a lone one is already labelled by the screen's heading. */
   showNumber: boolean;
+  /** The screen already drew this stem above the whole group (`sharedStem`, M7.21). */
+  hideStem?: boolean;
   onChoose: (option: number) => void;
 }) {
   const { t } = useTranslation();
-  const stem = stemView(question.stem, { hasClip: question.clip !== null });
+  // Drawn once above the group instead, when every question in it has the same stem (M7.21).
+  const stem = hideStem ? null : stemView(question.stem, { hasClip: question.clip !== null });
 
   return (
     <div className={cn("flex flex-col gap-3", showNumber && "rounded-lg border p-3")}>

@@ -3,11 +3,14 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import type { TopikSection } from "@shared/enums";
 import type { TopikPracticeQuestion, TopikRevealEntry, TopikSessionMode } from "@shared/topik";
+import { imageUrl } from "@/features/images/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRevealTopikGroup, useSubmitTopikAttempt } from "./api";
 import { groupIndexOf, groupNumbers, groupQuestions, questionsBefore } from "./groups";
 import { useMarkedWords } from "./markedWords";
+import { MarkSourceContext } from "./markSource";
+import { sharedStem, stemView } from "./questionStem";
 import { clearSession, writeSession, type SavedSession } from "./sessionProgress";
 import {
   allAnswered,
@@ -20,7 +23,7 @@ import {
   type SessionStates,
 } from "./sessionState";
 import { TopikClipPlayer } from "./TopikClipPlayer";
-import { TopikQuestionCard } from "./TopikQuestionCard";
+import { TappableText, TopikQuestionCard } from "./TopikQuestionCard";
 import { TopikSessionResults } from "./TopikSessionResults";
 import { TopikTranscript } from "./TopikTranscript";
 
@@ -179,6 +182,24 @@ export function TopikSession({
   };
 
   const transcript = group.questions.map((q) => reveals[q.id]).find((r) => r?.transcript);
+  // Null for listening (the stem is the withheld transcript) and for a lone question.
+  const passage = sharedStem(group.questions.map((q) => stemView(q.stem, { hasClip: q.audio !== null })));
+  /**
+   * Which question a word tapped in the group's **own** blocks is filed under (M7.22).
+   *
+   * The cards each provide their own source, and anything inside one is covered. What is not
+   * inside one is everything the group draws for itself: the shared passage and the transcript.
+   * Both belong to every question of the group equally — one passage, one clip — so the first is
+   * the one to attribute a word to.
+   *
+   * Before this, neither had a source at all, and `useMarkSource` threw while rendering: tapping
+   * a word in a listening transcript killed the practice screen in production. The shared passage
+   * added the same hole again an hour later, which is the argument for one value here rather than
+   * a provider written out at each block.
+   */
+  const groupSource = group.questions[0]
+    ? { section: group.questions[0].section, exam: group.questions[0].exam, number: group.questions[0].number }
+    : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -253,6 +274,21 @@ export function TopikSession({
         <p className="text-sm text-muted-foreground">{t(group.questions[0]?.audio ? "topik.practice.pairNote" : "topik.practice.passageNote")}</p>
       )}
 
+      {/* One passage, drawn once above both questions (M7.21). It is stored on each of them
+          (SPEC §10), so without this the same text is printed twice, one card after the other. */}
+      {passage && (
+        <MarkSourceContext.Provider value={groupSource}>
+          <div className="flex flex-col gap-2 rounded-lg border p-3">
+            {passage.image_key && <img src={imageUrl(passage.image_key)} alt="" className="w-full rounded-md object-contain" />}
+            {passage.text && (
+              <p className="text-lg">
+                <TappableText text={passage.text} vocab={group.questions[0]?.vocab ?? []} />
+              </p>
+            )}
+          </div>
+        </MarkSourceContext.Provider>
+      )}
+
       {group.questions.map((question) => (
         <TopikQuestionCard
           key={question.id}
@@ -261,12 +297,22 @@ export function TopikSession({
           state={states[question.id]}
           reveal={readable ? (reveals[question.id] ?? null) : null}
           showNumber={group.questions.length > 1}
+          hideStem={passage !== null}
           onChoose={(option) => choose(question, option)}
         />
       ))}
 
       {/* Only now may the transcript be read — this is where a listening question is learnt from. */}
-      {readable && transcript?.transcript && <TopikTranscript text={transcript.transcript} vocab={transcript.vocab} />}
+      {/* The transcript is the group's, not any one question's — it sits outside the cards, so it
+          needs its own source for the words tapped in it. Without this it had none at all, and
+          `useMarkSource` threw mid-render: tapping a word in a listening transcript killed the
+          whole practice screen (M7.22). Every question of a group shares one clip, so the first
+          one is the right question to file a word under. */}
+      {readable && transcript?.transcript && (
+        <MarkSourceContext.Provider value={groupSource}>
+          <TopikTranscript text={transcript.transcript} vocab={transcript.vocab} />
+        </MarkSourceContext.Provider>
+      )}
 
       {/* Giving up is a deliberate trade: the words of the recording for the right to answer. */}
       {!readable && group.questions[0]?.audio && (

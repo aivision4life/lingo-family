@@ -32,6 +32,7 @@ export function TopikQuestionCard({
   state,
   reveal,
   showNumber,
+  hideStem = false,
   onChoose,
 }: {
   question: TopikPracticeQuestion;
@@ -41,6 +42,8 @@ export function TopikQuestionCard({
   reveal: TopikRevealEntry | null;
   /** A pair labels each card; a lone question is already labelled by the screen's own heading. */
   showNumber: boolean;
+  /** The screen already drew this stem above the whole group (`sharedStem`, M7.21). */
+  hideStem?: boolean;
   onChoose: (option: number) => void;
 }) {
   const { t } = useTranslation();
@@ -73,7 +76,9 @@ export function TopikQuestionCard({
   const correctOption =
     answered?.result.correct_option ?? reveal?.correct_option ?? null;
   const locked = answered !== null || givenUp;
-  const stem = stemView(question.stem, { hasClip: question.audio !== null });
+  // `hideStem`: the group drew this question's stem above all of its cards, because every
+  // question in the group has the same one (M7.21).
+  const stem = hideStem ? null : stemView(question.stem, { hasClip: question.audio !== null });
 
   return (
     // Everything marked on this card — a tapped word in the text, a key term under the explanation
