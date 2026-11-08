@@ -8,7 +8,7 @@ import {
 } from "@shared/topik";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
-import { stemView } from "./questionStem";
+import { ownStemBesideShared, stemView } from "./questionStem";
 import { allPictureOptions } from "./optionLayout";
 import { TopikPictureOptions } from "./TopikPictureOptions";
 import { useTopikQuestionContent, useTopikQuestionStats } from "./api";
@@ -76,9 +76,10 @@ export function TopikQuestionCard({
   const correctOption =
     answered?.result.correct_option ?? reveal?.correct_option ?? null;
   const locked = answered !== null || givenUp;
-  // `hideStem`: the group drew this question's stem above all of its cards, because every
-  // question in the group has the same one (M7.21).
-  const stem = hideStem ? null : stemView(question.stem, { hasClip: question.audio !== null });
+  // `hideStem`: the group drew the passage above all of its cards (M7.21). What can still be
+  // left is this question's own boxed sentence, which the group does not share (M7.23).
+  const own = stemView(question.stem, { hasClip: question.audio !== null });
+  const stem = hideStem ? ownStemBesideShared(own) : own;
 
   return (
     // Everything marked on this card — a tapped word in the text, a key term under the explanation

@@ -3,7 +3,7 @@
 // grouping (M6.1). Pure: image references stay as docx relationship ids (`rId9`, …) — resolving
 // them to R2 keys needs the zip's media bytes, done by the caller (scripts/topikImport).
 import type { TopikSection } from "../../shared/enums";
-import { DEFAULT_QUESTION_POINTS, pointsFromInstruction, topikGroupKey } from "../../shared/topik";
+import { DEFAULT_QUESTION_POINTS, pointsFromInstruction, splitBoxedSentence, topikGroupKey } from "../../shared/topik";
 import { BRACKETED_RANGE, parseTopikDocument, SPEAKER_LINE } from "./topikParse";
 
 /**
@@ -181,6 +181,36 @@ export type DraftQuestion = {
  */
 const FIXED_NUMBER_BLOCK: Record<number, string> = { 1: "1~2", 2: "1~2", 3: "3~4", 4: "3~4" };
 
+/**
+ * Two labels that name the same real exam (M7.23).
+ *
+ * `8DeOfficial`'s block files and the whole-paper `OfficialTest` file both cover the 35회 reading
+ * paper — same questions, same answers, one of them a better copy (it fixes a typo the other has).
+ * Labelled by their own `source` they become two exams, so the same twenty questions sit in the
+ * bank twice and a learner meets each of them twice, with two separate schedules.
+ *
+ * The trap this closes is quiet and does not need `--force`: the importer skips a question that
+ * already exists by `(section, exam, number)`, so once the 35회 rows carry `OfficialTest-35회`, an
+ * ordinary `--apply` of a block file finds nothing under `8DeOfficial-35회` and **inserts twenty
+ * fresh duplicates**, reporting them as new work. Mapping the label makes the two converge
+ * instead: the second import skips (or updates with `--force`), and no file has to be edited.
+ *
+ * **This is not another `FIXED_NUMBER_INSTRUCTION`**, the patch table removed in M7.7 — and the
+ * difference is the whole reason this one is allowed to exist. That table held a *second source of
+ * truth* for something that belongs in the Word file (a question's instruction), so it masked
+ * mistakes in the files and the fix was to correct the files and delete the table. This table
+ * holds something **no file can state**: that two sources are names for one exam is a fact
+ * *between* files, and neither file knows the other exists. It is a synonym list, not an override.
+ * A reader three months from now deciding to "finish removing the patch tables" should stop here.
+ *
+ * Every application is printed in the import report, so it is never silent. Add a line only for
+ * two labels proven to be the same real paper — compare the stems first, as was done for 35회.
+ */
+const CANONICAL_EXAM: Record<string, string> = { "8DeOfficial-35회": "OfficialTest-35회" };
+
+/** The label this exam is filed under, after the synonym table. */
+export const canonicalExam = (label: string): string => CANONICAL_EXAM[label] ?? label;
+
 export type ImportDraft = {
   fileName: string;
   /** From the file name (authoritative; cross-checked, never overridden by the heading/instruction). */
@@ -227,6 +257,8 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
   }
 
   const questions: DraftQuestion[] = [];
+  /** Labels the synonym table redirected, reported once each rather than once per question. */
+  const renamed = new Map<string, string>();
   for (const exam of parsed.exams) {
     // A whole paper carries its own grouping; a block file has one block, stated by its name.
     const blockLines = paper ? blockLinesOf(exam.items) : [];
@@ -248,7 +280,9 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       // group's heading is the fallback, and the listening files use it exclusively — the round
       // sits in Heading2 and Heading3 stays a plain question number.
       const round = item.round ?? exam.round;
-      const examLabel = round ? `${fn.source}-${round}` : `${fn.source}-연습${exam.groupIndex}`;
+      const rawExamLabel = round ? `${fn.source}-${round}` : `${fn.source}-연습${exam.groupIndex}`;
+      const examLabel = canonicalExam(rawExamLabel);
+      if (examLabel !== rawExamLabel) renamed.set(rawExamLabel, examLabel);
       // The reading 1-4 patch belongs to the block shape only: it exists because one block file
       // covers two tasks at once. A whole paper states every block itself.
       const readingFix = !paper && fn.section === "reading";
@@ -342,6 +376,7 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
       });
     }
   }
+  for (const [from, to] of renamed) warnings.push(`exam "${from}" is filed as "${to}" (the same real paper under two source names)`);
   assignGroupKeys(questions);
   for (const note of driftNotes(questions)) warnings.push(note);
   return { fileName, block, questions, errors, warnings };
@@ -352,9 +387,16 @@ export function buildImportDraft(fileName: string, documentXml: string): ImportD
  *
  * `same_segment` — the file's `CHUNG ĐOẠN` mark — says "this question is about the same thing as
  * the one before it". That made it as far as the audio script and was then thrown away, so a
- * reading pair like 19-20 had nothing in D1 to say they belong together. A chain is broken by a
- * question that is not marked, and by a change of exam: a mark on the first question of an exam
- * has nothing to attach to.
+ * reading pair like 19-20 had nothing in D1 to say they belong together.
+ *
+ * A chain is broken by three things, and all three are the same rule read strictly — the mark
+ * means "the question **immediately before this one**", so it needs that question to be there:
+ *  - a question that is not marked;
+ *  - a change of exam, since a mark on an exam's first question has nothing to attach to;
+ *  - **a gap in the numbering**, because a question that failed to parse is not in this list at
+ *    all. 35회 reading is the case: #46 was refused (a paragraph nothing used), which left #45 and
+ *    #47 adjacent, and #47's mark chained it onto #44-45 — two unrelated passages in one group.
+ *    Caught by `driftNotes`, one run after that check was written.
  *
  * A group of one keeps `null` rather than a key of its own — `topikGroupId` already treats a
  * question with no group as a group of itself, and null means "the file said nothing", which is
@@ -371,7 +413,9 @@ export function assignGroupKeys(questions: DraftQuestion[]): void {
     chain = [];
   };
   for (const q of questions) {
-    if (!q.same_segment || chain.length === 0 || chain[0]!.exam !== q.exam) close();
+    const previous = chain.at(-1);
+    const consecutive = previous !== undefined && q.number === previous.number + 1;
+    if (!q.same_segment || previous === undefined || previous.exam !== q.exam || !consecutive) close();
     chain.push(q);
   }
   close();
@@ -399,12 +443,15 @@ export function driftNotes(questions: readonly { exam: string; number: number; g
   const notes: string[] = [];
   for (const members of byKey.values()) {
     const first = members[0]!;
-    const odd = members.find((m) => m.stem.text !== first.stem.text);
+    // The **passage** is what a group shares; a `<보 기>` sentence belongs to its own question
+    // (M7.23), so comparing whole stems would report every such pair as drifted.
+    const passageOf = (m: (typeof members)[number]) => splitBoxedSentence(m.stem.text).passage;
+    const odd = members.find((m) => passageOf(m) !== passageOf(first));
     if (!odd) continue;
     notes.push(
       `${first.exam} #${first.number} and #${odd.number} share a passage but their stem text differs:\n` +
-        `    #${first.number}: ${JSON.stringify(first.stem.text)}\n` +
-        `    #${odd.number}: ${JSON.stringify(odd.stem.text)}`,
+        `    #${first.number}: ${JSON.stringify(passageOf(first))}\n` +
+        `    #${odd.number}: ${JSON.stringify(passageOf(odd))}`,
     );
   }
   return notes;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sharedStem, stemView } from "./questionStem";
+import { ownStemBesideShared, sharedStem, stemView } from "./questionStem";
 
 describe("stemView", () => {
   // The bug this file exists for: a reading sitting showed four options and nothing to read.
@@ -60,5 +60,31 @@ describe("sharedStem", () => {
     const chart = { text: null, image_key: "topik/img/a.webp" };
     expect(sharedStem([chart, { ...chart }])).toEqual(chart);
     expect(sharedStem([chart, { text: null, image_key: "topik/img/b.webp" }])).toBeNull();
+  });
+});
+
+// M7.23: question 46 asks where a sentence belongs; 47 is asked about the same passage. One
+// passage above both cards, and the sentence stays with the question that has to place it.
+describe("a passage shared with one question's own boxed sentence", () => {
+  const PASSAGE = "만년 2위를 면하지 못하던 포털 사이트… ( ㉠ ) … ( ㉣ )";
+  const SENTENCE = "이는 합병 기업이 각자의 강점을 합친 것 이상의 역량을 발휘했을 때 가능하다.";
+  const q46 = { text: `${PASSAGE}
+<보 기>
+${SENTENCE}`, image_key: null };
+  const q47 = { text: PASSAGE, image_key: null };
+
+  it("shares the passage although only one stem has the box", () => {
+    expect(sharedStem([q46, q47])).toEqual({ text: PASSAGE, image_key: null });
+  });
+
+  it("leaves the boxed sentence with its own question", () => {
+    expect(ownStemBesideShared(q46)).toEqual({ text: `<보 기>
+${SENTENCE}`, image_key: null });
+    expect(ownStemBesideShared(q47)).toBeNull();
+  });
+
+  it("still refuses to share when the passages themselves differ", () => {
+    const other = { text: "완전히 다른 지문입니다.", image_key: null };
+    expect(sharedStem([q46, other])).toBeNull();
   });
 });

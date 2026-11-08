@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { segmentBoundsError, splitUnderline, stripUnderline, topikSegmentUpdateSchema } from "./topik";
+import { segmentBoundsError, splitBoxedSentence, splitUnderline, stripUnderline, topikSegmentUpdateSchema } from "./topik";
 
 describe("splitUnderline", () => {
   it("returns one plain run for text with no markup", () => {
@@ -84,5 +84,53 @@ describe("topikSegmentUpdateSchema", () => {
     expect(topikSegmentUpdateSchema.safeParse({ start_ms: 20000, speech_end_ms: 1000 }).success).toBe(false);
     expect(topikSegmentUpdateSchema.safeParse({ speech_end_ms: 30000, end_ms: 26000 }).success).toBe(false);
     expect(topikSegmentUpdateSchema.safeParse({ start_ms: 30000, end_ms: 26000 }).success).toBe(false);
+  });
+});
+
+// M7.23: a reading question that asks WHERE a sentence belongs carries that sentence at the end
+// of its own stem, after the paper's own `<보 기>` line. The question sharing its passage must not
+// inherit it — these are the exact shapes from the 35회 reading paper.
+describe("splitBoxedSentence", () => {
+  const PASSAGE = "운전 시 안전과 직결되는 것 중의 하나가 바로 차선이다. ( ㉠ ) 야간 운전 중에… ( ㉣ )";
+  const SENTENCE = "이를 방지하기 위해 야간에 차선이 잘 보이도록 반사 기능이 있는 특수한 페인트를 사용한다.";
+
+  it("splits a stem at the paper's own box label", () => {
+    expect(splitBoxedSentence(`${PASSAGE}
+<보 기>
+${SENTENCE}`)).toEqual({
+      passage: PASSAGE,
+      // The label stays with the box: it is what the exam prints, and no wording of ours would be
+      // more recognisable to someone sitting it.
+      boxed: `<보 기>
+${SENTENCE}`,
+    });
+  });
+
+  it("leaves an ordinary passage alone", () => {
+    expect(splitBoxedSentence(PASSAGE)).toEqual({ passage: PASSAGE, boxed: null });
+  });
+
+  it("accepts the spellings a Korean keyboard actually produces", () => {
+    for (const label of ["<보기>", "<보 기>", "〈보기〉", "＜보 기＞", "  <보  기>  "]) {
+      expect(splitBoxedSentence(`${PASSAGE}
+${label}
+${SENTENCE}`).boxed).not.toBeNull();
+    }
+  });
+
+  it("ignores 보기 written inside a sentence, not on a line of its own", () => {
+    const running = "이 문제는 <보 기>를 참고해서 풀면 된다. 그러면 답이 보인다.";
+    expect(splitBoxedSentence(running)).toEqual({ passage: running, boxed: null });
+  });
+
+  it("keeps a stem that is nothing but the box whole — there is no passage to share", () => {
+    const only = `<보 기>
+${SENTENCE}`;
+    expect(splitBoxedSentence(only)).toEqual({ passage: only, boxed: null });
+  });
+
+  it("passes null and empty text straight through", () => {
+    expect(splitBoxedSentence(null)).toEqual({ passage: null, boxed: null });
+    expect(splitBoxedSentence("")).toEqual({ passage: null, boxed: null });
   });
 });

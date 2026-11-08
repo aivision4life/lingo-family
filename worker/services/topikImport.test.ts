@@ -186,8 +186,10 @@ describe("buildImportDraft", () => {
   });
 
   it("reads the round out of a heading that also carries the 연습N text", () => {
-    const xml = doc(heading("Heading1", "문항 1~2") + heading("Heading2", "연습1 (35회)") + question("1", 1));
-    expect(buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-35회");
+    // 36회, not 35회: that one is in the synonym table (M7.23) and would be filed under the whole
+    // paper's label, which is a different rule and has its own tests.
+    const xml = doc(heading("Heading1", "문항 1~2") + heading("Heading2", "연습1 (36회)") + question("1", 1));
+    expect(buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-36회");
   });
 
   // One Heading2 group can hold items from several real rounds (Cau09/Cau10), so the item's own
@@ -568,6 +570,21 @@ describe("a shared source becomes a group (M7.21)", () => {
     expect(questions[2]!.group_key).toBe("reading|8DeOfficial-35회|48");
   });
 
+  // 35회 reading, for real: #46 was refused (a paragraph nothing used), so #45 and #47 ended up
+  // next to each other in this list and #47's mark chained it onto #44's group — the passage about
+  // emissions trading and the one about a merger, in one group.
+  it("never chains across a question that is missing from the list", () => {
+    const questions = [
+      draft({ number: 44, same_segment: false }),
+      draft({ number: 45, same_segment: true }),
+      draft({ number: 47, same_segment: true, stem: "another passage" }),
+    ];
+    assignGroupKeys(questions);
+    expect(questions.map((q) => q.group_key)).toEqual(["reading|8DeOfficial-35회|44", "reading|8DeOfficial-35회|44", null]);
+    // And with nothing to chain onto, #47 is a group of one rather than a wrong group of two.
+    expect(driftNotes(questions)).toEqual([]);
+  });
+
   it("never lets a chain run across two exams", () => {
     // A CHUNG ĐOẠN mark on the first question of an exam has nothing to attach to; it must not
     // reach back into the previous exam's last question.
@@ -582,6 +599,19 @@ describe("a shared source becomes a group (M7.21)", () => {
     assignGroupKeys(once);
     assignGroupKeys(twice);
     expect(once.map((q) => q.group_key)).toEqual(twice.map((q) => q.group_key));
+  });
+
+  // M7.23: 46 carries the sentence to be placed, 47 does not — one passage, so no drift.
+  it("does not call a boxed sentence a drift: only the passage is shared", () => {
+    const passage = "만년 2위를 면하지 못하던 포털 사이트… ( ㉠ ) … ( ㉣ )";
+    const questions = [
+      draft({ number: 46, same_segment: false, stem: `${passage}
+<보 기>
+이는 합병 기업이 각자의 강점을 합친 것…` }),
+      draft({ number: 47, same_segment: true, stem: passage }),
+    ];
+    assignGroupKeys(questions);
+    expect(driftNotes(questions)).toEqual([]);
   });
 
   it("reports a group whose two stems are not the same text, printing both", () => {
@@ -624,7 +654,8 @@ describe("the reading pair in a real file (M7.21)", () => {
     const draft = buildImportDraft("TOPIK_Reading_Cau19_20_8DeOfficial_VERSION1.docx", xml);
     expect(draft.errors).toEqual([]);
     expect(draft.questions.map((q) => q.number)).toEqual([19, 20]);
-    expect(draft.questions[0]!.group_key).toBe("reading|8DeOfficial-35회|19");
+    // Filed under the whole paper's label by the synonym table (M7.23).
+    expect(draft.questions[0]!.group_key).toBe("reading|OfficialTest-35회|19");
     expect(draft.questions[1]!.group_key).toBe(draft.questions[0]!.group_key);
     expect(draft.questions[1]!.stem.text).toBe(draft.questions[0]!.stem.text);
     expect(draft.questions[0]!.correct_option).toBe(2);
@@ -636,5 +667,38 @@ describe("the reading pair in a real file (M7.21)", () => {
     expect(draft.questions[0]!.instruction).toContain("( )에 들어갈 알맞은 것을 고르십시오.");
     expect(draft.questions[1]!.instruction).toContain("이 글의 내용과 같은 것을 고르십시오.");
     expect(draft.questions[0]!.instruction).toContain("(각 2점)");
+  });
+});
+
+// M7.23: two sources, one real paper. Not another FIXED_NUMBER_INSTRUCTION — see the table's own
+// comment for why a synonym list is allowed where an override table was not.
+describe("two source names for one real exam", () => {
+  it("files a block file's 35회 group under the whole paper's label", () => {
+    const xml = doc(heading("Heading2", "35회") + question("1-1", 2) + question("1-2", 3));
+    const draft = buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml);
+    expect(draft.questions.map((q) => q.exam)).toEqual(["OfficialTest-35회", "OfficialTest-35회"]);
+  });
+
+  it("says so in the report rather than renaming in silence, once per label", () => {
+    const xml = doc(heading("Heading2", "35회") + question("1-1", 2) + question("1-2", 3));
+    const draft = buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml);
+    const said = draft.warnings.filter((w) => w.includes("the same real paper under two source names"));
+    expect(said).toEqual(['exam "8DeOfficial-35회" is filed as "OfficialTest-35회" (the same real paper under two source names)']);
+  });
+
+  it("leaves every other round of the same source alone", () => {
+    const xml = doc(heading("Heading2", "36회") + question("1-1", 2) + question("1-2", 3));
+    const draft = buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml);
+    expect(draft.questions.map((q) => q.exam)).toEqual(["8DeOfficial-36회", "8DeOfficial-36회"]);
+    expect(draft.warnings.filter((w) => w.includes("two source names"))).toEqual([]);
+  });
+
+  it("gives the group key the canonical label too, so a re-import matches", () => {
+    // The mark goes inside the question it belongs to: a paragraph between two questions belongs
+    // to the one before it (M7.3).
+    const second = heading("Heading3", "1-2") + answer(3) + plain("CHUNG ĐOẠN") + table("", ["a", "b", "c", "d"], 3);
+    const xml = doc(heading("Heading2", "35회") + question("1-1", 2) + second);
+    const draft = buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml);
+    expect(draft.questions[1]!.group_key).toBe("reading|OfficialTest-35회|1");
   });
 });

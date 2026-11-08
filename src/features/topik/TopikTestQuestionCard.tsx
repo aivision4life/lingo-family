@@ -4,7 +4,7 @@ import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
 import { KoreanText } from "./KoreanText";
 import { allPictureOptions } from "./optionLayout";
-import { stemView } from "./questionStem";
+import { ownStemBesideShared, stemView } from "./questionStem";
 import { TopikPictureOptions } from "./TopikPictureOptions";
 
 /**
@@ -30,8 +30,10 @@ export function TopikTestQuestionCard({
   onChoose: (option: number) => void;
 }) {
   const { t } = useTranslation();
-  // Drawn once above the group instead, when every question in it has the same stem (M7.21).
-  const stem = hideStem ? null : stemView(question.stem, { hasClip: question.clip !== null });
+  // The passage is drawn once above the group (M7.21); a boxed sentence belongs to this question
+  // alone and stays here (M7.23).
+  const own = stemView(question.stem, { hasClip: question.clip !== null });
+  const stem = hideStem ? ownStemBesideShared(own) : own;
 
   return (
     <div className={cn("flex flex-col gap-3", showNumber && "rounded-lg border p-3")}>

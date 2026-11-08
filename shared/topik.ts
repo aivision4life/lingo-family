@@ -10,6 +10,46 @@ export { TOPIK_ALBUM, topikWordSourceSchema, TOPIK_SOURCES_MAX, type TopikWordSo
 export const TOPIK_OPTION_COUNT = 4;
 
 /**
+ * The `<보 기>` line a TOPIK paper prints above a sentence the learner has to place (M7.23).
+ *
+ * Its own line, so a passage that merely mentions 보기 in running text is untouched. Written
+ * generously because this is typed by hand from a printed paper: either spelling of the word and
+ * any of the three bracket pairs a Korean IME offers.
+ */
+const BOXED_LABEL = /^[^\S\r\n]*[<〈＜]\s*보\s*기\s*[>〉＞][^\S\r\n]*$/m;
+
+/**
+ * A stem split into the passage and the paper's boxed sentence (M7.23).
+ *
+ * Question 46 of a reading paper asks **where** a given sentence belongs in the passage, so the
+ * sentence is printed in a box of its own. The source file types it at the end of the stem cell,
+ * after a `<보 기>` line — a convention the same file already uses for questions 39-41.
+ *
+ * It has to be separable because of what sits next to it: question 47 shares 46's passage
+ * (`CHUNG ĐOẠN`, an empty stem cell) and inherits its text. **The passage is shared; the boxed
+ * sentence is not** — it belongs to 46 alone, and 47 showing it would be a sentence out of
+ * nowhere under the passage it is asked about. Everything that reads a stem splits it here:
+ * `inheritStem` copies the passage only, `driftNotes` compares passages, and the screen draws the
+ * shared passage once with each question's own box under its own options.
+ *
+ * `boxed` keeps the `<보 기>` line itself: it is the paper's own label for that box, and no
+ * translation of ours would be more recognisable to someone sitting the exam.
+ */
+export function splitBoxedSentence(text: string | null | undefined): { passage: string | null; boxed: string | null } {
+  // Empty text is no stem at all, and the rest of the code says that with null (`stem_text ||
+  // null` at parse time) — so this says it the same way rather than handing back "".
+  if (!text) return { passage: null, boxed: null };
+  const found = BOXED_LABEL.exec(text);
+  if (!found || found.index === undefined) return { passage: text, boxed: null };
+  const passage = text.slice(0, found.index).replace(/\s+$/, "");
+  const boxed = text.slice(found.index).trim();
+  // A stem that is *only* a boxed sentence has no passage to share; keep it whole rather than
+  // inventing an empty one.
+  if (passage === "") return { passage: text, boxed: null };
+  return { passage, boxed: boxed === "" ? null : boxed };
+}
+
+/**
  * Which group of questions one question belongs to — the single definition (M7.21).
  *
  * A group is the questions that share one source and are therefore answered together: a clip and
@@ -41,8 +81,16 @@ export const topikGroupId = (q: { id: string; segment_id: string | null; group_k
 export const topikGroupKey = (section: string, exam: string, firstNumber: number): string =>
   `${section}|${exam}|${firstNumber}`;
 
-/** Looser than the general upload limits (SPEC F3): exam scans need to stay legible. */
-export const TOPIK_IMAGE_MAX_SIDE = 1600;
+/**
+ * Looser than the general upload limits (SPEC F3): exam scans need to stay legible.
+ *
+ * 1800, and the number is measured rather than round: the 35회 reading paper's six image questions
+ * are all **1710px wide** (1710x296 through 1710x944 — one scan, cut to a fixed width), so 1600
+ * rejected every one of them. 1800 clears that width with a little room for a wider scan, and is
+ * still far below a phone photo, which arrives at 3000-4000px and should be resized before upload.
+ * Raise it again only against a real file, the same way: say which paper and how wide it was.
+ */
+export const TOPIK_IMAGE_MAX_SIDE = 1800;
 export const TOPIK_IMAGE_MAX_BYTES = 1_000_000;
 
 /** A stem or one option: text and/or an image (R2 key, content-addressed like other uploads). */

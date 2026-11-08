@@ -10,6 +10,8 @@
 // It lives here, as a function, because a display decision with more than two branches is one a
 // test has to be able to call (SPEC §11).
 
+import { splitBoxedSentence } from "@shared/topik";
+
 export type Stem = { text: string | null; image_key: string | null };
 
 /**
@@ -40,6 +42,23 @@ export function stemView(stem: Stem, { hasClip }: { hasClip: boolean }): Stem | 
 export function sharedStem(stems: readonly (Stem | null)[]): Stem | null {
   if (stems.length < 2) return null;
   const [first] = stems;
-  if (!first || (first.text === null && first.image_key === null)) return null;
-  return stems.every((s) => s !== null && s.text === first.text && s.image_key === first.image_key) ? first : null;
+  if (!first) return null;
+  // Compared on the **passage** only (M7.23): question 46 carries a `<보 기>` sentence of its own
+  // at the end of its stem, and 47 does not, yet the passage above them is one passage.
+  const passage = splitBoxedSentence(first.text).passage;
+  if (passage === null && first.image_key === null) return null;
+  const same = stems.every((s) => s !== null && splitBoxedSentence(s.text).passage === passage && s.image_key === first.image_key);
+  return same ? { text: passage, image_key: first.image_key } : null;
+}
+
+/**
+ * What one question still has to draw once the group drew the shared passage (M7.23).
+ *
+ * Almost always nothing. The exception is the sentence that question alone has to place: it was
+ * typed at the end of its own stem, after a `<보 기>` line, and it is not part of what the group
+ * shares — so it stays with its question, under its own options' heading.
+ */
+export function ownStemBesideShared(stem: Stem | null): Stem | null {
+  const boxed = splitBoxedSentence(stem?.text).boxed;
+  return boxed === null ? null : { text: boxed, image_key: null };
 }

@@ -13,7 +13,7 @@
 //     - or: an optional stem image (drawing), then exactly 4 "ListParagraph" options
 //   The one option whose runs are underlined is the model's own answer; it must agree with Y.
 import { XMLParser } from "fast-xml-parser";
-import { TOPIK_OPTION_COUNT } from "../../shared/topik";
+import { splitBoxedSentence, TOPIK_OPTION_COUNT } from "../../shared/topik";
 
 // --- Generic helpers for fast-xml-parser's `preserveOrder: true` shape ---------------------------
 
@@ -567,14 +567,20 @@ function parseItem(position: number, labelText: string, body: OrderedNode[], ins
  *
  * A second question that does have its own stem keeps it, but a stem that differs from the one it
  * shares a clip with is a contradiction worth reading: one recording cannot have two transcripts.
+ *
+ * **Only the passage is inherited** (M7.23). A reading question that asks where a given sentence
+ * belongs carries that sentence at the end of its stem cell, after a `<보 기>` line; the question
+ * sharing its passage must not inherit it, or a sentence belonging to question 46 appears under
+ * question 47 as if it were part of the text. `splitBoxedSentence` is the one place that knows
+ * where the passage stops.
  */
 function inheritStem(item: ParsedItem, previous: ParsedItem | undefined): void {
   if (!item.same_segment || !previous) return;
   if (item.stem_text === null) {
-    item.stem_text = previous.stem_text;
+    item.stem_text = splitBoxedSentence(previous.stem_text).passage;
     return;
   }
-  if (previous.stem_text !== null && item.stem_text !== previous.stem_text) {
+  if (previous.stem_text !== null && item.stem_text !== splitBoxedSentence(previous.stem_text).passage) {
     item.warnings.push("marked CHUNG ĐOẠN but its stem differs from the question it shares the clip with (its own is used)");
   }
 }

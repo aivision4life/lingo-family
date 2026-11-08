@@ -1211,3 +1211,40 @@ Chỗ thứ ba đáng nhớ nhất: tôi vừa vá xong chỗ thứ hai thì ph�
 **Dữ liệu:** không mất gì. Lỗi nằm hoàn toàn trong pha render, không đường ghi nào bị đụng — các lần trả lời đã nằm trong `topik_attempts`/`topik_cards`, và danh sách từ đã đánh dấu **sống sót** nhờ chính việc C: `marked` nằm trong bản ghi localStorage (`topik_session_v1_<profile>`), ghi lại sau mỗi lần đổi, nên tải lại trang là phiên và danh sách từ trở về. Trớ trêu là bản deploy bị nghi gây ra lỗi lại chính là bản làm cho nó không mất gì.
 
 **Test chặn tái phát, và nó kiểm được đúng những gì** (`src/features/topik/markSource.test.ts`): dự án **không có test component**, nên không có gì ở đây render React. Test đúng ra phải mount `TopikSession` với một cặp câu nghe, trả lời cả hai, mở lời thoại, bấm vào một từ — sáu bước render thật. Thay vào đó là hai phép kiểm rẻ tiền đọc mã nguồn: (1) hook **không ném lỗi** — đây mới là tính chất biến lỗi từ màn hình trắng thành thiếu nút, và nó hỏng ngay nếu ai đó khôi phục `throw`; (2) **danh sách các file vẽ chữ chạm được là cố định**, mỗi mục kèm một dòng nói nguồn ở đâu ra — thêm chỗ mới là test đỏ, buộc phải trả lời câu hỏi đó. Chính danh sách này là thứ sẽ hỏi khi đoạn văn dùng chung ra đời. Chúng **không** kiểm được provider có thật trong cây lúc chạy, giá trị có đúng câu không, hay nút có hiện không — chỉ màn hình thật mới nói được, và đó vẫn là nơi tôi xác nhận bản vá này (chạm vào 자전거 trong lời thoại: popover mở, không sập, từ được ghi với `source` đúng là câu 21).
+
+### M7.23 — Đề đọc đầy đủ đầu tiên: bốn thứ nó dạy (2026-11-08)
+
+File `TOPIK_II_Test35_Reading_OfficialTest.docx` là đề **đọc** 50 câu đầu tiên. Lần `--diff` đầu: 43/50 câu, 7 lỗi. Bốn việc rút ra, mỗi việc một loại.
+
+**1. Giới hạn ảnh 1600 → 1800, và con số là số đo.** Sáu câu (5-10) có ảnh rộng **đúng 1710px** — 1710×296 tới 1710×944, cùng một lần scan cắt theo chiều ngang cố định. 1600 chặn cả sáu. Thu nhỏ tay 6 ảnh × mỗi đề là việc lặp vô ích, nên nâng ngưỡng; 1800 là 1710 cộng một khoảng dư nhỏ, vẫn xa ảnh điện thoại (3000-4000px). Lần sau muốn nâng nữa thì cũng phải nêu được *đề nào, rộng bao nhiêu*.
+
+**2. Một câu bị loại làm gộp nhầm hai cụm — và chốt chống lệch viết hôm qua bắt được ngay.** Câu 46 bị từ chối (một đoạn văn không thuộc phần nào), nên trong mảng còn lại câu 45 và 47 nằm cạnh nhau; 47 có dấu `CHUNG ĐOẠN` nên nối vào cụm của 44-45. Hai đoạn văn khác hẳn nhau (khí thải / sáp nhập công ty) thành một cụm. `driftNotes` in cả hai bản ra, đúng một lần chạy sau khi nó được viết.
+
+`assignGroupKeys` ngắt chuỗi khi gặp câu không đánh dấu và khi đổi đề; thiếu vế thứ ba: **số hiệu không liền nhau**. Cả ba là một luật đọc cho chặt — dấu `CHUNG ĐOẠN` nghĩa là "chung với câu **ngay trước**", nên nó cần câu đó có mặt. Một câu rơi khỏi mảng vì lỗi parse là một câu không có mặt.
+
+> Khi một danh sách bị lọc trước khi xử lý, mọi luật dựa trên "phần tử liền trước" đều thành sai âm thầm. Hoặc giữ chỗ trống, hoặc kiểm bằng dữ liệu của chính phần tử (ở đây là số hiệu câu).
+
+**3. Câu `<보 기>`: quy ước đã có sẵn trong chính file đó.** Câu 46 là dạng "câu này đặt vào chỗ nào trong bài", nên có **một câu cho sẵn** nằm ngoài bảng → parser không có ô nào cho nó → lỗi cứng. Thoạt nhìn là một dạng câu hỏi mới cần quy ước mới. Nhưng câu **39, 40, 41** trong cùng file là **cùng dạng** và không hề lỗi, vì ở đó người gõ đặt câu ấy **bên trong ô đoạn văn**, sau một dòng `<보 기>`. Tức file đã có quy ước; câu 46 chỉ gõ lệch khỏi nó.
+
+Vậy mà **không thể bê nguyên quy ước đó sang 46**, và lý do phải ghi lại kẻo ba tháng nữa có người "sửa cho đúng chỗ": **câu 47 dùng chung đoạn văn của 46** (`CHUNG ĐOẠN`, ô stem trống) và `inheritStem` chép stem sang. Mọi thứ bỏ vào ô đó đều chảy sang 47 — kể cả câu chèn chỉ thuộc về 46, và nó sẽ hiện ngay dưới đoạn văn như thể là một phần của bài đọc. Câu 39-41 không dính vì mỗi câu một đoạn văn riêng, không ai kế thừa ai.
+
+Cách làm: một hàm tách duy nhất, `splitBoxedSentence` (`shared/topik.ts`), và **mọi nơi đọc stem đều tách qua nó**:
+- `inheritStem` chỉ chép **phần đoạn văn**, nên 47 nhận đúng bài đọc, không nhận câu chèn;
+- `driftNotes` so **phần đoạn văn**, nếu không chốt chống lệch sẽ kêu ở mọi cặp kiểu này;
+- `sharedStem` (màn hình) so phần đoạn văn → vẫn vẽ đoạn văn **một lần** cho cả cụm, còn `ownStemBesideShared` giữ cái hộp `<보 기>` ở lại với câu của nó.
+
+Giữ nguyên dòng nhãn `<보 기>` trong phần hộp: đó là nhãn của chính đề thi, không chữ nào của ta dễ nhận ra hơn với người đang đi thi.
+
+Phương án bị loại, và vì sao: nhét câu chèn vào đoạn `HỎI:` thì nó thành một phần `instruction`, mà `instruction` **in đậm toàn bộ** ở cả bốn chỗ hiển thị. Chụp màn hình 375px cho thấy ba dòng đậm liền nhau, câu chèn đọc thành "đề bài dài" chứ không ra "câu rời cần đặt vào chỗ nào". Sửa bằng cách in đậm dòng đầu thôi thì **ngược vai trò** — dòng đầu là `[46~47] … (각 2점)`, dòng hai mới là lệnh thật. Cách còn lại (đậm tới hết dòng kết thúc bằng 십시오, dùng lại `POLITE_IMPERATIVE` đã có) chạy được, nhưng để lại **hai quy ước cho một dạng câu trong cùng một file** — thứ sẽ gây rối ở chỗ không ai nghĩ tới.
+
+**4. `CANONICAL_EXAM`: hai tên cho một kỳ thi — và vì sao nó KHÁC `FIXED_NUMBER_INSTRUCTION` đã gỡ.** Đề đọc 35회 đã có 20 câu trong kho dưới nhãn `8DeOfficial-35회` (từ các file mảnh), còn file đầy đủ này cho nhãn `OfficialTest-35회`. Đối chiếu từng câu: **cùng câu, cùng đáp án**, và bản mới còn sửa một lỗi chính tả (`사용기도` → `사용되기도`).
+
+Cái bẫy sâu hơn vẻ ngoài: bước bỏ qua trùng lặp khớp theo `(section, exam, number)`, nên sau khi đổi nhãn 20 câu cũ sang `OfficialTest-35회`, **một lần `--apply` thường** lên file mảnh cũng sẽ **chèn mới 20 câu trùng** — không cần `--force`, không cảnh báo nào, và báo cáo gọi chúng là việc mới.
+
+Hai cách hiển nhiên đều hỏng: gỡ nhóm 35회 khỏi từng file mảnh thì nhiều file, dễ sót, và vẫn hỏng nếu sau này ai đó gõ lại; để nguyên thì nuôi một quả mìn. Cách chọn là **bảng đồng nghĩa** một dòng, áp ngay chỗ tính nhãn, in ra báo cáo mỗi lần áp dụng. Sai cũng không sinh dữ liệu trùng — hai nhãn hội tụ, nên lần nhập sau là *bỏ qua vì đã có*.
+
+> **Bảng này không phải `FIXED_NUMBER_INSTRUCTION` thứ hai**, và khác ở chỗ quyết định: bảng kia là **nguồn sự thật thứ hai** cho một thông tin vốn phải nằm trong file Word (đề bài của một câu) — nên nó che lỗi trong file, và cách đúng là sửa file rồi xoá bảng (M7.7). Bảng này giữ thứ **không file nào nói ra được**: việc hai nguồn là hai tên của cùng một kỳ thi là chuyện **giữa các file**, không file nào biết file kia tồn tại. Một bên là ghi đè, một bên là từ điển đồng nghĩa. Ai đó về sau định "gỡ nốt mấy bảng vá" thì dừng ở đây.
+
+Chọn `OfficialTest-35회` làm nhãn chuẩn vì **băng nghe 35회 đã mang đúng nhãn đó** — sau này ghép đề đọc và đề nghe của cùng một kỳ vào một bài thi thử thì chúng khớp sẵn.
+
+**Kết quả sau cả bốn:** 49/50 câu nhập được (còn câu 46 chờ sửa file), 0 cảnh báo lệch, độ phủ chạy liền tới câu 45, và file mảnh giờ báo đúng một dòng *"8DeOfficial-35회 được xếp vào OfficialTest-35회"* thay vì âm thầm dựng một đề song song.
