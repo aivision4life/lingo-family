@@ -334,7 +334,7 @@ Decisions (M2.2):
 - [x] Review screen (Settings → TOPIK → "Quản lý câu hỏi"): imported questions start unverified; an adult reviews (sees the detected answer), edits if needed, and approves — one at a time or a whole exam/block at once ("Duyệt cả nhóm"). A question with an import warning (e.g. a number cross-check mismatch) sorts first. Only verified questions are used for practice.
 - [x] Manual form (fallback next to import): same fields, saved already verified. Adults can edit/delete any question (`requireAdult`).
 - [x] Practice: pick a question-number block (derived from the `block` field, e.g. "1~2", "9") → up to 10 questions per session, ordered per profile by ts-fsrs `due` (own `topik_cards` table, independent of word/phrase cards): overdue-and-previously-wrong first, then never-attempted, then other due questions. One question at a time; the answer is shown immediately after picking an option (no quiz-at-the-end). Every attempt is logged (`topik_attempts`: selected option, correct/not, time taken) per profile.
-- [x] No AI in this phase; no daily quota (images are not AI-drawn, just optionally uploaded with the import or the manual form, so quota doesn't apply). Images use the same R2 upload/validation as elsewhere (`storeUploadedImage()`), but with their own, looser size limit (scans need to stay legible): ≤ 1600 px, ≤ ~1 MB (`TOPIK_IMAGE_MAX_SIDE` / `TOPIK_IMAGE_MAX_BYTES`, `shared/topik.ts`).
+- [x] No AI in this phase; no daily quota (images are not AI-drawn, just optionally uploaded with the import or the manual form, so quota doesn't apply). Images use the same R2 upload/validation as elsewhere (`storeUploadedImage()`), but with their own, looser size limit (scans need to stay legible): ≤ 1900 px, ≤ ~1 MB (`TOPIK_IMAGE_MAX_SIDE` / `TOPIK_IMAGE_MAX_BYTES`, `shared/topik.ts`). The pixel figure has moved three times as real papers arrived (1600 → 1800 → 1900, see the constant's own comment) — read it from the constant, not from here.
 - [x] Entry point: a card on Home ("Luyện TOPIK II"), not a 5th bottom-nav item (kept to 4 for mobile width).
 
 **Stage 2 (M6.2, this milestone): tap a word to see its meaning.**
@@ -387,6 +387,63 @@ Decisions (M2.2):
 - [x] `npm run topik-audio` proposes boundaries from ffmpeg `silencedetect` (`--silence`, `--noise`, `--intro`, `--min-speech`, `--local`): the pause after a clip belongs to that clip, the spoken introduction belongs to none, and a "clip" with ~1s of speech is the narrator announcing the second question of a pair, folded into the one before it. Questions are linked only when their numbers run 1..n without a hole; a Word file covering just the start of the paper takes the first n clips. An exam's audio is always stored **unverified**, and no listening question reaches practice until an adult approves its boundaries in Settings → TOPIK: a one-clip offset plays perfectly normal audio, so it would surface only as answers that stop making sense.
 - [x] Review screen: Settings → TOPIK → "Đoạn nghe" lists the papers and edits each clip's three timestamps (typed or nudged ±0.25s/±1s) with "listen as in practice" / "listen to the whole clip". Editing only writes timestamps — the mp3 is never touched — and un-approves the exam. Approval is blocked while any clip overlaps, leaves a gap, falls outside the file or has no question.
 - [x] Listening practice: the clip plays on arrival (stopping shortly after the talking, not at the exam boundary — in self-paced practice that would be 18 seconds of dead air) with unlimited replays and the usual 1×/0.75× speeds. The **transcript never leaves the server** before the answer is in: `GET /topik/session` strips `stem.text` and `vocab` for listening (hiding them in the UI would still leave them in the response), the polled content endpoint withholds the vocabulary until this profile has answered, and both come back with the attempt result, where "Xem lời thoại" reveals the transcript with tappable words. The block picker has a Đọc/Nghe switch, and a listening block is listed only once its questions have a clip and the exam's audio is approved.
+
+### F13. TOPIK Listening Podcast — P2 (M8, not started)
+
+**What it is for.** Studying Korean with the ears alone — driving, doing the dishes, folding laundry — with the screen locked in a pocket. Not a second way to practise: a way to use the hours that are already lost. Every decision below follows from "the eyes are busy and the hands are busy", and where a decision looks odd, that is the reason.
+
+#### One question, in order
+
+1. The question number, spoken in Korean.
+2. **The question line** (the `HỎI:` line) read by TTS.
+3. **The original clip**, exactly as in the exam.
+4. The four options read by TTS.
+5. A gap of N seconds for thinking.
+6. `정답은 N번` + **the correct option read out in full**.
+7. The correct option **read a second time**.
+8. *(optional, stage 3)* the Vietnamese explanation.
+
+#### Decisions, and why
+
+- **The question line comes before the clip, not after.** In the real exam the prompt is printed on the paper and read before the tape starts; the listener always knows what is being asked. Put it after the clip and the learner spends two to three minutes listening with no idea what to listen *for*, which is a different and much less useful exercise.
+- **Default gap 5 seconds, adjustable 3 / 5 / 8.** Long enough to decide, short enough that a 30-minute session is not half silence. The choice is a setting because thinking speed is personal in a way the app cannot measure.
+- **Questions 21-50 get a longer gap automatically.** They are the long dialogues and lectures, and a gap tuned to question 4 is not a gap at all after a three-minute lecture. Automatic rather than another setting: the difficulty is a property of the paper, not a preference.
+- **The answer is announced as both the number and the words.** The number is what the listener checks their own answer against; the full sentence is what actually teaches, because hearing "정답은 3번" alone teaches nothing. Reading it **twice** is deliberate — the first time it is being compared against what was chosen, and only on the second pass is it heard as Korean.
+- **TTS is used for the question line and the options, and for nothing else.** Those are the parts printed on paper in the real exam, so a synthetic voice reading them changes nothing about the exercise.
+- **The original clip is never replaced by TTS.** This is the one rule that cannot bend. The whole skill being trained is understanding real recorded speech — several speakers, real pace, real noise — and a clean synthetic voice reading a transcript trains something else that feels like progress and is not. If a clip is missing, the question is left out of the podcast rather than substituted.
+- **The announcement is in Korean, not Vietnamese.** It is four syllables the listener already knows, it keeps the session in one language, and switching languages every question breaks the listening frame that took a minute to settle into.
+- **The transcript is never read aloud.** It would add one to three minutes per question — on a 30-minute session that is the difference between fifteen questions and six. The Vietnamese explanation (stage 3) carries the teaching instead, and only for questions this profile has gotten wrong before, where there is something to explain.
+- **No podcast for the reading section.** There is nothing to listen to; reading a passage aloud would be the TTS substitution rule broken by another door.
+- **Nothing is written to FSRS.** A podcast gives no evidence of recall: nobody answered anything, and a listener who dozed off looks exactly like a listener who got it right. Writing spacing data from that would corrupt the one thing the schedule is for. Instead a **separate "heard in a podcast" mark** (its own table, `topik_podcast_plays` or similar: profile, question, when) so the next set does not replay the same questions — the mark is for choosing content, never for scheduling.
+- **Questions 1-3 of every paper cannot be in a podcast at all**: their four options are pictures, so there is nothing to read out. The picker must **say so plainly** ("3 câu đầu mỗi đề là đáp án ảnh, không có trong podcast") rather than quietly returning 47 questions when 50 were asked for. Silently dropping content is the failure this project keeps finding; see §11 M7.3.
+
+#### Choosing what to listen to
+
+- **By duration: 30 or 60 minutes.** This is how someone with a commute actually thinks about it, and it is the only option that matches the situation the feature exists for. It needs an estimate per question (clip length + TTS length + gap), which is known before a byte is played.
+- **By question range** — reuse the range picker from M7.24 exactly as it is, including the widening to whole groups.
+- **By paper.**
+- **"Câu tôi hay sai"** — drawn from `topik_attempts`, the questions this profile has gotten wrong most often. The most valuable of the four, and the only one that needs no new input from the listener.
+
+#### Hands-free, for real
+
+- **Media Session API**, so the lock screen and the car's Bluetooth head unit show the question and offer transport controls. Without this the feature does not work in a car at all, which is the main place it is meant to work.
+- **Previous = replay THIS question**, not go back one. In a car, "I missed that, say it again" is the thing wanted ten times more often than "take me back one question", and the steering-wheel button is the only control available. Next stays next.
+- **Audio focus** must be handled: when the phone speaks a navigation instruction, the podcast ducks or pauses and resumes afterwards — losing thirty seconds of a question to a turn announcement would be worse than a pause.
+- **Offline download is mandatory, not an option.** Mobile data in a car is unreliable and the whole session is audio; a session that stalls at a junction is a session abandoned.
+
+#### What this reuses
+
+Stitching clips from several files into one continuous tape is **the mixed mock test's problem, already solved** (M6.5): two alternating `<audio>` elements with the next segment preloaded. The podcast is that player with a different playlist and a different set of labels. Do not write a second one.
+
+#### Cost
+
+About **210 characters of TTS per question** (question line + four options + the announcement), × ~400 questions ≈ **84,000 characters, once**. Azure's F0 tier allows 500,000 characters a month, so the whole bank fits inside one month's free allowance with room to spare, and nothing is regenerated afterwards: audio is stored in R2 under a content key, exactly like the word/phrase TTS (§7).
+
+#### Phases
+
+- **M8.1 — core, online, fixed gap.** The sequence above, selection by range and by paper, a plain screen with play/pause/next. Proves the shape; no Media Session, no offline, no explanation.
+- **M8.2 — genuinely hands-free.** Media Session API (lock screen + car), audio focus, "replay this question" on Previous, and offline download. This is the milestone that makes the feature usable for its actual purpose; M8.1 without it is a demo.
+- **M8.3 — the smart parts.** Selection by duration and by "câu tôi hay sai", the Vietnamese explanation after the answer, and the longer automatic gap for questions 21-50.
 
 ---
 
@@ -594,6 +651,9 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M7.3 | TOPIK: paired listening questions | A question's own `HỎI:` line, an inherited transcript for the second of a pair, and no paragraph dropped in silence | [x] |
 | M6.13 | Per-profile session length | 5 / 10 / 15 / 20 questions per TOPIK practice session, beside the card-type switches | [x] |
 | M7.19 | A practice session survives being interrupted | Place, answers and marked words kept on the device; restored only onto the same block within 3 hours, and a finished session with words still waiting reopens its results screen | [x] |
+| M8.1 | TOPIK listening podcast: core | F13 — question number → question line → clip → options → gap → answer in Korean, spoken twice; selection by range/paper; online, fixed gap | [ ] |
+| M8.2 | TOPIK listening podcast: hands-free | Media Session (lock screen + car Bluetooth), audio focus, Previous = replay this question, offline download | [ ] |
+| M8.3 | TOPIK listening podcast: smart selection | By duration (30/60 min), "câu tôi hay sai" from `topik_attempts`, Vietnamese explanation, longer gap for questions 21-50 | [ ] |
 
 ---
 
