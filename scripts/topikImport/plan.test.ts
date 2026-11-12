@@ -23,7 +23,10 @@ import {
   type MediaByRid,
 } from "./plan";
 
-/** `FAKE_WEBP` with its width set to 2000px — over TOPIK's own 1600px limit. */
+/** `FAKE_WEBP` with its width set to 2000px — over `TOPIK_IMAGE_MAX_SIDE`, whatever it is today.
+ * Deliberately not just past it: that constant has moved three times as real scans arrived, and a
+ * fixture sized to clear it by one pixel would need editing every time. 2000px stands for the case
+ * the limit is actually for — a phone photo pasted in by mistake (SPEC §11, `TOPIK_IMAGE_MAX_SIDE`). */
 function oversizedForTopik(): Uint8Array {
   const b = Uint8Array.from(FAKE_WEBP);
   b.set([0xcf, 0x07, 0x00], 24); // VP8X width-1, 24-bit LE: 1999 → width 2000
@@ -63,7 +66,7 @@ describe("checkImageBytes", () => {
     expect(checkImageBytes(FAKE_WEBP, "image/webp")).toEqual({ ok: true });
   });
 
-  it("rejects an image over TOPIK's own pixel-size limit (1600px, looser than the 512px word/profile limit)", () => {
+  it("rejects an image over TOPIK's own pixel-size limit (looser than the 512px word/profile limit)", () => {
     expect(checkImageBytes(oversizedForTopik(), "image/webp").ok).toBe(false);
   });
 

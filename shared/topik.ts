@@ -112,13 +112,19 @@ export const TOPIK_MAX_GROUP_SPAN = 3;
 /**
  * Looser than the general upload limits (SPEC F3): exam scans need to stay legible.
  *
- * 1800, and the number is measured rather than round: the 35회 reading paper's six image questions
- * are all **1710px wide** (1710x296 through 1710x944 — one scan, cut to a fixed width), so 1600
- * rejected every one of them. 1800 clears that width with a little room for a wider scan, and is
- * still far below a phone photo, which arrives at 3000-4000px and should be resized before upload.
- * Raise it again only against a real file, the same way: say which paper and how wide it was.
+ * Measured, not round. 35회's six image questions are **1710px** wide (1710x296 through 1710x944 —
+ * one scan cut to a fixed width) and 41회's are **1801px**, so 1600 rejected the first six and
+ * 1800 rejected the next six by a single pixel. 1900 clears both with room to spare.
+ *
+ * **1600 → 1800 → 1900 inside one week: the number is chasing the data, so be clear what it
+ * guards.** It is not a judgement about how wide a scan ought to be — the papers decide that, and
+ * every one so far has been fine. It is there to catch a **phone photo pasted into a file by
+ * mistake**, which arrives at 3000-4000px and should have been resized before it ever got near
+ * the bank. So the rule for the next time it fires: a paper at 1901px means raise it again, the
+ * same way, naming the paper and the width. Something at 3500px means stop and ask — that is the
+ * case this limit exists for, and quietly widening it would be the one mistake that matters.
  */
-export const TOPIK_IMAGE_MAX_SIDE = 1800;
+export const TOPIK_IMAGE_MAX_SIDE = 1900;
 export const TOPIK_IMAGE_MAX_BYTES = 1_000_000;
 
 /** A stem or one option: text and/or an image (R2 key, content-addressed like other uploads). */
