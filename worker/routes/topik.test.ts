@@ -265,9 +265,11 @@ describe("blocks + practice session", () => {
     expect(after.questions.map((q) => q.id)).toEqual([q1.id]);
   });
 
-  // M7.2: "practise anyway". Two promises are tested together here because breaking either one
-  // makes the numbers lie: the attempt is kept (flagged), and nothing about the schedule moves.
-  it("records a practise-anyway answer without creating or moving a card", async () => {
+  // M7.24: whether an answer moves the schedule is decided per question, by the server, from the
+  // card and the clock — never by the screen it was answered on. Two promises together, because
+  // breaking either makes the numbers lie: a question not yet due leaves the schedule untouched
+  // (the attempt is still kept, flagged), and a question that IS due counts whatever the session.
+  it("moves the schedule for a due question and leaves a waiting one alone, in the same session", async () => {
     const fresh = await createQuestion({ number: 1 });
     const answered = await createQuestion({ number: 2, exam: "Test/연습2" });
     const cardsFor = async (questionId: string) =>
@@ -277,21 +279,23 @@ describe("blocks + practice session", () => {
           .all<{ due: number; state: number; reps: number }>()
       ).results;
 
-    // A normal answer on the second question: it gets a card, as always.
+    // A first answer on the second question: it gets a card, which pushes its due date out.
     await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: answered.id, selected_option: 3, duration_ms: 1000 });
     const before = (await cardsFor(answered.id))[0]!;
 
-    // Now practise both ahead of schedule.
+    // Now answer both again, straight away — the state a hand-typed range or "Ôn câu này" lands in.
     for (const q of [fresh, answered]) {
-      await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500, schedule: false });
+      await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500 });
     }
 
-    // The question that had no card still has none: a real review must still see it as new.
-    expect(await cardsFor(fresh.id)).toEqual([]);
-    // The one that had a card is untouched — same due date, same state, same count of reviews.
+    // The one with no card had never been answered, which is the strongest kind of due there is:
+    // a first answer is exactly what the schedule wants, so it now has a card.
+    expect(await cardsFor(fresh.id)).toHaveLength(1);
+    // The one already waiting is untouched — same due date, same state, same count of reviews.
+    // This is the promise that lets the owner open a question out of curiosity.
     expect((await cardsFor(answered.id))[0]).toEqual(before);
 
-    // Both answers are in the history, flagged as outside the schedule.
+    // Every answer is in the history, each flagged with what it actually did.
     const attempts = (
       await t.env.DB.prepare("SELECT question_id, scheduled FROM topik_attempts WHERE profile_id = ? ORDER BY created_at")
         .bind(adult)
@@ -299,28 +303,133 @@ describe("blocks + practice session", () => {
     ).results;
     expect(attempts).toEqual([
       { question_id: answered.id, scheduled: 1 },
-      { question_id: fresh.id, scheduled: 0 },
+      { question_id: fresh.id, scheduled: 1 },
       { question_id: answered.id, scheduled: 0 },
     ]);
   });
 
-  it("counts a question as unseen until it has a card, so extra practice never moves the number", async () => {
+  // The flag the screen draws its "this one does not count" label from. Display only — the server
+  // decides again when the answer arrives — but it must agree with that decision.
+  it("tells the screen, per question, whether answering will count", async () => {
+    const fresh = await createQuestion({ number: 1 });
+    const answered = await createQuestion({ number: 2, exam: "Test/연습2" });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: answered.id, selected_option: 3, duration_ms: 1000 });
+
+    const body = (await t.api("GET", `/topik/session?section=reading&from=1&to=2&profile_id=${adult}&mode=all`)).body as {
+      questions: { id: string; counts_toward_schedule: boolean }[];
+    };
+    const flag = new Map(body.questions.map((q) => [q.id, q.counts_toward_schedule]));
+    expect(flag.get(fresh.id)).toBe(true);
+    expect(flag.get(answered.id)).toBe(false);
+  });
+
+  it("counts a question as unseen until it has a card, and an answer is what gives it one", async () => {
     const q = await createQuestion({ number: 1 });
     await createQuestion({ number: 2, exam: "Test/연습2" });
     const unseenNow = async () =>
       ((await t.api("GET", `/topik/blocks?section=reading&profile_id=${adult}`)).body as { unseen: number }[])[0]!.unseen;
 
     expect(await unseenNow()).toBe(2);
-    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500, schedule: false });
-    // The attempt exists, but no card does — and "unseen" follows the cards, so it must not move.
-    expect(await unseenNow()).toBe(2);
-    // The next real session still hands the question out as a new one.
-    const session = (await t.api("GET", `/topik/session?section=reading&from=1&to=2&profile_id=${adult}`)).body as { questions: { id: string }[] };
-    expect(session.questions.map((x) => x.id)).toContain(q.id);
-
-    // A scheduled answer is what makes it seen.
     await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q.id, selected_option: 1, duration_ms: 500 });
+    // "unseen" follows the cards, and a never-answered question is due, so answering it gives it
+    // one — from any screen (M7.24). Before, an answer could be declared "practice" by the client
+    // and leave the question new forever.
     expect(await unseenNow()).toBe(1);
+  });
+
+  // M7.24: a range is widened to whole groups before anything is chosen. The bug this closes was
+  // real and silent — the query filtered `number BETWEEN from AND to` and nothing else, so asking
+  // for one question of a pair returned half a pair and the screen had no way to know.
+  describe("a practice range typed by hand", () => {
+    /** Reading questions 18-21 of one paper, with 19-20 sharing a passage. */
+    const paperWithPair = async () => {
+      const made: Record<number, string> = {};
+      for (const n of [18, 19, 20, 21]) {
+        const q = await createQuestion({ section: "reading", exam: "Range-35회", number: n, block: n === 19 || n === 20 ? "19~20" : String(n) });
+        made[n] = q.id;
+      }
+      await t.env.DB.prepare("UPDATE topik_questions SET group_key = ? WHERE exam = 'Range-35회' AND number IN (19, 20)")
+        .bind("reading|Range-35회|19")
+        .run();
+      return made;
+    };
+
+    const sessionNumbers = async (from: number, to: number, extra = "") => {
+      const body = (await t.api("GET", `/topik/session?section=reading&from=${from}&to=${to}&profile_id=${adult}&mode=all${extra}`)).body as {
+        questions: { number: number }[];
+      };
+      return body.questions.map((q) => q.number).sort((a, b) => a - b);
+    };
+
+    it("brings the other half of a pair in when the range ends inside it", async () => {
+      await paperWithPair();
+      expect(await sessionNumbers(19, 19)).toEqual([19, 20]);
+      expect(await sessionNumbers(20, 20)).toEqual([19, 20]);
+    });
+
+    it("leaves a range alone when nothing straddles its edges", async () => {
+      await paperWithPair();
+      expect(await sessionNumbers(18, 18)).toEqual([18]);
+      expect(await sessionNumbers(21, 21)).toEqual([21]);
+    });
+
+    it("gathers one kind of question from every paper by default, and from one when asked", async () => {
+      await paperWithPair();
+      await createQuestion({ section: "reading", exam: "Range-36회", number: 18, block: "18" });
+      expect(await sessionNumbers(18, 18)).toEqual([18, 18]);
+      const oneExam = await sessionNumbers(18, 18, "&exam=Range-36회");
+      expect(oneExam).toEqual([18]);
+    });
+  });
+
+  // The preview the picker shows while the numbers are being typed. Read-only: it creates nothing.
+  describe("the practice range preview", () => {
+    const preview = async (from: number, to: number, extra = "") =>
+      (await t.api("GET", `/topik/practice-range?section=reading&from=${from}&to=${to}${extra}`)).body as {
+        from: number;
+        to: number;
+        expanded: boolean;
+        added: number[];
+        question_count: number;
+        missing_number: number | null;
+        by_exam: { exam: string; count: number }[];
+      };
+
+    beforeEach(async () => {
+      for (const n of [18, 19, 20]) {
+        await t.api("POST", "/topik/questions", {
+          ...input({ section: "reading", exam: "Prev-35회", number: n, block: n === 18 ? "18" : "19~20" }),
+          profile_id: adult,
+        });
+      }
+      await t.env.DB.prepare("UPDATE topik_questions SET group_key = ? WHERE exam = 'Prev-35회' AND number IN (19, 20)")
+        .bind("reading|Prev-35회|19")
+        .run();
+      await t.api("POST", "/topik/questions", { ...input({ section: "reading", exam: "Prev-36회", number: 18, block: "18" }), profile_id: adult });
+    });
+
+    it("says which numbers widening pulled in", async () => {
+      expect(await preview(19, 19)).toMatchObject({ from: 19, to: 20, expanded: true, added: [20], question_count: 2 });
+    });
+
+    it("counts every paper's contribution when no exam is named", async () => {
+      const body = await preview(18, 18);
+      expect(body.question_count).toBe(2);
+      expect(body.by_exam).toEqual([
+        { exam: "Prev-35회", count: 1 },
+        { exam: "Prev-36회", count: 1 },
+      ]);
+    });
+
+    /**
+     * The difference from the mock test's range, and the reason this endpoint exists at all: a
+     * hole is only a hole inside one paper. Across all of them, "câu 17" missing from one paper
+     * means that paper is not typed up yet, and refusing the practice over it would be wrong.
+     */
+    it("names a missing number for one paper, and reports none across all of them", async () => {
+      expect((await preview(17, 18, "&exam=Prev-35회")).missing_number).toBe(17);
+      expect((await preview(17, 18)).missing_number).toBeNull();
+    });
   });
 
   it("mode=all serves a block whose questions are all waiting, and leaves them waiting", async () => {

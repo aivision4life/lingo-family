@@ -27,8 +27,10 @@ export function TopikPracticePage() {
   // "all" is only ever reached by tapping "practise anyway" on the empty screen, so it lives in
   // the URL: going back lands on the normal, scheduled session rather than silently repeating it.
   const mode: TopikSessionMode = params.get("mode") === "all" ? "all" : "due";
+  /** One paper, or every paper (M7.24) — the picker's filter, carried in the URL. */
+  const exam = params.get("exam");
   const profileId = profile?.id ?? "";
-  const session = useTopikSession(profileId, section, from, to, mode);
+  const session = useTopikSession(profileId, section, from, to, mode, exam);
   // Read once per page view, before the questions arrive: reading it again later could pick up a
   // record this very screen has since written.
   const [saved] = useState(() => (profileId ? readSession(profileId) : null));

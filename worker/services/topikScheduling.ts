@@ -4,6 +4,20 @@
 import type { CardFields } from "../../shared/scheduling";
 import { TOPIK_SESSION_SIZE, type TopikSessionMode } from "../../shared/topik";
 
+/**
+ * Whether answering this question now is a real review (M7.24).
+ *
+ * One definition, two readers: the session builder orders by it, and `POST /topik/attempts`
+ * decides from it whether the answer may move the FSRS schedule. A question with no card has
+ * never been answered, and a first answer is exactly what the schedule wants, so it counts.
+ *
+ * This is deliberately **not** something the client says. It used to be: the practice screen sent
+ * `schedule: mode === "due"`, so a client bug — or an old build on a phone — could quietly write
+ * FSRS state for questions that were not due, and nothing downstream could tell. The server has
+ * the card and the clock; it is the only place that cannot be lied to.
+ */
+export const isDueNow = (card: CardFields | null, now: Date): boolean => card === null || card.due.getTime() <= now.getTime();
+
 export type TopikCandidate = {
   question_id: string;
   /**
@@ -31,8 +45,9 @@ export function buildTopikSession(
   mode: TopikSessionMode = "due",
   limit: number = TOPIK_SESSION_SIZE,
 ): string[] {
-  const nowMs = now.getTime();
-  const isDue = (c: TopikCandidate) => c.card !== null && c.card.due.getTime() <= nowMs;
+  // `isDueNow` also answers true for a question with no card; these tiers want "has a card AND it
+  // is due", because a never-attempted question is its own tier below.
+  const isDue = (c: TopikCandidate) => c.card !== null && isDueNow(c.card, now);
   const byDue = (a: TopikCandidate, b: TopikCandidate) => a.card!.due.getTime() - b.card!.due.getTime();
 
   const overdueWrong = cands.filter((c) => isDue(c) && c.card!.lapses > 0).sort(byDue);

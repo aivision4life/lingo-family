@@ -82,6 +82,34 @@ export const topikGroupKey = (section: string, exam: string, firstNumber: number
   `${section}|${exam}|${firstNumber}`;
 
 /**
+ * The question numbers of each group, for `expandToGroups` (M7.24).
+ *
+ * One definition, three readers: the mock test's range widening, the practice session's, and the
+ * range preview. They all mean the same thing — "which questions must be taken together" — and
+ * `topikGroupId` already says which group a question is in.
+ */
+export function topikGroupsOf<T extends { id: string; segment_id: string | null; group_key: string | null; number: number }>(
+  questions: readonly T[],
+): number[][] {
+  const byGroup = new Map<string, number[]>();
+  for (const q of questions) {
+    const key = topikGroupId(q);
+    byGroup.set(key, [...(byGroup.get(key) ?? []), q.number]);
+  }
+  return [...byGroup.values()];
+}
+
+/**
+ * How far past the asked range a query must look to see a group straddling its edge (M7.24).
+ *
+ * A group is consecutive numbers (the import refuses to chain across a gap, M7.23) and the longest
+ * one a real paper has is three — reading 48-50. Fetching `from - 3 .. to + 3` therefore always
+ * contains every group that overlaps the range, and `expandToGroups` decides the rest. A paper
+ * with a longer group changes this number, and `topikRange.test.ts` says so.
+ */
+export const TOPIK_MAX_GROUP_SPAN = 3;
+
+/**
  * Looser than the general upload limits (SPEC F3): exam scans need to stay legible.
  *
  * 1800, and the number is measured rather than round: the 35회 reading paper's six image questions
@@ -313,6 +341,15 @@ export const topikPracticeQuestionSchema = z.object({
    * prints them on one page — the tape plays once, so they are answered together or not at all.
    */
   group_id: z.string(),
+  /**
+   * Whether answering this will move the spacing schedule (M7.24) — **display only**.
+   *
+   * The server decides again, from the card and its own clock, when the answer arrives; this is
+   * here so the screen can say which questions of a mixed session do not count, instead of a
+   * session-wide claim that would be wrong for half of them. The two can disagree only if a
+   * question falls due *during* the session, which is hours away by construction.
+   */
+  counts_toward_schedule: z.boolean(),
 });
 export type TopikPracticeQuestion = z.infer<typeof topikPracticeQuestionSchema>;
 
@@ -499,10 +536,43 @@ export const topikSessionRequestSchema = z
     from: z.coerce.number().int().positive(),
     to: z.coerce.number().int().positive(),
     mode: topikSessionModeSchema.default("due"),
+    /** One paper, or every paper when absent — "luyện một dạng câu" gathers from all of them. */
+    exam: z.string().min(1).optional(),
   })
   .refine((r) => r.to >= r.from, { message: "topik_range_invalid", path: ["to"] });
 export type TopikSessionRequest = z.infer<typeof topikSessionRequestSchema>;
 export const topikSessionResponseSchema = z.object({ questions: z.array(topikPracticeQuestionSchema) });
+
+/** `GET /topik/practice-range` — what a hand-typed practice range would really cover (M7.24). */
+export const topikPracticeRangeQuerySchema = z
+  .object({
+    section: topikSectionSchema,
+    from: z.coerce.number().int().positive(),
+    to: z.coerce.number().int().positive(),
+    exam: z.string().min(1).optional(),
+  })
+  .refine((r) => r.to >= r.from, { message: "topik_range_invalid", path: ["to"] });
+
+export const topikPracticeRangeSchema = z.object({
+  from: z.number().int(),
+  to: z.number().int(),
+  expanded: z.boolean(),
+  /** Numbers pulled in by widening to whole groups. */
+  added: z.array(z.number().int()),
+  /** Verified, practisable questions the range actually holds. */
+  question_count: z.number().int(),
+  /**
+   * The first number of the range this exam does not have, or null.
+   *
+   * Only meaningful for **one** exam. Across all of them a range is gathered from whatever papers
+   * have those numbers, so a paper missing question 17 is not a hole — it is a paper that is not
+   * typed up yet, and refusing the practice over it would be wrong.
+   */
+  missing_number: z.number().int().nullable(),
+  /** Per-exam contribution, for the "all exams" case where `missing_number` means nothing. */
+  by_exam: z.array(z.object({ exam: z.string(), count: z.number().int() })),
+});
+export type TopikPracticeRange = z.infer<typeof topikPracticeRangeSchema>;
 
 /**
  * Everything that is withheld while a question is being answered (M7.5): the transcript, its
@@ -533,13 +603,6 @@ export const topikAttemptRequestSchema = z.object({
   selected_option: topikCorrectOptionSchema,
   /** Time from first seeing the question to choosing an answer. */
   duration_ms: z.number().int().nonnegative().nullable().optional(),
-  /**
-   * Whether this answer may move the FSRS schedule (M7.2). A "practise anyway" session sends
-   * false: the attempt is recorded (it happened, and the history should say so, flagged
-   * `scheduled = 0`) but no card is created or updated, so a question practised ahead of time is
-   * still new — or still due when it was due — for the next real review.
-   */
-  schedule: z.boolean().optional(),
   /**
    * True while another question about the same recording is still unanswered (M7.5). The server
    * then answers with the verdict for *this* question only and withholds the transcript, the

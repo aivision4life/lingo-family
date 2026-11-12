@@ -7,6 +7,7 @@ import { stripUnderline, type TopikQuestion } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDeleteTopikQuestion, useGenerateTopikContent, useTopikFacets, useTopikQuestionContent, useTopikQuestionsPaged, useVerifyTopikBulk } from "./api";
+import { LinkButton } from "@/components/LinkButton";
 import { truncate } from "./questionPreview";
 import { formatTimeInput } from "./segmentEdit";
 
@@ -221,6 +222,19 @@ function QuestionRow({
         <Button size="sm" variant="outline" onClick={onView}>
           {t("topik.manage.view")}
         </Button>
+        {/* M7.24: no special endpoint — a one-question range is a range, and the session widens it
+            to the whole group when this question shares a passage or a clip. `mode=all` because
+            the point is to open *this* question, due or not; whether the answer counts is decided
+            per question by the server, so curiosity cannot distort the spacing. */}
+        {question.verified && (
+          <LinkButton
+            size="sm"
+            variant="outline"
+            to={`/topik/practice?section=${question.section}&from=${question.number}&to=${question.number}&mode=all&exam=${encodeURIComponent(question.exam)}`}
+          >
+            {t("topik.manage.practiseOne")}
+          </LinkButton>
+        )}
         <Button size="sm" variant="outline" onClick={onEdit}>
           {t("topik.manage.edit")}
         </Button>

@@ -17,6 +17,7 @@ const content = (text: string) => ({ text, image_key: null });
 const question = (id: string, number: number, group_id = id): TopikPracticeQuestion => ({
   section: "listening",
   exam: "OfficialTest-35회",
+  counts_toward_schedule: true,
   number,
   block: "21~22",
   instruction: null,

@@ -2,27 +2,28 @@ import { z } from "zod";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   topikAttemptResultSchema,
-  topikGroupRevealSchema,
   topikAudioListSchema,
   topikAudioSchema,
   topikBlockListSchema,
   topikFacetsSchema,
   topikGenerateContentResponseSchema,
+  topikGroupRevealSchema,
   topikImageUploadResponseSchema,
+  topikPracticeRangeSchema,
   topikQuestionContentSchema,
   topikQuestionPageSchema,
   topikQuestionSchema,
   topikQuestionStatsSchema,
   topikSessionResponseSchema,
-  topikVerifyBulkResponseSchema,
-  type TopikQuestionInput,
-  type TopikQuestionUpdate,
-  type TopikSegmentUpdate,
   topikTestClockSchema,
   topikTestOptionsSchema,
   topikTestRangePreviewSchema,
   topikTestResultSchema,
   topikTestRunSchema,
+  topikVerifyBulkResponseSchema,
+  type TopikQuestionInput,
+  type TopikQuestionUpdate,
+  type TopikSegmentUpdate,
   type TopikSessionMode,
   type TopikTestCreate,
   type TopikTestFinish,
@@ -42,11 +43,31 @@ const TOPIK_MANAGE_PAGE_SIZE = 30;
 export type TopikQuestionFilter = { section?: TopikSection; verified?: boolean; exam?: string; block?: string; q?: string };
 
 /** `profileId` decides the per-block "not studied yet" count, so it is part of the cache key. */
-export const useTopikBlocks = (profileId: string, section: TopikSection) =>
+/** `exam` null = every paper; the picker's filter scopes the block list and the range card alike. */
+export const useTopikBlocks = (profileId: string, section: TopikSection, exam: string | null = null) =>
   useQuery({
-    queryKey: ["topik", "blocks", profileId, section],
-    queryFn: () => api("GET", `/topik/blocks?section=${section}&profile_id=${profileId}`, topikBlockListSchema),
+    queryKey: ["topik", "blocks", profileId, section, exam],
+    queryFn: () =>
+      api(
+        "GET",
+        `/topik/blocks?section=${section}&profile_id=${profileId}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`,
+        topikBlockListSchema,
+      ),
     enabled: profileId !== "",
+  });
+
+/** What a hand-typed practice range would really cover (M7.24). Read-only, so asking per keystroke
+ * costs one SELECT — the same bargain the mock test's preview makes. */
+export const useTopikPracticeRange = (section: TopikSection, exam: string | null, from: number, to: number, enabled: boolean) =>
+  useQuery({
+    queryKey: ["topik", "practice-range", section, exam, from, to],
+    queryFn: () =>
+      api(
+        "GET",
+        `/topik/practice-range?section=${section}&from=${from}&to=${to}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`,
+        topikPracticeRangeSchema,
+      ),
+    enabled,
   });
 
 /**
@@ -58,11 +79,22 @@ export const useTopikBlocks = (profileId: string, section: TopikSection) =>
  * coming back used to do exactly that (the default `staleTime: 0` + refetch on window focus), and
  * the progress of the session in hand was lost.
  */
-export const useTopikSession = (profileId: string, section: TopikSection, from: number, to: number, mode: TopikSessionMode = "due") =>
+export const useTopikSession = (
+  profileId: string,
+  section: TopikSection,
+  from: number,
+  to: number,
+  mode: TopikSessionMode = "due",
+  exam: string | null = null,
+) =>
   useQuery({
-    queryKey: ["topik", "session", profileId, section, from, to, mode],
+    queryKey: ["topik", "session", profileId, section, from, to, mode, exam],
     queryFn: () =>
-      api("GET", `/topik/session?profile_id=${profileId}&section=${section}&from=${from}&to=${to}&mode=${mode}`, topikSessionResponseSchema),
+      api(
+        "GET",
+        `/topik/session?profile_id=${profileId}&section=${section}&from=${from}&to=${to}&mode=${mode}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`,
+        topikSessionResponseSchema,
+      ),
     enabled: from > 0 && to > 0,
     staleTime: Infinity,
     refetchOnWindowFocus: false,

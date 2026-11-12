@@ -608,7 +608,6 @@
       "yourOption": "Bạn đã chọn",
       "examQuestion": "{{exam}} · Câu {{number}}",
       "nothingDueDetail": "{{count}} câu trong khối này đã làm rồi và chưa tới hạn ôn lại. Câu gần nhất đến hạn {{when}}.",
-      "extraBanner": "Luyện lại — lượt này không tính vào lịch ôn.",
       "practiseAnyway": "Luyện lại dù chưa đến hạn",
       "practiseAnywayHint": "Các câu trả lời vẫn được ghi lại, nhưng lịch ôn giữ nguyên.",
       "chosenOption": "Đã chọn {{n}}",
@@ -620,7 +619,10 @@
       "giveUpHint": "Các câu chưa trả lời sẽ bị khoá, không tính điểm.",
       "givenUp": "Bạn đã bỏ qua câu này để xem lời thoại.",
       "giveUpError": "Không lấy được lời thoại. Thử lại.",
-      "passageNote": "Hai câu này hỏi về cùng một đoạn văn. Trả lời câu nào trước cũng được; giải thích chỉ hiện khi xong cả hai."
+      "passageNote": "Hai câu này hỏi về cùng một đoạn văn. Trả lời câu nào trước cũng được; giải thích chỉ hiện khi xong cả hai.",
+      "notScheduled": "Không tính vào lịch ôn",
+      "notScheduledBanner_one": "{{count}} câu trong lượt này chưa đến hạn nên không tính vào lịch ôn.",
+      "notScheduledBanner_other": "{{count}} câu trong lượt này chưa đến hạn nên không tính vào lịch ôn."
     },
     "manage": {
       "title": "Quản lý câu hỏi TOPIK",
@@ -671,7 +673,8 @@
         "points": "Điểm"
       },
       "clipAttached": "Đoạn nghe: {{from}} → {{to}}",
-      "clipMissing": "Chưa gắn đoạn nghe"
+      "clipMissing": "Chưa gắn đoạn nghe",
+      "practiseOne": "Ôn câu này"
     },
     "view": {
       "title": "Xem câu hỏi",
@@ -835,6 +838,20 @@
       "atQuestionInRange": "Câu {{number}} · khoảng {{from}}–{{to}}",
       "atQuestionsInRange": "Câu {{first}}–{{last}} · khoảng {{from}}–{{to}}",
       "passageNote": "Hai câu này hỏi về cùng một đoạn văn."
+    },
+    "picker": {
+      "examFilter": "Lọc theo đề",
+      "examAll": "Tất cả đề",
+      "rangeTitle": "Chọn khoảng câu",
+      "rangeHint": "Luyện riêng một dạng câu, ví dụ câu 16 đến 18 — gom từ mọi đề nếu không chọn đề cụ thể.",
+      "rangeFrom": "Từ câu",
+      "rangeTo": "Đến câu",
+      "rangeStart": "Luyện khoảng này",
+      "rangeWidened": "Đã nới thành câu {{from}}–{{to}} để không cắt đôi cụm dùng chung đoạn (thêm câu {{added}}).",
+      "rangeCount": "Có {{count}} câu trong khoảng này.",
+      "rangeEmpty": "Không có câu nào đã duyệt trong khoảng này.",
+      "rangeMissing": "Đề này thiếu câu {{n}}.",
+      "rangeByExam": "Theo đề: {{list}}"
     }
   }
 }

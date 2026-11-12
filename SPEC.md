@@ -1248,3 +1248,27 @@ Hai cách hiển nhiên đều hỏng: gỡ nhóm 35회 khỏi từng file mản
 Chọn `OfficialTest-35회` làm nhãn chuẩn vì **băng nghe 35회 đã mang đúng nhãn đó** — sau này ghép đề đọc và đề nghe của cùng một kỳ vào một bài thi thử thì chúng khớp sẵn.
 
 **Kết quả sau cả bốn:** 49/50 câu nhập được (còn câu 46 chờ sửa file), 0 cảnh báo lệch, độ phủ chạy liền tới câu 45, và file mảnh giờ báo đúng một dòng *"8DeOfficial-35회 được xếp vào OfficialTest-35회"* thay vì âm thầm dựng một đề song song.
+
+### M7.24 — Khoảng câu tự chọn, ôn thẳng một câu, và ai được quyền nói "lượt này không tính" (2026-11-12)
+
+Hai tính năng nhỏ, một luật lớn đi kèm.
+
+**Luật: một lượt trả lời được tính khi và chỉ khi câu đó đang đến hạn** (hoặc chưa từng làm — lần trả lời đầu tiên chính là thứ lịch giãn cách cần). Tính theo **từng câu**, và do **server** quyết.
+
+Trước đây `schedule` do **client gửi lên** (`TopikSession.tsx` gửi `schedule: mode === "due"`) và server dùng thẳng. Hai chỗ hỏng: một lỗi ở client — hoặc một bản cũ còn chạy trên điện thoại — ghi được trạng thái FSRS cho câu chưa tới hạn mà không ai phát hiện; và một phiên trộn lẫn (khoảng câu gõ tay, hay "Ôn câu này") thì *bất kỳ* lựa chọn chung nào cũng sai cho một nửa số câu. Server có thẻ và có đồng hồ của chính nó; đó là chỗ duy nhất không thể nói dối. `isDueNow` (`topikScheduling.ts`) là một định nghĩa, hai người đọc: xếp thứ tự phiên, và quyết định tính/không tính lúc chấm.
+
+Trường `schedule` **bị bỏ khỏi API**. Zod không `.strict()` nên một bản cũ gửi lên thì nó bị bỏ qua và nhận luôn hành vi mới — không có cửa sổ hỏng giữa hai bản.
+
+**Đổi hành vi có chủ ý:** phiên `mode=all` ("Luyện lại dù chưa đến hạn") trước kia không tính **gì cả**, kể cả câu đang đến hạn. Nay câu đến hạn **có** tính — trả lời một câu đã đến hạn *là* một lượt ôn thật, vứt nó đi là mất dữ liệu thật. `mode=all` từ nay chỉ còn một nghĩa: *chọn cả câu chưa đến hạn vào phiên*. Hai test cũ mã hoá luật cũ đã được viết lại theo luật mới, không phải xoá.
+
+`GET /topik/session` trả thêm `counts_toward_schedule` cho **từng câu** — **chỉ để hiển thị**: màn hình gắn nhãn "Không tính vào lịch ôn" lên đúng thẻ câu đó và đếm thành một băng ("1 câu trong lượt này…"). Server vẫn quyết lại lúc nhận câu trả lời. Hai bên chỉ lệch nhau nếu một câu **đến hạn ngay giữa phiên** — cách nhau hàng giờ theo thiết kế, và khi đó tôi chọn để server đúng hơn là để nhãn đúng.
+
+**Khoảng câu tự chọn** (`/topik`): ô chọn đề ("Tất cả đề" mặc định) + thẻ nhập khoảng, cả hai trạng thái nằm trong URL. Ô chọn đề áp cho **cả** danh sách khối lẫn thẻ khoảng — một ô điều khiển, một phạm vi, thay vì một bộ lọc chỉ ăn nửa màn hình.
+
+`GET /topik/practice-range` là endpoint riêng chứ không dùng chung với `GET /topik/tests/range`, và lý do là một khác biệt thật chứ không phải tiện tay: **lỗ hổng chỉ là lỗ hổng bên trong một đề**. Bài thi thử phủ một đề nên thiếu câu 17 là không thi được; còn luyện khoảng 16-18 gom từ *mọi* đề thì một đề thiếu câu 17 chỉ nghĩa là đề đó chưa gõ xong, từ chối luyện vì thế là sai. Nên `missing_number` chỉ báo khi đã chọn một đề; chọn tất cả thì trả về bảng phân bổ theo đề.
+
+**Ôn thẳng một câu:** không có endpoint mới, không có nhánh code riêng. Nút "Ôn câu này" chỉ là một liên kết tới `?from=N&to=N&mode=all&exam=…`; luật nới cụm tự kéo cả cụm vào nếu câu đó dùng chung đoạn văn hay đoạn băng.
+
+**Và một lỗi cũ được sửa nhân tiện:** truy vấn phiên lọc `number BETWEEN from AND to` rồi mới gộp cụm, nên một dải kết thúc giữa cụm **cắt đôi cụm** — hỏi câu 19 thì nhận đúng câu 19, câu 20 biến mất. Sửa không phải bằng luật mới: nới cửa sổ truy vấn thêm `TOPIK_MAX_GROUP_SPAN` = 3 (cụm dài nhất là 48-50) rồi chạy **đúng `expandToGroups`** mà bài thi thử dùng từ M7.14. `topikGroupsOf` giờ là một định nghĩa cho cả ba chỗ nới dải.
+
+**Kiểm trên trình duyệt** (D1 local, hai đề đọc): khoảng 16→18 báo "6 câu — 8DeOfficial-35회 (3) · OfficialTest-35회 (3)"; khoảng 19→19 báo "đã nới thành 19–20 (thêm câu 20)" và mở ra đúng cả cặp; "Ôn câu này" trên câu 19 (vừa trả lời, chưa tới hạn) hiện băng **"1 câu…"** chứ không phải 2 — vì câu 20 chưa từng làm nên vẫn tính — và sau khi trả lời, `due` và `reps` của câu 19 **không đổi**, lịch sử có đúng một lượt `scheduled=1` và một lượt `scheduled=0`.

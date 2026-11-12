@@ -28,6 +28,7 @@ import { topikSectionSchema } from "../../shared/enums";
 import { applyReview, emptyCardFields } from "../../shared/scheduling";
 import {
   topikGroupId,
+  topikGroupsOf,
   topikTestAnswerSchema,
   topikTestCreateSchema,
   topikTestFinishSchema,
@@ -570,15 +571,8 @@ type Picked =
   | { questions: QuestionRow[]; range: NumberRange }
   | { error: { error: string; missing_position?: number; missing_number?: number } };
 
-/** The groups of a paper: a clip's questions, a passage's questions, or one on its own (M7.21). */
-function groupsOf(questions: readonly QuestionRow[]): QuestionGroup[] {
-  const byGroup = new Map<string, number[]>();
-  for (const q of questions) {
-    const key = topikGroupId(q);
-    byGroup.set(key, [...(byGroup.get(key) ?? []), q.number]);
-  }
-  return [...byGroup.values()];
-}
+/** The groups of a paper, from the one definition every range widening shares (M7.24). */
+const groupsOf = (questions: readonly QuestionRow[]): QuestionGroup[] => topikGroupsOf(questions);
 
 type RangePlan = { range: NumberRange; expanded: boolean; missing: number | null; questions: QuestionRow[] };
 

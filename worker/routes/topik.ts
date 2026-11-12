@@ -30,6 +30,9 @@ import {
   topikQuestionSegmentSchema,
   topikQuestionStatsSchema,
   topikQuestionUpdateSchema,
+  topikGroupsOf,
+  TOPIK_MAX_GROUP_SPAN,
+  topikPracticeRangeQuerySchema,
   topikSegmentUpdateSchema,
   topikSessionRequestSchema,
   topikVerifyBulkRequestSchema,
@@ -37,6 +40,7 @@ import {
   type TopikPracticeQuestion,
   type TopikQuestion,
 } from "../../shared/topik";
+import { expandToGroups, missingNumber } from "../../shared/topikRange";
 import { profiles, topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments } from "../../db/schema";
 import { readInD1Chunks } from "../lib/d1Chunk";
 import { getDb, type AppEnv } from "../env";
@@ -47,7 +51,7 @@ import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
 import { recordUsage } from "../lib/quota";
 import { zv } from "../lib/validate";
 import type { MakeLlm } from "./words";
-import { buildTopikSession, type TopikCandidate } from "../services/topikScheduling";
+import { buildTopikSession, isDueNow, type TopikCandidate } from "../services/topikScheduling";
 import { generateTopikExplanationWithCache, resolveExplainImages, resolveKeyTermViews } from "../services/topikExplain";
 import type { ExplainInput } from "../services/topikExplainPrompt";
 import { generateTopikVocabWithCache, topikVocabSourceText } from "../services/topikWord";
@@ -145,7 +149,7 @@ async function revealGroup(db: ReturnType<typeof getDb>, profileId: string, ques
   );
 }
 
-const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): TopikPracticeQuestion => {
+const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null, countsTowardSchedule = true): TopikPracticeQuestion => {
   const hideTranscript = r.section === "listening";
   return {
     id: r.id,
@@ -162,6 +166,8 @@ const toPracticeQuestion = (r: QuestionRow, clip: TopikClip | null = null): Topi
     audio: clip,
     // One definition for every reader: clip, then the source file's group, then alone (M7.21).
     group_id: topikGroupId(r),
+    // Display only — `POST /topik/attempts` decides again from the card and its own clock (M7.24).
+    counts_toward_schedule: countsTowardSchedule,
   };
 };
 
@@ -488,8 +494,11 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     // `profile_id` is optional on purpose: an installed PWA may still be running a build from
     // before `unseen` existed, and it should keep working (it just gets unseen = count and ignores
     // the field) instead of getting a 400 on the screen's only request.
-    .get("/topik/blocks", zv("query", z.object({ section: topikSectionSchema, profile_id: z.string().optional() })), async (c) => {
-      const { section, profile_id } = c.req.valid("query");
+    .get(
+      "/topik/blocks",
+      zv("query", z.object({ section: topikSectionSchema, profile_id: z.string().optional(), exam: z.string().min(1).optional() })),
+      async (c) => {
+        const { section, profile_id, exam } = c.req.valid("query");
       // One aggregate for the whole screen, never one query per block, against this profile's own
       // cards: "unseen" = no card yet, which is precisely what a session treats as a new question;
       // "mastered" = its card reached ts-fsrs Review, the same definition the vocabulary side uses
@@ -513,9 +522,12 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
            -- "50 to do" that then starts an empty session is worse than not listing it at all.
            AND (q.section <> 'listening' OR (q.segment_id IS NOT NULL
              AND EXISTS (SELECT 1 FROM topik_audio au WHERE au.section = q.section AND au.exam = q.exam AND au.verified = 1)))
+           -- One paper, or every paper (M7.24): the picker's exam filter scopes the block list and
+           -- the range card together, so the screen always describes one scope.
+           AND (?5 = '' OR q.exam = ?5)
          GROUP BY q.block ORDER BY min(q.number)`,
       )
-        .bind(section, profile_id ?? "", State.Review, nowMs)
+        .bind(section, profile_id ?? "", State.Review, nowMs, exam ?? "")
         .all<{
           block: string;
           from: number;
@@ -527,11 +539,70 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
           later: number;
           next_due_at: number | null;
         }>();
-      return c.json(rows.results.map((r) => ({ section, ...r })));
+        return c.json(rows.results.map((r) => ({ section, ...r })));
+      },
+    )
+
+    /**
+     * What a hand-typed practice range would really cover (M7.24) — read-only.
+     *
+     * The mock test has had this since M7.14; practice needs it for a different reason. There the
+     * range is a paper and a hole in it is fatal; here a range like 16-18 is a *kind* of question,
+     * usually gathered from every paper, and a paper that lacks question 17 is simply one that is
+     * not typed up yet. So `missing_number` is reported only when one exam was named, and the
+     * all-exams case gets a per-paper breakdown instead — the honest answer to "what will I get".
+     */
+    .get("/topik/practice-range", zv("query", topikPracticeRangeQuerySchema), async (c) => {
+      const { section, from, to, exam } = c.req.valid("query");
+      const db = getDb(c.env);
+      const audioReady =
+        section === "listening"
+          ? sql`${topik_questions.segment_id} IS NOT NULL AND EXISTS (
+                SELECT 1 FROM topik_audio a
+                WHERE a.section = ${topik_questions.section} AND a.exam = ${topik_questions.exam} AND a.verified = 1)`
+          : undefined;
+      const inWindow = await db
+        .select({
+          id: topik_questions.id,
+          number: topik_questions.number,
+          exam: topik_questions.exam,
+          segment_id: topik_questions.segment_id,
+          group_key: topik_questions.group_key,
+        })
+        .from(topik_questions)
+        .where(
+          and(
+            eq(topik_questions.section, section),
+            eq(topik_questions.verified, true),
+            gte(topik_questions.number, Math.max(1, from - TOPIK_MAX_GROUP_SPAN)),
+            lte(topik_questions.number, to + TOPIK_MAX_GROUP_SPAN),
+            exam ? eq(topik_questions.exam, exam) : undefined,
+            audioReady,
+          ),
+        )
+        .orderBy(asc(topik_questions.number));
+
+      const range = expandToGroups({ from, to }, topikGroupsOf(inWindow));
+      const inRange = inWindow.filter((q) => q.number >= range.from && q.number <= range.to);
+      const added: number[] = [];
+      for (let n = range.from; n <= range.to; n++) if (n < from || n > to) added.push(n);
+
+      const byExam = new Map<string, number>();
+      for (const q of inRange) byExam.set(q.exam, (byExam.get(q.exam) ?? 0) + 1);
+
+      return c.json({
+        from: range.from,
+        to: range.to,
+        expanded: range.expanded,
+        added,
+        question_count: inRange.length,
+        missing_number: exam ? missingNumber(range, new Set(inRange.map((q) => q.number))) : null,
+        by_exam: [...byExam.entries()].map(([e, count]) => ({ exam: e, count })).sort((a, b) => a.exam.localeCompare(b.exam)),
+      });
     })
 
     .get("/topik/session", zv("query", topikSessionRequestSchema), async (c) => {
-      const { profile_id, section, from, to, mode } = c.req.valid("query");
+      const { profile_id, section, from, to, mode, exam } = c.req.valid("query");
       const db = getDb(c.env);
       // A listening question is only usable once it has a clip AND an adult has approved that
       // exam's boundaries (M7.1): a one-clip offset plays perfectly normal audio, so a wrong
@@ -543,19 +614,32 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
                 SELECT 1 FROM topik_audio a
                 WHERE a.section = ${topik_questions.section} AND a.exam = ${topik_questions.exam} AND a.verified = 1)`
           : undefined;
-      const questions = await db
+      /**
+       * The range is widened to whole groups before anything is chosen (M7.24).
+       *
+       * A group's questions share a passage or a recording, so "câu 19" means 19 and 20. The query
+       * used to filter `number BETWEEN from AND to` and nothing else, which cut a group in half the
+       * moment a range ended inside one: asking for 19-19 returned question 19 alone, and its pair
+       * was simply missing. The fix is not a new rule — it is the same `expandToGroups` the mock
+       * test has used since M7.14, which needs to *see* the straddling group first, hence the
+       * widened window (`TOPIK_MAX_GROUP_SPAN`).
+       */
+      const inWindow = await db
         .select()
         .from(topik_questions)
         .where(
           and(
             eq(topik_questions.section, section),
             eq(topik_questions.verified, true),
-            gte(topik_questions.number, from),
-            lte(topik_questions.number, to),
+            gte(topik_questions.number, Math.max(1, from - TOPIK_MAX_GROUP_SPAN)),
+            lte(topik_questions.number, to + TOPIK_MAX_GROUP_SPAN),
+            exam ? eq(topik_questions.exam, exam) : undefined,
             audioReady,
           ),
         )
         .orderBy(asc(topik_questions.number));
+      const range = expandToGroups({ from, to }, topikGroupsOf(inWindow));
+      const questions = inWindow.filter((q) => q.number >= range.from && q.number <= range.to);
       if (questions.length === 0) return c.json({ questions: [] });
 
       // Chunked: this IN list is every verified question of the chosen block, which grows with the
@@ -575,12 +659,10 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
 
       // How many questions this profile asked for (M6.13); an unknown profile keeps the default.
       const profile = await db.select({ session_size: profiles.session_size }).from(profiles).where(eq(profiles.id, profile_id)).get();
-      const sessionIds = buildTopikSession(
-        candidates,
-        resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url),
-        mode,
-        profile?.session_size ?? TOPIK_SESSION_SIZE,
-      );
+      // One clock for the whole response: the questions chosen and the "will this count" flags on
+      // them must be answered at the same instant, or they could disagree with each other.
+      const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
+      const sessionIds = buildTopikSession(candidates, now, mode, profile?.session_size ?? TOPIK_SESSION_SIZE);
       const byId = new Map(questions.map((q) => [q.id, q]));
 
       // One query for every clip this session needs; a question with no clip never got here (the
@@ -609,7 +691,12 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
           }
         }
       }
-      const result = sessionIds.map((id) => toPracticeQuestion(byId.get(id)!, clipByQuestion.get(id) ?? null));
+      // Each question says for itself whether answering it will count (M7.24): a range the learner
+      // typed in, or a single question opened from the management screen, routinely mixes due and
+      // not-due questions, and one claim for the whole session would be wrong for half of them.
+      const result = sessionIds.map((id) =>
+        toPracticeQuestion(byId.get(id)!, clipByQuestion.get(id) ?? null, isDueNow(cardByQuestion.get(id) ?? null, now)),
+      );
 
       // M6.4-ish: this is the actual generation trigger — only the handful of questions a real practice
       // session picks ever cost an AI call, never a bulk import/approve of ~600 questions. A
@@ -689,7 +776,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
     )
 
     .post("/topik/attempts", zv("json", topikAttemptRequestSchema), async (c) => {
-      const { profile_id, question_id, selected_option, duration_ms, schedule = true, group_pending = false } = c.req.valid("json");
+      const { profile_id, question_id, selected_option, duration_ms, group_pending = false } = c.req.valid("json");
       const db = getDb(c.env);
       const question = await db.select().from(topik_questions).where(eq(topik_questions.id, question_id)).get();
       if (!question) return c.json(err("not_found"), 404);
@@ -702,9 +789,17 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         .get();
       const is_correct = selected_option === question.correct_option;
 
-      // `schedule: false` is a "practise anyway" answer (M7.2): it happened, so it is recorded,
-      // but it must leave the schedule exactly as it was — no card created for a question that is
-      // still new, no due date moved on one that was already waiting.
+      /**
+       * Whether this answer moves the schedule is decided **here**, from the card and the clock
+       * (M7.24) — never from anything the client said.
+       *
+       * A question answered before it is due is practice, not recall: the attempt is recorded (it
+       * happened, flagged `scheduled = 0`) but no card is created or updated, so it is still new —
+       * or still due when it was due — for the next real review. A question that IS due counts,
+       * whatever screen it was opened from: answering a due question is a review, and throwing
+       * that away because the session was labelled "practise anyway" loses real data.
+       */
+      const schedule = isDueNow(existingCard ? toCardFields(existingCard) : null, now);
       if (schedule) {
         const fields = existingCard ? toCardFields(existingCard) : emptyCardFields(now);
         const { card } = applyReview(fields, is_correct ? 3 : 1, now);

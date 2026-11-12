@@ -208,6 +208,9 @@ export function TopikQuestionCard({
             autoShow={answered === null || !answered.result.is_correct}
           />
         )}
+        {/* Which questions of a mixed session do not count (M7.24). Display only: the server
+            decides again from the card and its own clock when the answer arrives. */}
+        {!question.counts_toward_schedule && <p className="text-xs text-amber-700 dark:text-amber-500">{t("topik.practice.notScheduled")}</p>}
         <p className="text-xs text-muted-foreground">
           {stats.data
             ? stats.data.attempts > 0

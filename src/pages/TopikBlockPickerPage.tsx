@@ -1,23 +1,46 @@
 import { Check } from "lucide-react";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate, useSearchParams } from "react-router";
 import { TOPIK_SECTIONS, type TopikSection } from "@shared/enums";
 import type { TopikBlock } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/LinkButton";
 import { PageShell } from "@/components/PageShell";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
-import { useTopikBlocks } from "@/features/topik/api";
+import { useTopikBlocks, useTopikFacets } from "@/features/topik/api";
+import { PracticeRangePicker } from "@/features/topik/PracticeRangePicker";
 import { blockProgress, blockTotals } from "@/features/topik/blockProgress";
 import { formatDueFromNow } from "@/features/topik/dueIn";
 import { cn } from "@/lib/utils";
 
-/** Screen (M6.1) — `/topik`: pick a question-number block to practice. */
+/**
+ * Screen (M6.1; range + exam filter M7.24) — `/topik`: pick what to practise.
+ *
+ * Three ways in, narrowing: a paper's own blocks, a range of question numbers typed by hand, and
+ * (from the management screen) a single question. The paper filter scopes the first two together,
+ * so the screen always describes one set of questions rather than two.
+ *
+ * Section and exam live in the URL, not in `useState`: this screen is worth bookmarking once a
+ * range is being drilled across several sittings, and Back from a practice session must return to
+ * the filter that was chosen, not to reading/all.
+ */
 export function TopikBlockPickerPage() {
   const { t } = useTranslation();
   const { profile } = useActiveProfile();
-  const [section, setSection] = useState<TopikSection>("reading");
-  const blocks = useTopikBlocks(canManageProfiles(profile) ? (profile?.id ?? "") : "", section);
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const section: TopikSection = params.get("section") === "listening" ? "listening" : "reading";
+  const exam = params.get("exam");
+  const profileId = canManageProfiles(profile) ? (profile?.id ?? "") : "";
+  const blocks = useTopikBlocks(profileId, section, exam);
+  // Only approved questions can be practised, so only papers that have some are worth offering.
+  const facets = useTopikFacets(profileId, section, true);
+  const setFilter = (next: { section?: TopikSection; exam?: string | null }) => {
+    const sec = next.section ?? section;
+    const ex = next.exam === undefined ? exam : next.exam;
+    setParams(ex ? { section: sec, exam: ex } : { section: sec }, { replace: true });
+  };
+  const maxNumber = Math.max(1, ...(blocks.data ?? []).map((b) => b.to));
   if (!profile) return null;
   // Not just hidden from the nav: TOPIK II is an advanced-learner exam and a session has the
   // server generate its vocabulary/explanations, which kid profiles never trigger (SPEC §10).
@@ -43,11 +66,27 @@ export function TopikBlockPickerPage() {
       )}
       <div className="flex flex-wrap gap-2">
         {TOPIK_SECTIONS.map((s) => (
-          <Button key={s} size="sm" variant={section === s ? "default" : "outline"} onClick={() => setSection(s)}>
+          // Changing section drops the paper filter: an exam label belongs to one section, and
+          // keeping it would silently ask for a paper that cannot be in the new list.
+          <Button key={s} size="sm" variant={section === s ? "default" : "outline"} onClick={() => setFilter({ section: s, exam: null })}>
             {t(`topik.section.${s}`)}
           </Button>
         ))}
       </div>
+
+      <select
+        value={exam ?? ""}
+        onChange={(e) => setFilter({ exam: e.target.value === "" ? null : e.target.value })}
+        aria-label={t("topik.picker.examFilter")}
+        className="min-h-11 rounded-lg border bg-background px-3 text-sm"
+      >
+        <option value="">{t("topik.picker.examAll")}</option>
+        {facets.data?.exams.map((e) => (
+          <option key={e} value={e}>
+            {e}
+          </option>
+        ))}
+      </select>
       {blocks.isPending ? (
         <p className="text-muted-foreground">{t("common.loading")}</p>
       ) : blocks.isError ? (
@@ -55,14 +94,29 @@ export function TopikBlockPickerPage() {
       ) : blocks.data.length === 0 ? (
         <p className="text-muted-foreground">{t("topik.noBlocks")}</p>
       ) : (
-        <BlockList blocks={blocks.data} section={section} />
+        <BlockList blocks={blocks.data} section={section} exam={exam} />
+      )}
+
+      {/* Below the blocks on purpose: the paper's own divisions are the common case, and this is
+          the one for drilling a kind of question across papers (M7.24). `mode=all` because a range
+          typed by hand is a deliberate choice of questions, not a question of what is due — and
+          since M7.24 that costs nothing, as each question decides for itself whether it counts. */}
+      {(blocks.data?.length ?? 0) > 0 && (
+        <PracticeRangePicker
+          section={section}
+          exam={exam}
+          maxNumber={maxNumber}
+          onStart={({ from, to }) =>
+            navigate(`/topik/practice?section=${section}&from=${from}&to=${to}&mode=all${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`)
+          }
+        />
       )}
     </PageShell>
   );
 }
 
 /** Every block, then one total row set apart by a rule above it (M6.9). */
-function BlockList({ blocks, section }: { blocks: TopikBlock[]; section: TopikSection }) {
+function BlockList({ blocks, section, exam }: { blocks: TopikBlock[]; section: TopikSection; exam: string | null }) {
   const { t } = useTranslation();
   const totals = blockTotals(blocks);
 
@@ -71,7 +125,7 @@ function BlockList({ blocks, section }: { blocks: TopikBlock[]; section: TopikSe
       {blocks.map((b) => (
         <LinkButton
           key={b.block}
-          to={`/topik/practice?section=${section}&from=${b.from}&to=${b.to}`}
+          to={`/topik/practice?section=${section}&from=${b.from}&to=${b.to}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`}
           variant="secondary"
           size="lg"
           className="h-auto flex-col items-stretch gap-1.5 py-3"

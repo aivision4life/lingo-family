@@ -608,7 +608,6 @@
       "yourOption": "Your answer",
       "examQuestion": "{{exam}} · Question {{number}}",
       "nothingDueDetail": "{{count}} question(s) here have been answered and are not due again yet. The first one comes back {{when}}.",
-      "extraBanner": "Extra practice — this session does not change the review schedule.",
       "practiseAnyway": "Practise anyway",
       "practiseAnywayHint": "Your answers are still recorded, but the review schedule stays as it is.",
       "chosenOption": "Chose {{n}}",
@@ -620,7 +619,10 @@
       "giveUpHint": "The unanswered questions are locked and not scored.",
       "givenUp": "You gave this question up to read the transcript.",
       "giveUpError": "Could not load the transcript. Try again.",
-      "passageNote": "Both questions are about the same passage. Answer them in any order; the explanations appear once both are done."
+      "passageNote": "Both questions are about the same passage. Answer them in any order; the explanations appear once both are done.",
+      "notScheduled": "Does not count toward the schedule",
+      "notScheduledBanner_one": "{{count}} question in this session is not due yet, so it will not count toward the schedule.",
+      "notScheduledBanner_other": "{{count}} questions in this session are not due yet, so they will not count toward the schedule."
     },
     "manage": {
       "title": "Manage TOPIK questions",
@@ -671,7 +673,8 @@
         "points": "Points"
       },
       "clipAttached": "Clip: {{from}} → {{to}}",
-      "clipMissing": "No clip attached"
+      "clipMissing": "No clip attached",
+      "practiseOne": "Practise this one"
     },
     "view": {
       "title": "View question",
@@ -835,6 +838,20 @@
       "atQuestionInRange": "Question {{number}} · range {{from}}–{{to}}",
       "atQuestionsInRange": "Questions {{first}}–{{last}} · range {{from}}–{{to}}",
       "passageNote": "Both questions are about the same passage."
+    },
+    "picker": {
+      "examFilter": "Filter by paper",
+      "examAll": "All papers",
+      "rangeTitle": "Choose a range",
+      "rangeHint": "Drill one kind of question, say 16 to 18 — gathered from every paper unless you pick one.",
+      "rangeFrom": "From",
+      "rangeTo": "To",
+      "rangeStart": "Practise this range",
+      "rangeWidened": "Widened to {{from}}–{{to}} so a shared passage is not cut in half (added {{added}}).",
+      "rangeCount": "{{count}} question(s) in this range.",
+      "rangeEmpty": "No approved questions in this range.",
+      "rangeMissing": "This paper does not have question {{n}}.",
+      "rangeByExam": "By paper: {{list}}"
     }
   }
 }

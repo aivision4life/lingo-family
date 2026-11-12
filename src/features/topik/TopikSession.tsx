@@ -58,7 +58,8 @@ export function TopikSession({
   section: TopikSection;
   from: number;
   to: number;
-  /** "all" = practising ahead of the schedule: answers are recorded but change no due dates. */
+  /** "all" = also serve questions that are not due yet. Since M7.24 this says nothing about
+   * whether an answer counts: the server decides that per question, from the card and its clock. */
   mode?: TopikSessionMode;
   /** Progress left on this device by an interrupted session, already checked against what the
    * server just served (M7.19). The page decides; this component only resumes from it. */
@@ -131,6 +132,7 @@ export function TopikSession({
   // The group's own question numbers — not to be confused with the block range in the props.
   const { from: firstNumber, to: lastNumber } = groupNumbers(group);
   const answeredCount = questions.filter((q) => statusOf(states, q.id) === "answered").length;
+  const notScheduledCount = questions.filter((q) => !q.counts_toward_schedule).length;
   const readable = allAnswered(states, ids) || anyGivenUp(states, ids);
   const keepReveals = (entries: TopikRevealEntry[]) =>
     setReveals((r) => ({ ...r, ...Object.fromEntries(entries.map((e) => [e.question_id, e])) }));
@@ -146,7 +148,6 @@ export function TopikSession({
         question_id: question.id,
         selected_option: option,
         duration_ms: elapsedSince(startedAt.current),
-        schedule: mode === "due",
         group_pending: pending,
       },
       {
@@ -203,11 +204,14 @@ export function TopikSession({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Always visible, not a one-off toast: every answer in this session is deliberately outside
-          the schedule, and that has to stay obvious while answering, not just when it started. */}
-      {mode === "all" && (
+      {/* Always visible, not a one-off toast: it has to stay obvious while answering, not just
+          when the session started. Counted rather than session-wide (M7.24) — a hand-typed range
+          or a single question opened from the management screen routinely mixes due and not-due
+          questions, and "this session does not count" would be a lie about half of them. Each
+          such question also carries its own label on its card. */}
+      {notScheduledCount > 0 && (
         <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm dark:bg-amber-950/40">
-          {t("topik.practice.extraBanner")}
+          {t("topik.practice.notScheduledBanner", { count: notScheduledCount })}
         </p>
       )}
 

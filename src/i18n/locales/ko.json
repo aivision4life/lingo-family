@@ -608,7 +608,6 @@
       "yourOption": "내가 고른 답",
       "examQuestion": "{{exam}} · {{number}}번",
       "nothingDueDetail": "이 블록의 {{count}}문항은 이미 풀었고 아직 복습 시점이 아닙니다. 가장 빠른 문항은 {{when}}입니다.",
-      "extraBanner": "추가 연습 — 이번 회차는 복습 일정에 반영되지 않습니다.",
       "practiseAnyway": "복습 시점이 아니어도 연습하기",
       "practiseAnywayHint": "답은 기록되지만 복습 일정은 그대로 유지됩니다.",
       "chosenOption": "{{n}}번 선택됨",
@@ -620,7 +619,10 @@
       "giveUpHint": "풀지 않은 문항은 잠기고 채점되지 않습니다.",
       "givenUp": "대본을 보기 위해 이 문항을 포기했습니다.",
       "giveUpError": "대본을 불러오지 못했습니다. 다시 시도하세요.",
-      "passageNote": "같은 지문에 대한 두 문항입니다. 순서는 자유이며, 해설은 두 문항을 모두 푼 뒤에 보입니다."
+      "passageNote": "같은 지문에 대한 두 문항입니다. 순서는 자유이며, 해설은 두 문항을 모두 푼 뒤에 보입니다.",
+      "notScheduled": "복습 일정에 반영 안 됨",
+      "notScheduledBanner_one": "이 세션의 {{count}}문항은 아직 복습 시기가 아니어서 일정에 반영되지 않습니다.",
+      "notScheduledBanner_other": "이 세션의 {{count}}문항은 아직 복습 시기가 아니어서 일정에 반영되지 않습니다."
     },
     "manage": {
       "title": "TOPIK 문제 관리",
@@ -671,7 +673,8 @@
         "points": "배점"
       },
       "clipAttached": "구간: {{from}} → {{to}}",
-      "clipMissing": "구간 미연결"
+      "clipMissing": "구간 미연결",
+      "practiseOne": "이 문항 연습"
     },
     "view": {
       "title": "문제 보기",
@@ -835,6 +838,20 @@
       "atQuestionInRange": "{{number}}번 · 범위 {{from}}~{{to}}",
       "atQuestionsInRange": "{{first}}~{{last}}번 · 범위 {{from}}~{{to}}",
       "passageNote": "같은 지문에 대한 두 문항입니다."
+    },
+    "picker": {
+      "examFilter": "회차 선택",
+      "examAll": "모든 회차",
+      "rangeTitle": "문항 범위 선택",
+      "rangeHint": "한 유형만 집중 연습 (예: 16~18번). 회차를 고르지 않으면 모든 회차에서 모읍니다.",
+      "rangeFrom": "시작 번호",
+      "rangeTo": "끝 번호",
+      "rangeStart": "이 범위 연습",
+      "rangeWidened": "같은 지문을 쓰는 묶음이 잘리지 않도록 {{from}}~{{to}}번으로 넓혔습니다 ({{added}}번 추가).",
+      "rangeCount": "이 범위에 {{count}}문항이 있습니다.",
+      "rangeEmpty": "이 범위에 승인된 문항이 없습니다.",
+      "rangeMissing": "이 회차에는 {{n}}번이 없습니다.",
+      "rangeByExam": "회차별: {{list}}"
     }
   }
 }
