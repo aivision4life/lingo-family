@@ -1272,3 +1272,27 @@ Trường `schedule` **bị bỏ khỏi API**. Zod không `.strict()` nên một
 **Và một lỗi cũ được sửa nhân tiện:** truy vấn phiên lọc `number BETWEEN from AND to` rồi mới gộp cụm, nên một dải kết thúc giữa cụm **cắt đôi cụm** — hỏi câu 19 thì nhận đúng câu 19, câu 20 biến mất. Sửa không phải bằng luật mới: nới cửa sổ truy vấn thêm `TOPIK_MAX_GROUP_SPAN` = 3 (cụm dài nhất là 48-50) rồi chạy **đúng `expandToGroups`** mà bài thi thử dùng từ M7.14. `topikGroupsOf` giờ là một định nghĩa cho cả ba chỗ nới dải.
 
 **Kiểm trên trình duyệt** (D1 local, hai đề đọc): khoảng 16→18 báo "6 câu — 8DeOfficial-35회 (3) · OfficialTest-35회 (3)"; khoảng 19→19 báo "đã nới thành 19–20 (thêm câu 20)" và mở ra đúng cả cặp; "Ôn câu này" trên câu 19 (vừa trả lời, chưa tới hạn) hiện băng **"1 câu…"** chứ không phải 2 — vì câu 20 chưa từng làm nên vẫn tính — và sau khi trả lời, `due` và `reps` của câu 19 **không đổi**, lịch sử có đúng một lượt `scheduled=1` và một lượt `scheduled=0`.
+
+### M7.25 — Hai file cùng ghi một câu trong một lần chạy (2026-11-12)
+
+Bảy đề đọc đầy đủ (36, 37, 41, 47, 52, 60, 64회) nhập theo đúng quy trình 35회: thêm nhãn chuẩn, đổi nhãn hàng cũ, rồi ghi đè. Nhưng bước cuối suýt chạy sai, và chỗ sai là một lỗ hổng thật do chính `CANONICAL_EXAM` mở ra.
+
+**Tình huống:** sau khi đổi nhãn, **file mảnh cũng cho ra `OfficialTest-<N>회`** — đó là mục đích của bảng nhãn. Nghĩa là một lần chạy **không lọc file** chứa cả file mảnh lẫn file đề đầy đủ, hai bên cùng sinh ra `(reading, OfficialTest-36회, #1)`.
+
+**Script xử lý thế nào:** `run.ts` đọc hàng hiện có **một lần, trước mọi lần ghi** (`rows: ImportRow[]`). Nên hai bản nháp cùng khoá đều cầm **cùng một `existing`**:
+- có hàng sẵn + `--force` → **cả hai cùng `UPDATE` một `id`, bản chạy sau thắng, không ai báo gì**;
+- chưa có hàng → cả hai cùng `INSERT`, chỉ mục duy nhất ném lỗi giữa chừng.
+
+Cái thứ nhất mới đáng sợ: thứ tự thắng thua phụ thuộc `readdir`, và **file mảnh là bản kém hơn** — thua ván đó nghĩa là bản đầy lỗi gõ đè lên bản vừa sửa. Không có cảnh báo nào.
+
+**Vá:** `duplicateKeys` (`scripts/topikImport/plan.ts`) chạy **trước chốt phạm vi, trước sao lưu, trước mọi lần ghi**: hai bản nháp cùng `(section, exam, number)` thì từ chối cả lần chạy, nêu tên câu và **cả hai file**. Đặt trước cả nhánh `--diff` nữa, vì một bảng `--diff` dựng từ hai file so vào cùng một hàng là bảng nói dối.
+
+Chạy thử ngay trên dữ liệu thật: **126 câu** bị trùng khoá (106 câu vừa đổi nhãn + 20 câu của 35회). Lỗ hổng không phải giả thuyết, nó đã nằm sẵn trong kho từ lúc bảng nhãn ra đời.
+
+> Một bảng đồng nghĩa làm hai thứ **cố ý** hội tụ về một khoá. Lợi ích là không còn dữ liệu trùng; cái giá là từ nay *trong một lần chạy* cũng có thể có hai nguồn cho một hàng. Thêm luật hội tụ mà không thêm luật phát hiện va chạm là mở một cửa sau.
+
+**Chi tiết đáng nhớ thứ hai:** `--file TOPIK_II_Test` khớp **8 file, không phải 7** — 35회 cũng mang tên đó. Vô hại (50 hàng của nó đã trùng khít, `--diff` xác nhận 156 so được nhưng chỉ 106 đổi), nhưng con số in ra là `8 of 30` và phải đọc đúng nó trước khi ghi chứ không phải đọc cái mình mong đợi.
+
+**Kết quả:** 8 đề đọc × 50 câu = **400 câu**, ghi đè 156, chèn mới 244, giữ nguyên 156 câu đã duyệt. Nội dung mới sửa một loạt lỗi gõ của bản cũ (`컴표터`→`컴퓨터`, `우제국`→`우체국`, `이백만 월`→`이백만 원`, `했빛`→`햇빛`, `고르시시오`→`고르십시오`), trong đó vài lỗi nằm ngay trong đáp án.
+
+**Và một bài học nhỏ về test:** năm test "đọc số kỳ thi từ tiêu đề" đỏ ngay khi bảy số thật vào bảng nhãn, vì chúng dùng chính 36/37/41회 làm ví dụ. Đổi sang **91/92/93회** — những số không phải đề thật và sẽ không bao giờ vào bảng. Một test minh hoạ luật A không nên mượn dữ liệu mà luật B cũng nhận.

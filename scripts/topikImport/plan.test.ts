@@ -7,6 +7,7 @@ import {
   checkImageBytes,
   checkQuestionImages,
   diffColumns,
+  duplicateKeys,
   refreshAiSql,
   staleAiRows,
   type DiffRow,
@@ -427,5 +428,33 @@ describe("refreshAiSql", () => {
     // something to show.
     expect(sql).not.toContain("vocab =");
     expect(sql).not.toContain("explanation_vi");
+  });
+});
+
+// M7.25: `CANONICAL_EXAM` makes two files resolve to the same exam on purpose, so a run that does
+// not filter by file now contains both the block file and the whole paper for the same questions.
+describe("duplicateKeys", () => {
+  const d = (file: string, number: number, exam = "OfficialTest-36회") => ({ file, section: "reading", exam, number });
+
+  it("names the question and both files", () => {
+    expect(duplicateKeys([d("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", 1), d("TOPIK_II_Test36_Reading_OfficialTest.docx", 1)])).toEqual([
+      { key: "reading OfficialTest-36회 #1", files: ["TOPIK_II_Test36_Reading_OfficialTest.docx", "TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx"] },
+    ]);
+  });
+
+  it("says nothing when every question comes from one file", () => {
+    expect(duplicateKeys([d("a.docx", 1), d("a.docx", 2), d("b.docx", 1, "OfficialTest-37회")])).toEqual([]);
+  });
+
+  it("keeps the sections apart: the same number in both is two questions", () => {
+    const reading = { file: "a.docx", section: "reading", exam: "OfficialTest-36회", number: 1 };
+    const listening = { ...reading, section: "listening", file: "b.docx" };
+    expect(duplicateKeys([reading, listening])).toEqual([]);
+  });
+
+  // One file legitimately produces a question once; a repeat inside one file is a different bug,
+  // and this reports it too rather than pretending a single file cannot do it.
+  it("reports a file that produces the same question twice", () => {
+    expect(duplicateKeys([d("a.docx", 1), d("a.docx", 1)])[0]).toMatchObject({ files: ["a.docx"] });
   });
 });

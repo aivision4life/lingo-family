@@ -206,7 +206,12 @@ const FIXED_NUMBER_BLOCK: Record<number, string> = { 1: "1~2", 2: "1~2", 3: "3~4
  * Every application is printed in the import report, so it is never silent. Add a line only for
  * two labels proven to be the same real paper — compare the stems first, as was done for 35회.
  */
-const CANONICAL_EXAM: Record<string, string> = { "8DeOfficial-35회": "OfficialTest-35회" };
+const CANONICAL_EXAM: Record<string, string> = Object.fromEntries(
+  // Every round where a `8DeOfficial` block file and the whole-paper `OfficialTest` file cover the
+  // same real exam. Added one at a time, each after comparing stems and finding the same questions
+  // with the same answers — 35회 first (M7.23), then the other seven when their papers arrived.
+  [35, 36, 37, 41, 47, 52, 60, 64].map((round) => [`8DeOfficial-${round}회`, `OfficialTest-${round}회`]),
+);
 
 /** The label this exam is filed under, after the synonym table. */
 export const canonicalExam = (label: string): string => CANONICAL_EXAM[label] ?? label;

@@ -65,6 +65,7 @@ import {
   checkImageBytes,
   checkQuestionImages,
   diffColumns,
+  duplicateKeys,
   examCoverage,
   fileMatchesFilter,
   filterLabel,
@@ -448,6 +449,19 @@ async function main() {
           .first<ExistingRow>();
         rows.push({ f, q, existing });
       }
+    }
+
+    // Two files in this one run claiming the same question (M7.25). Checked before the scope
+    // guard, the backup and any write: with `--force` the loser would be overwritten silently.
+    const dupes = duplicateKeys(rows.map((r) => ({ file: r.f.fileName, section: r.q.section, exam: r.q.exam, number: r.q.number })));
+    if (dupes.length > 0) {
+      console.error(`\n${dupes.length} question(s) are produced by more than one file in this run:`);
+      for (const d of dupes) console.error(`  ${d.key}  ←  ${d.files.join(", ")}`);
+      console.error(
+        "\nNothing was written. Two files resolving to one question is normal since CANONICAL_EXAM" +
+          " (a block file and the whole paper are the same exam), so limit the run with --file.",
+      );
+      process.exit(1);
     }
 
     // One passage stored twice, drifting apart (M7.21). The same check runs on the parsed file (as

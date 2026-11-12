@@ -89,38 +89,41 @@ describe("buildImportDraft", () => {
     const xml = doc(
       heading("Heading1", "문항 9") +
         heading("Heading2", "연습1: Official") +
-        question("1-9 (36회)", 1) +
-        question("1-9 (37회)", 2) +
-        question("1-9 (41회)", 3),
+        // Rounds chosen *not* to be real papers: every real one is in `CANONICAL_EXAM` now, and
+        // this test is about reading the round out of a label, not about the synonym table.
+        question("1-9 (91회)", 1) +
+        question("1-9 (92회)", 2) +
+        question("1-9 (93회)", 3),
     );
     const draft = buildImportDraft("TOPIK_Reading_Cau09_8DeOfficial_VERSION1.docx", xml);
     expect(draft.errors).toEqual([]);
     // All 3 map to the same question number (9, single-question block) but must stay 3 distinct rows.
     expect(draft.questions.map((q) => [q.exam, q.number])).toEqual([
-      ["8DeOfficial-36회", 9],
-      ["8DeOfficial-37회", 9],
-      ["8DeOfficial-41회", 9],
+      ["8DeOfficial-91회", 9],
+      ["8DeOfficial-92회", 9],
+      ["8DeOfficial-93회", 9],
     ]);
     expect(new Set(draft.questions.map((q) => q.exam)).size).toBe(3);
   });
 
   it("the real exam round, not the 연습N group index, is the exam identity when the label has one — so questions from the same real exam but different files/블록 share one label (a mock test can then pull one whole exam back out)", () => {
-    // Simulates Cau01_04's "연습2 (36회)" (4 questions, block 1~4) and Cau09's "연습1: Official"
-    // single-question item that also happens to be round 36회 (block 9) — two different files,
-    // two different Heading2 group indexes, but the SAME real exam (36회).
+    // Simulates Cau01_04's "연습2 (91회)" (4 questions, block 1~4) and Cau09's "연습1: Official"
+    // single-question item that also happens to be round 91회 (block 9) — two different files,
+    // two different Heading2 group indexes, but the SAME real exam. A round with no paper of its
+    // own, so the synonym table (M7.23) cannot take part in what is being tested here.
     const xmlBlock1to4 = doc(
       heading("Heading1", "유형1: 문항 1~4") +
         heading("Heading2", "연습1 (35회)") +
         question("1-1 (35회)", 1) +
-        heading("Heading2", "연습2 (36회)") +
-        question("1-1 (36회)", 2),
+        heading("Heading2", "연습2 (91회)") +
+        question("1-1 (91회)", 2),
     );
-    const xmlBlock9 = doc(heading("Heading1", "문항 9") + heading("Heading2", "연습1: Official") + question("1-9 (36회)", 3));
+    const xmlBlock9 = doc(heading("Heading1", "문항 9") + heading("Heading2", "연습1: Official") + question("1-9 (91회)", 3));
     const a = buildImportDraft("TOPIK_Reading_Cau01_04_8DeOfficial_VERSION1.docx", xmlBlock1to4);
     const b = buildImportDraft("TOPIK_Reading_Cau09_8DeOfficial_VERSION1.docx", xmlBlock9);
-    const round36FromA = a.questions.find((q) => q.number === 1 && q.exam === "8DeOfficial-36회");
+    const round36FromA = a.questions.find((q) => q.number === 1 && q.exam === "8DeOfficial-91회");
     expect(round36FromA).toBeDefined();
-    expect(b.questions[0]).toMatchObject({ exam: "8DeOfficial-36회", number: 9 });
+    expect(b.questions[0]).toMatchObject({ exam: "8DeOfficial-91회", number: 9 });
   });
 
   it("without a round, the 연습N group index is the exam identity, and the counter restarting in each file correctly merges matching groups across files (Cau01_02's 연습1 + Cau03_04's 연습1 → one 'Yonsei-연습1' label)", () => {
@@ -186,17 +189,17 @@ describe("buildImportDraft", () => {
   });
 
   it("reads the round out of a heading that also carries the 연습N text", () => {
-    // 36회, not 35회: that one is in the synonym table (M7.23) and would be filed under the whole
-    // paper's label, which is a different rule and has its own tests.
-    const xml = doc(heading("Heading1", "문항 1~2") + heading("Heading2", "연습1 (36회)") + question("1", 1));
-    expect(buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-36회");
+    // A round with no paper: every real one is in the synonym table (M7.23) and would be filed
+    // under the whole paper's label, which is a different rule with its own tests.
+    const xml = doc(heading("Heading1", "문항 1~2") + heading("Heading2", "연습1 (91회)") + question("1", 1));
+    expect(buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-91회");
   });
 
   // One Heading2 group can hold items from several real rounds (Cau09/Cau10), so the item's own
   // label has to stay in charge where it names one.
   it("lets the question's own round override the group's", () => {
-    const xml = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1 (35회)") + question("1-1 (41회)", 1));
-    expect(buildImportDraft("TOPIK_Reading_Cau01_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-41회");
+    const xml = doc(heading("Heading1", "문항 1") + heading("Heading2", "연습1 (35회)") + question("1-1 (91회)", 1));
+    expect(buildImportDraft("TOPIK_Reading_Cau01_8DeOfficial_VERSION1.docx", xml).questions[0]!.exam).toBe("8DeOfficial-91회");
   });
 
   it("still falls back to 연습N when no heading names a round at all", () => {
@@ -686,10 +689,10 @@ describe("two source names for one real exam", () => {
     expect(said).toEqual(['exam "8DeOfficial-35회" is filed as "OfficialTest-35회" (the same real paper under two source names)']);
   });
 
-  it("leaves every other round of the same source alone", () => {
-    const xml = doc(heading("Heading2", "36회") + question("1-1", 2) + question("1-2", 3));
+  it("leaves a round that is not in the table alone", () => {
+    const xml = doc(heading("Heading2", "91회") + question("1-1", 2) + question("1-2", 3));
     const draft = buildImportDraft("TOPIK_Reading_Cau01_02_8DeOfficial_VERSION1.docx", xml);
-    expect(draft.questions.map((q) => q.exam)).toEqual(["8DeOfficial-36회", "8DeOfficial-36회"]);
+    expect(draft.questions.map((q) => q.exam)).toEqual(["8DeOfficial-91회", "8DeOfficial-91회"]);
     expect(draft.warnings.filter((w) => w.includes("two source names"))).toEqual([]);
   });
 
