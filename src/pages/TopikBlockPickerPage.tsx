@@ -146,10 +146,16 @@ function BlockList({ blocks, section, exam }: { blocks: TopikBlock[]; section: T
  * for what the profile already knows (its card reached ts-fsrs Review), a mid tone for what it has
  * answered but not learnt yet — then the empty remainder.
  *
- * "Đã xong" appears only once every question is *known*. It used to appear once every question had
- * been answered once, which read as "nothing left here" on a block the learner remembered nothing
- * from. The counts are always spelled out, zeros included: "thuộc 0/7" is exactly the fact that
- * mislabelled block was hiding.
+ * "đã thuộc hết" appears only once every question is *known*. It used to appear once every question
+ * had been answered once, which read as "nothing left here" on a block the learner remembered
+ * nothing from. The counts are always spelled out, zeros included: "thuộc 0" is exactly the fact
+ * that mislabelled block was hiding.
+ *
+ * **The block's size is said once, first, and the rest are plain counts** (M7.26): "24 câu ·
+ * thuộc 0 · chưa làm 23". It used to read "thuộc 0/24 · chưa làm 23", where two numbers sat side
+ * by side with only one of them carrying a denominator — and the owner read the 23 as the size of
+ * the block and reported three questions missing from a bank that was complete. A number is worth
+ * showing only if it cannot be mistaken for a different number.
  */
 function BlockRow({
   label,
@@ -173,14 +179,14 @@ function BlockRow({
         <span className={cn("truncate", bold && "font-semibold")}>{label}</span>
         {done ? (
           <span className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
-            <Check className="size-4" aria-hidden />
-            {t("topik.blockDone", { total: block.count })}
+            {t("topik.blockSize", { total: block.count })} ·<Check className="size-4" aria-hidden />
+            {t("topik.blockAllKnown")}
           </span>
         ) : (
           <span className={cn("shrink-0 text-sm", status === "partial" ? "text-foreground" : "text-muted-foreground")}>
-            <span className={status === "partial" ? "font-medium" : undefined}>
-              {t("topik.blockMastered", { mastered: block.mastered, total: block.count })}
-            </span>
+            {/* The size first and alone: every number after it is a plain count of that total. */}
+            <span className="text-muted-foreground">{t("topik.blockSize", { total: block.count })}</span>
+            <span className={status === "partial" ? "font-medium" : undefined}> · {t("topik.blockMastered", { mastered: block.mastered })}</span>
             <span className="text-muted-foreground"> · {t("topik.blockUnanswered", { unseen: block.unseen })}</span>
           </span>
         )}

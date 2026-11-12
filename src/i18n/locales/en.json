@@ -537,9 +537,8 @@
     "kidNotAllowed": "TOPIK II practice is for adult profiles. Ask a parent!",
     "noBlocks": "No questions yet. Go to \"Manage questions\" to import or add some.",
     "blockLabel": "Questions {{block}}",
-    "blockMastered": "{{mastered}}/{{total}} known",
+    "blockMastered": "{{mastered}} known",
     "blockUnanswered": "{{unseen}} to do",
-    "blockDone": "Done {{total}}/{{total}}",
     "blockTotal": "All blocks",
     "practice": {
       "title": "Questions {{from}}-{{to}}",
@@ -852,6 +851,8 @@
       "rangeEmpty": "No approved questions in this range.",
       "rangeMissing": "This paper does not have question {{n}}.",
       "rangeByExam": "By paper: {{list}}"
-    }
+    },
+    "blockSize": "{{total}} questions",
+    "blockAllKnown": "all known"
   }
 }

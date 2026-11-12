@@ -537,9 +537,8 @@
     "kidNotAllowed": "Phần luyện TOPIK II dành cho hồ sơ người lớn. Hãy nhờ bố mẹ nhé!",
     "noBlocks": "Chưa có câu hỏi nào. Vào \"Quản lý câu hỏi\" để nhập hoặc thêm câu hỏi.",
     "blockLabel": "Câu {{block}}",
-    "blockMastered": "thuộc {{mastered}}/{{total}}",
+    "blockMastered": "thuộc {{mastered}}",
     "blockUnanswered": "chưa làm {{unseen}}",
-    "blockDone": "Đã xong {{total}}/{{total}}",
     "blockTotal": "Tổng cộng",
     "practice": {
       "title": "Câu {{from}}-{{to}}",
@@ -852,6 +851,8 @@
       "rangeEmpty": "Không có câu nào đã duyệt trong khoảng này.",
       "rangeMissing": "Đề này thiếu câu {{n}}.",
       "rangeByExam": "Theo đề: {{list}}"
-    }
+    },
+    "blockSize": "{{total}} câu",
+    "blockAllKnown": "đã thuộc hết"
   }
 }

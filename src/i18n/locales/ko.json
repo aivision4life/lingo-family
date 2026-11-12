@@ -537,9 +537,8 @@
     "kidNotAllowed": "TOPIK II 연습은 어른 프로필만 이용할 수 있어요. 부모님께 부탁해 보세요!",
     "noBlocks": "아직 문제가 없습니다. \"문제 관리\"에서 가져오거나 추가하세요.",
     "blockLabel": "{{block}}번 문제",
-    "blockMastered": "암기 {{mastered}}/{{total}}",
+    "blockMastered": "암기 {{mastered}}",
     "blockUnanswered": "미시도 {{unseen}}",
-    "blockDone": "완료 {{total}}/{{total}}",
     "blockTotal": "전체",
     "practice": {
       "title": "{{from}}-{{to}}번 문제",
@@ -852,6 +851,8 @@
       "rangeEmpty": "이 범위에 승인된 문항이 없습니다.",
       "rangeMissing": "이 회차에는 {{n}}번이 없습니다.",
       "rangeByExam": "회차별: {{list}}"
-    }
+    },
+    "blockSize": "{{total}}문항",
+    "blockAllKnown": "모두 암기"
   }
 }
