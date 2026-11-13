@@ -12,7 +12,7 @@ const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../../db/migrations");
  * disabled unless a test passes a fake: tests must never call a paid API.
  */
 export const testApp = (deps: AppDeps = {}) =>
-  createApp({ makeLlm: () => null, makeTts: () => null, makeImageAi: () => null, ...deps });
+  createApp({ makeLlm: () => null, makeTts: () => null, makePron: () => null, makeImageAi: () => null, ...deps });
 
 /**
  * `vars` override env values from .dev.vars so tests do not depend on the developer's local

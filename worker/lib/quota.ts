@@ -50,39 +50,58 @@ export async function recordUsage(
 }
 
 /**
- * Image quota, two tiers (SPEC F3): at most `perProfile` images for this profile **and** at most
- * `familyCap` images for all profiles together today. One atomic statement, so two parallel
- * requests can never both take the last unit. Returns false (and counts nothing) when either
- * limit is reached.
+ * Two-tier quota (images since M2.8, pronunciation scoring since M3): at most `perProfile` uses of
+ * `service` for this profile **and** at most `familyCap` for all profiles together today. Returns
+ * false (and counts nothing) when either limit is reached. The one statement both services go
+ * through — never write a second copy of it.
+ *
+ * Both limits are checked and the unit is taken in ONE statement. What stands behind "two requests
+ * cannot both take the last unit" is two different kinds of evidence (measured 2026-11-13):
+ *
+ * - **Tested** (`quota.test.ts`): 20 calls issued together with one unit left — for one profile, and
+ *   for 20 profiles under the family cap — take it exactly once. The test has teeth for the mistake
+ *   that is actually likely here: rewritten as "SELECT the counts, then INSERT/UPDATE", all 20 calls
+ *   win (20, not 2). Dropping `count < ?3`, or the `service` filter in the family sum, fails it too.
+ * - **Reasoned, not tested**: that a single statement is atomic on production D1. Local D1
+ *   (Miniflare) runs one SQLite and executes statements one after another, so no test here can make
+ *   two statements overlap *inside* the engine; that part rests on SQLite's and D1's own guarantee
+ *   for one statement. The test above only proves the check and the write are not split across
+ *   statements — which is the property this code controls.
  */
-export async function consumeImageQuota(
+export async function consumeTieredQuota(
   DB: D1Database,
   profileId: string,
+  service: UsageService,
   perProfile: number,
   familyCap: number,
   now = new Date(),
 ): Promise<boolean> {
   const date = usageDate(now);
-  const familyUsed = "(SELECT coalesce(sum(count), 0) FROM usage_daily WHERE date = ?1 AND service = 'image')";
+  const familyUsed = "(SELECT coalesce(sum(count), 0) FROM usage_daily WHERE date = ?1 AND service = ?5)";
   const row = await DB.prepare(
     `INSERT INTO usage_daily (date, profile_id, service, count)
-       SELECT ?1, ?2, 'image', 1 WHERE ${familyUsed} < ?4
+       SELECT ?1, ?2, ?5, 1 WHERE ${familyUsed} < ?4
      ON CONFLICT (date, profile_id, service) DO UPDATE SET count = count + 1
        WHERE count < ?3 AND ${familyUsed} < ?4
      RETURNING count`,
   )
-    .bind(date, profileId, perProfile, familyCap)
+    .bind(date, profileId, perProfile, familyCap, service)
     .first<{ count: number }>();
   return row !== null;
 }
+
+/** Image quota (SPEC F3): `consumeTieredQuota` for service `image`. */
+export const consumeImageQuota = (DB: D1Database, profileId: string, perProfile: number, familyCap: number, now = new Date()) =>
+  consumeTieredQuota(DB, profileId, "image", perProfile, familyCap, now);
 
 /**
  * Gives back one unit of today's quota for `profileId` (M2.9 for images, M7.13 for TTS): the call
  * was attempted and failed, so in the end it should not count against the daily limit. Never goes
  * below 0; does nothing if there is no row yet (nothing was ever consumed for this profile today).
  *
- * The check-then-consume step stays atomic, so a failed attempt still cannot let two concurrent
- * requests take the same last unit.
+ * The check-and-consume step is still one statement (`consumeTieredQuota`), so a failed attempt
+ * does not open a window for two requests to take the same last unit. Names its service: a refund
+ * for one service never touches another's row (`quota.test.ts`).
  */
 export async function refundQuota(DB: D1Database, profileId: string, service: UsageService, now = new Date()): Promise<void> {
   await DB.prepare("UPDATE usage_daily SET count = max(count - 1, 0) WHERE date = ?1 AND profile_id = ?2 AND service = ?3")

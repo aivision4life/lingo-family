@@ -2,12 +2,12 @@
 import { z } from "zod";
 import type { LearnLang } from "../../shared/enums";
 import { sha1Hex } from "../lib/hash";
+import { azureSpeechConfig, SPEECH_LOCALES, type AzureEnv } from "./azureSpeech";
 
 export const DEFAULT_VOICES: Record<LearnLang, string> = {
   ko: "ko-KR-SunHiNeural",
   en: "en-US-JennyNeural",
 };
-const LOCALES: Record<LearnLang, string> = { ko: "ko-KR", en: "en-US" };
 
 /** mp3, mono, 24 kHz (SPEC F3). */
 export const AZURE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
@@ -49,20 +49,18 @@ const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&
 export const escapeXml = (s: string) => s.replace(/[&<>"']/g, (c) => XML_ESCAPES[c]!);
 
 export function buildSsml(text: string, lang: LearnLang, voice: string): string {
-  const locale = LOCALES[lang];
+  const locale = SPEECH_LOCALES[lang];
   return (
     `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}">` +
     `<voice name="${escapeXml(voice)}">${escapeXml(normalizeSpeechText(text))}</voice></speak>`
   );
 }
 
-type AzureEnv = { AZURE_SPEECH_KEY?: string; AZURE_SPEECH_REGION?: string };
-
 /** Azure client from env, or null when the key/region are not configured. */
 export function createTtsClient(env: AzureEnv): TtsClient | null {
-  const key = env.AZURE_SPEECH_KEY;
-  const region = env.AZURE_SPEECH_REGION?.trim();
-  if (!key || !region || !/^[a-z0-9]+$/.test(region)) return null;
+  const config = azureSpeechConfig(env);
+  if (!config) return null;
+  const { key, region } = config;
   const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
 
   return {

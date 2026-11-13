@@ -10,11 +10,13 @@ import { imageRoutes } from "./routes/images";
 import { mediaRoutes } from "./routes/media";
 import { phraseRoutes } from "./routes/phrases";
 import { profileRoutes } from "./routes/profiles";
+import { pronRoutes, type MakePron } from "./routes/pron";
 import { reviewRoutes } from "./routes/review";
 import { topikRoutes } from "./routes/topik";
 import { topikTestRoutes } from "./routes/topikTests";
 import { defaultImageAi, wordRoutes, type MakeImageAi, type MakeLlm, type MakeTts } from "./routes/words";
 import { createLlmClient } from "./services/llm";
+import { createPronClient } from "./services/pronunciation";
 import { createTtsClient } from "./services/tts";
 
 export type AppDeps = {
@@ -23,6 +25,8 @@ export type AppDeps = {
   /** Build the paid-API clients from env; tests pass fakes. */
   makeLlm?: MakeLlm;
   makeTts?: MakeTts;
+  /** Azure pronunciation scoring (M3); a paid call like the two above. */
+  makePron?: MakePron;
   /** Workers AI for images; tests pass a fake (or null = no drawing). */
   makeImageAi?: MakeImageAi;
 };
@@ -60,6 +64,7 @@ async function spaFallback(env: AppEnv["Bindings"], url: URL): Promise<Response>
 export function createApp({
   makeLlm = createLlmClient,
   makeTts = createTtsClient,
+  makePron = createPronClient,
   makeImageAi = defaultImageAi,
   access = requireAccess(),
 }: AppDeps = {}) {
@@ -82,6 +87,7 @@ export function createApp({
   app.route("/", exampleRoutes(deps));
   app.route("/", topikRoutes(deps));
   app.route("/", topikTestRoutes());
+  app.route("/", pronRoutes({ makePron }));
 
   app.notFound((c) => c.json({ error: "not_found" }, 404));
 
