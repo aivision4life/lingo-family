@@ -40,8 +40,8 @@ import {
   type TopikQuestion,
 } from "../../shared/topik";
 import { expandToGroups, missingNumber } from "../../shared/topikRange";
-import { splitReservedForTests } from "../../shared/topikAnswered";
-import { answeredQuestionIds } from "../services/topikAnswered";
+import { historyAsOf, splitReservedForTests } from "../../shared/topikAnswered";
+import { answerEvents, answeredQuestionIds } from "../services/topikAnswered";
 import { MASTERED_CARD_STATE } from "../../shared/topikMastery";
 import { profiles, topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments } from "../../db/schema";
 import { readInD1Chunks } from "../lib/d1Chunk";
@@ -791,18 +791,22 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       } satisfies z.infer<typeof topikQuestionContentSchema>);
     })
 
-    /** One profile's own full history on one question (every session ever, not just the current
-     * one) — shown small at the bottom of the practice screen. Never reveals the answer. */
+    /**
+     * One profile's own full history on one question (every session ever, not just the current
+     * one) — shown small at the bottom of the practice screen. Never reveals the answer.
+     *
+     * Counted by the one definition of "đã làm" (M7.27/M7.30), so an answer given in a mock test
+     * counts here exactly as a practice answer does: this used to read `topik_attempts` alone,
+     * which quietly missed every sitting still open. Up to *now*, unlike a sitting's own indicator
+     * — on the practice screen the verdict is shown anyway, so there is nothing to give away.
+     */
     .get("/topik/questions/:id/stats", idParam, zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
       const { id } = c.req.valid("param");
       const { profile_id } = c.req.valid("query");
       const db = getDb(c.env);
-      const row = await db
-        .select({ attempts: count(), correct: sql<number>`sum(${topik_attempts.is_correct})` })
-        .from(topik_attempts)
-        .where(and(eq(topik_attempts.profile_id, profile_id), eq(topik_attempts.question_id, id)))
-        .get();
-      return c.json({ attempts: row?.attempts ?? 0, correct: row?.correct ?? 0 } satisfies z.infer<typeof topikQuestionStatsSchema>);
+      const events = await answerEvents(db, profile_id, { questionId: id });
+      const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
+      return c.json(historyAsOf(events.get(id), now.getTime()) satisfies z.infer<typeof topikQuestionStatsSchema>);
     })
 
     /** Review screen's per-question "Tạo dữ liệu AI" (adult only): for a question nobody has

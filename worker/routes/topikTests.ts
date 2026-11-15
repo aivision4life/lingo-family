@@ -35,6 +35,7 @@ import {
   topikTestPauseSchema,
   topikTestRangeQuerySchema,
 } from "../../shared/topik";
+import { historyAsOf, NO_QUESTION_HISTORY, splitByFamiliarity, type AnswerEvent, type QuestionHistory } from "../../shared/topikAnswered";
 import { expandToGroups, missingNumber, rangeCount, type NumberRange, type QuestionGroup } from "../../shared/topikRange";
 import {
   isExpired,
@@ -55,7 +56,7 @@ import { zv } from "../lib/validate";
 import { readInD1Chunks, writeInD1Chunks } from "../lib/d1Chunk";
 import { audioSpan, isContiguousFromOne, lengthOptions, pointsOf, scoreTest } from "../services/topikTest";
 import { mixedLengthOptions, planMixedTest, reachableLength, type MixedCandidate } from "../services/topikMixed";
-import { answeredQuestionIds, masteredQuestionIds } from "../services/topikAnswered";
+import { answerEvents, answeredQuestionIds, masteredQuestionIds } from "../services/topikAnswered";
 import { toCardFields } from "../services/topikCards";
 
 const err = (error: string) => ({ error });
@@ -321,8 +322,17 @@ export const topikTestRoutes = () =>
       const length_ms = await paperLengthMs(db, test!, chosen, clips);
       await db.update(topik_tests).set({ length_ms }).where(eq(topik_tests.id, test!.id));
 
+      // The paper is drawn but not started: `POST .../start` moves `started_at` to the real start
+      // moment, and the next read of the sitting takes its history from there (M7.30).
       return c.json(
-        runPayload({ ...test!, length_ms }, chosen, clips, new Map(), resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url)),
+        runPayload(
+          { ...test!, length_ms },
+          chosen,
+          clips,
+          new Map(),
+          resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url),
+          await priorHistory(db, test!),
+        ),
         201,
       );
     })
@@ -347,9 +357,10 @@ export const topikTestRoutes = () =>
       // Running: the answers stay hidden, exactly as in a practice session.
       if (test.status === "running") {
         const chosen = items.map((i) => questions.get(i.question_id ?? "")).filter((q): q is NonNullable<typeof q> => !!q);
-        return c.json(runPayload(test, chosen, clips, new Map(items.map((i) => [i.position, i.selected_option])), now));
+        const prior = await priorHistory(db, test);
+        return c.json(runPayload(test, chosen, clips, new Map(items.map((i) => [i.position, i.selected_option])), now, prior));
       }
-      return c.json(resultPayload(test, items, questions, clips));
+      return c.json(resultPayload(test, items, questions, clips, await priorHistory(db, test)));
     })
 
     /**
@@ -455,7 +466,9 @@ export const topikTestRoutes = () =>
 
       const { finished, graded, questions } = await gradeAndFinish(db, test, now, false);
       const clips = await clipsFor(db, graded.map((i) => i.segment_id).filter((s): s is string => s !== null));
-      return c.json(resultPayload(finished, graded, questions, clips));
+      // Read **after** grading, which writes this sitting's answers into `topik_attempts`: those
+      // rows are stamped now, so the cut-off at `started_at` leaves them out of its own history.
+      return c.json(resultPayload(finished, graded, questions, clips, await priorHistory(db, finished)));
     })
 
     /** Left before the end: no score, no attempts, nothing touched in the schedule. */
@@ -815,6 +828,24 @@ async function clipsFor(db: Db, segmentIds: readonly string[]): Promise<Map<stri
   return new Map(rows.map((r) => [r.id, { audio_key: r.audio_key, start_ms: r.start_ms, speech_end_ms: r.speech_end_ms, end_ms: r.end_ms }]));
 }
 
+/**
+ * How every question of a sitting stood **when that sitting started** (M7.30).
+ *
+ * One read of this profile's whole history in the section, then the same pure cut-off
+ * (`historyAsOf`) per question. The sitting's own answers are left out twice over: by the cut-off,
+ * and by id — an answer given in the paper's first second is this paper, not history.
+ *
+ * Frozen by construction rather than by caching: `started_at` never moves, so the numbers are the
+ * same on every poll of a running sitting and the same when an old result is reopened months later.
+ */
+async function priorHistory(db: Db, test: TestRow): Promise<Map<string, QuestionHistory>> {
+  const events = await answerEvents(db, test.profile_id, { section: test.section });
+  const asOf = test.started_at.getTime();
+  const out = new Map<string, QuestionHistory>();
+  for (const [questionId, list] of events) out.set(questionId, historyAsOf(list as AnswerEvent[], asOf, test.id));
+  return out;
+}
+
 /** The running payload: never `correct_option`, and never a listening question's stem (its text is
  * the transcript, which is the answer read out loud). */
 function runPayload(
@@ -823,6 +854,7 @@ function runPayload(
   clips: Map<string, Clip>,
   answered: Map<number, number | null>,
   now: Date,
+  prior: Map<string, QuestionHistory>,
 ) {
   const used = questions.map((q) => (q.segment_id ? clips.get(q.segment_id) : undefined)).filter((c): c is Clip => !!c);
   // Only an original paper has one span of one file. A mixed paper's clips come from several mp3s,
@@ -855,13 +887,22 @@ function runPayload(
         options: q.options,
         selected_option: answered.get(q.number) ?? null,
         clip: clip ? { audio_key: clip.audio_key, start_ms: clip.start_ms, speech_end_ms: clip.speech_end_ms, end_ms: clip.end_ms } : null,
+        prior: prior.get(q.id) ?? NO_QUESTION_HISTORY,
       };
     }),
   };
 }
 
 /** The finished payload: the answers, the transcripts and the clips are all fair game now. */
-function resultPayload(test: TestRow, items: readonly ItemRow[], questions: Map<string, QuestionRow>, clips: Map<string, Clip>) {
+function resultPayload(
+  test: TestRow,
+  items: readonly ItemRow[],
+  questions: Map<string, QuestionRow>,
+  clips: Map<string, Clip>,
+  prior: Map<string, QuestionHistory>,
+) {
+  const rows = items.map((i) => ({ prior: prior.get(i.question_id ?? "") ?? NO_QUESTION_HISTORY, is_correct: !!i.is_correct }));
+  const split = splitByFamiliarity(rows);
   return {
     id: test.id,
     section: test.section,
@@ -879,7 +920,9 @@ function resultPayload(test: TestRow, items: readonly ItemRow[], questions: Map<
     from_number: test.from_number,
     to_number: test.to_number,
     finished_at: test.finished_at?.getTime() ?? null,
-    items: items.map((i) => {
+    new_questions: split.fresh,
+    seen_questions: split.seen,
+    items: items.map((i, idx) => {
       const q = questions.get(i.question_id ?? "");
       const clip = i.segment_id ? (clips.get(i.segment_id) ?? null) : null;
       return {
@@ -897,6 +940,7 @@ function resultPayload(test: TestRow, items: readonly ItemRow[], questions: Map<
         // A listening stem is the transcript, which already has its own field above.
         stem: q && q.section === "reading" ? { text: q.stem_text, image_key: q.stem_image_key } : null,
         options: q?.options ?? null,
+        prior: rows[idx]!.prior,
       };
     }),
   };

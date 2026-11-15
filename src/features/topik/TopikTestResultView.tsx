@@ -11,6 +11,8 @@ import { MarkSourceContext } from "./markSource";
 import { TappableText } from "./TopikQuestionCard";
 import { formatDuration } from "./segmentEdit";
 import { useTopikQuestionContent } from "./api";
+import { familiaritySides } from "./priorHistory";
+import { TopikPriorBadge } from "./TopikPriorBadge";
 import { TOPIK_OPTION_COUNT } from "@shared/topik";
 import { imageUrl } from "@/features/images/api";
 import { cn } from "@/lib/utils";
@@ -53,6 +55,20 @@ export function TopikTestResultView({ result, profileId, level }: { result: Topi
         {/* The server submitted this one itself when the time ran out (M7.13): said plainly, or a
             score lower than the paper felt is a mystery. */}
         {result.auto_submitted && <p className="text-sm text-amber-700 dark:text-amber-500">{t("topik.test.autoSubmitted")}</p>}
+        {/* What the paper was actually asking of the learner (M7.30): questions met for the first
+            time score differently from ones already answered before, and one "32/50" hides that. */}
+        {familiaritySides(result).length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            {familiaritySides(result)
+              .map((side) =>
+                t(side.kind === "new" ? "topik.test.familiarityNew" : "topik.test.familiaritySeen", {
+                  correct: side.correct,
+                  total: side.total,
+                }),
+              )
+              .join(t("topik.test.sourceSeparator"))}
+          </p>
+        )}
       </div>
 
       <ul className="flex flex-col divide-y rounded-lg border">
@@ -81,6 +97,9 @@ export function TopikTestResultView({ result, profileId, level }: { result: Topi
                   {item.exam}
                 </span>
               )}
+              {/* How this question stood when *this* sitting started, not now (M7.30): reopened in
+                  a month it still says what the learner knew on the day. */}
+              <TopikPriorBadge prior={item.prior} />
               <span className="ml-auto text-sm text-muted-foreground">
                 {t("topik.test.itemAnswers", { chosen: item.selected_option ?? "–", correct: item.correct_option })}
               </span>

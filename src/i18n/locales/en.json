@@ -841,7 +841,12 @@
       "historyScore": "{{score}}/{{total}} points",
       "atQuestionInRange": "Question {{number}} · range {{from}}–{{to}}",
       "atQuestionsInRange": "Questions {{first}}–{{last}} · range {{from}}–{{to}}",
-      "passageNote": "Both questions are about the same passage."
+      "passageNote": "Both questions are about the same passage.",
+      "priorNew": "New question",
+      "priorCount": "{{correct}}/{{attempts}}",
+      "priorLabel": "Answered {{attempts}} times, {{correct}} right",
+      "familiarityNew": "New questions: {{correct}}/{{total}} right",
+      "familiaritySeen": "Questions seen before: {{correct}}/{{total}} right"
     },
     "history": {
       "title": "Mock test history",

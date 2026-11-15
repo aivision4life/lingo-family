@@ -1065,3 +1065,102 @@ describe("mock test history (M7.29)", () => {
     expect((await t.api("GET", `/topik/tests/history?profile_id=${adult}`)).status).toBe(200);
   });
 });
+
+/**
+ * "Câu mới / 2/4" on a sitting (M7.30). The numbers are the server's, counted by the one definition
+ * of "đã làm" (M7.27), and the promise worth a test is that they do not move: a count that grew
+ * when an option was tapped would tell the learner the answer had just been right.
+ */
+describe("a sitting's own question history (M7.30)", () => {
+  type Prior = { attempts: number; correct: number };
+  type Run = { id: string; questions: { number: number; prior: Prior }[] };
+  type Result = {
+    new_questions: { total: number; correct: number };
+    seen_questions: { total: number; correct: number };
+    items: { number: number; is_correct: boolean; prior: Prior }[];
+  };
+
+  const run = async (id: string) => (await t.api("GET", `/topik/tests/${id}?profile_id=${adult}`)).body as Run;
+  const stats = async (questionId: string) =>
+    (await t.api("GET", `/topik/questions/${questionId}/stats?profile_id=${adult}`)).body as Prior;
+
+  it("counts practice answers before the paper, and calls an untouched question new", async () => {
+    const q1 = await question(1);
+    await question(2);
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1, selected_option: 1 });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1, selected_option: 2 });
+
+    const test = await start(2);
+    const body = await run(test.id);
+    expect(body.questions.find((q) => q.number === 1)!.prior).toEqual({ attempts: 2, correct: 1 });
+    expect(body.questions.find((q) => q.number === 2)!.prior).toEqual({ attempts: 0, correct: 0 });
+  });
+
+  it("does not move while the paper is being sat", async () => {
+    const q1 = await question(1);
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1, selected_option: 2 });
+    const test = await start(1);
+    expect((await run(test.id)).questions[0]!.prior).toEqual({ attempts: 1, correct: 1 });
+
+    // The giveaway this guards against: answering correctly must not turn 1/1 into 2/2.
+    await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
+    expect((await run(test.id)).questions[0]!.prior).toEqual({ attempts: 1, correct: 1 });
+  });
+
+  it("keeps a result's numbers as they were on the day, and splits the score by them", async () => {
+    const q1 = await question(1);
+    await question(2, { correct_option: 4 });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1, selected_option: 1 });
+
+    const test = await start(2);
+    await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
+    const result = (await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult })).body as Result;
+
+    // Question 1 was known (and answered right here); question 2 was new, and was missed.
+    expect(result.items.find((i) => i.number === 1)!.prior).toEqual({ attempts: 1, correct: 0 });
+    expect(result.items.find((i) => i.number === 2)!.prior).toEqual({ attempts: 0, correct: 0 });
+    expect(result.new_questions).toEqual({ total: 1, correct: 0 });
+    expect(result.seen_questions).toEqual({ total: 1, correct: 1 });
+
+    // Reopened later it still reads the same: the cut-off is the sitting's own start, not now.
+    const reopened = (await t.api("GET", `/topik/tests/${test.id}?profile_id=${adult}`)).body as Result;
+    expect(reopened.items.find((i) => i.number === 1)!.prior).toEqual({ attempts: 1, correct: 0 });
+    expect(reopened.seen_questions).toEqual({ total: 1, correct: 1 });
+  });
+
+  /** The practice screen's own indicator reads the same definition — this is what it used to miss. */
+  it("counts a sitting's answer towards the practice indicator, exactly once", async () => {
+    const q1 = await question(1);
+    expect(await stats(q1)).toEqual({ attempts: 0, correct: 0 });
+
+    const test = await start(1);
+    await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
+    // While the sitting is still open the answer is read from the sitting itself.
+    expect(await stats(q1)).toEqual({ attempts: 1, correct: 1 });
+
+    // Finishing writes it into `topik_attempts` as well; it must still count as one answer.
+    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult });
+    expect(await stats(q1)).toEqual({ attempts: 1, correct: 1 });
+  });
+
+  /** Submitting marks a skipped position wrong for the schedule's sake; it is still not "đã làm". */
+  it("does not count a position the tape ran past, even after the paper is graded", async () => {
+    const q1 = await question(1);
+    const q2 = await question(2);
+    const test = await start(2);
+    await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
+    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult });
+    expect(await stats(q1)).toEqual({ attempts: 1, correct: 1 });
+    expect(await stats(q2)).toEqual({ attempts: 0, correct: 0 });
+  });
+
+  it("counts an abandoned sitting's answer too, and leaves the unanswered positions alone", async () => {
+    const q1 = await question(1);
+    const q2 = await question(2);
+    const test = await start(2);
+    await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
+    await t.api("POST", `/topik/tests/${test.id}/abandon`, { profile_id: adult });
+    expect(await stats(q1)).toEqual({ attempts: 1, correct: 1 });
+    expect(await stats(q2)).toEqual({ attempts: 0, correct: 0 });
+  });
+});

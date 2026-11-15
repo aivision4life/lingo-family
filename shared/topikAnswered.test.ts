@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitReservedForTests } from "./topikAnswered";
+import { historyAsOf, isNewQuestion, splitByFamiliarity, splitReservedForTests } from "./topikAnswered";
 
 /** A question of its own; `pair` gives two that share one passage. */
 const q = (id: string) => ({ id, segment_id: null, group_key: null });
@@ -51,5 +51,65 @@ describe("splitReservedForTests (M7.27)", () => {
 
   it("has nothing to say about an empty list", () => {
     expect(splitReservedForTests([], new Set(["a"]))).toEqual({ served: [], reserved: [] });
+  });
+});
+
+describe("historyAsOf (M7.30)", () => {
+  const e = (at: number, correct: boolean, test_id: string | null = null) => ({ at, correct, test_id });
+
+  it("has nothing to say about a question with no answers", () => {
+    expect(historyAsOf([], 100)).toEqual({ attempts: 0, correct: 0 });
+    expect(historyAsOf(undefined, 100)).toEqual({ attempts: 0, correct: 0 });
+    expect(isNewQuestion(historyAsOf(undefined, 100))).toBe(true);
+  });
+
+  it("counts every answer up to the cut-off and how many were right", () => {
+    const events = [e(10, true), e(20, false), e(30, true), e(40, false)];
+    expect(historyAsOf(events, 100)).toEqual({ attempts: 4, correct: 2 });
+  });
+
+  // The whole reason this takes a cut-off: a sitting shows the numbers as they were when it
+  // started, so answering question 5 cannot turn "2/4" into "3/5" and give the verdict away.
+  it("ignores everything answered after the cut-off", () => {
+    const events = [e(10, true), e(20, false), e(500, true)];
+    expect(historyAsOf(events, 100)).toEqual({ attempts: 2, correct: 1 });
+  });
+
+  it("counts an answer given exactly at the cut-off", () => {
+    expect(historyAsOf([e(100, true)], 100)).toEqual({ attempts: 1, correct: 1 });
+  });
+
+  // An answer given in the paper being sat is this paper, not history — even in its first second.
+  it("leaves the sitting's own answers out", () => {
+    const events = [e(10, true), e(100, true, "test-1"), e(100, false, "test-2")];
+    expect(historyAsOf(events, 200, "test-1")).toEqual({ attempts: 2, correct: 1 });
+  });
+
+  it("is still a seen question when every answer was wrong", () => {
+    const history = historyAsOf([e(10, false), e(20, false)], 100);
+    expect(history).toEqual({ attempts: 2, correct: 0 });
+    expect(isNewQuestion(history)).toBe(false);
+  });
+});
+
+describe("splitByFamiliarity (M7.30)", () => {
+  const item = (attempts: number, is_correct: boolean) => ({ prior: { attempts, correct: 0 }, is_correct });
+
+  it("splits a sitting's score by what the learner had already answered", () => {
+    expect(splitByFamiliarity([item(0, true), item(0, false), item(3, true), item(1, true), item(2, false)])).toEqual({
+      fresh: { total: 2, correct: 1 },
+      seen: { total: 3, correct: 2 },
+    });
+  });
+
+  it("gives empty halves for a sitting with no questions", () => {
+    expect(splitByFamiliarity([])).toEqual({ fresh: { total: 0, correct: 0 }, seen: { total: 0, correct: 0 } });
+  });
+
+  it("puts a whole paper of fresh questions on one side", () => {
+    expect(splitByFamiliarity([item(0, true), item(0, true)])).toEqual({
+      fresh: { total: 2, correct: 2 },
+      seen: { total: 0, correct: 0 },
+    });
   });
 });

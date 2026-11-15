@@ -841,7 +841,12 @@
       "historyScore": "{{score}}/{{total}} điểm",
       "atQuestionInRange": "Câu {{number}} · khoảng {{from}}–{{to}}",
       "atQuestionsInRange": "Câu {{first}}–{{last}} · khoảng {{from}}–{{to}}",
-      "passageNote": "Hai câu này hỏi về cùng một đoạn văn."
+      "passageNote": "Hai câu này hỏi về cùng một đoạn văn.",
+      "priorNew": "Câu mới",
+      "priorCount": "{{correct}}/{{attempts}}",
+      "priorLabel": "Đã làm {{attempts}} lần, đúng {{correct}} lần",
+      "familiarityNew": "Câu mới: {{correct}}/{{total}} đúng",
+      "familiaritySeen": "Câu đã làm: {{correct}}/{{total}} đúng"
     },
     "history": {
       "title": "Lịch sử thi thử",

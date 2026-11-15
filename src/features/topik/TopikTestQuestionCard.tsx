@@ -6,6 +6,7 @@ import { KoreanText } from "./KoreanText";
 import { allPictureOptions } from "./optionLayout";
 import { ownStemBesideShared, stemView } from "./questionStem";
 import { TopikPictureOptions } from "./TopikPictureOptions";
+import { TopikPriorBadge } from "./TopikPriorBadge";
 
 /**
  * One question of a sitting (M7.5): its question line, its stem and its four options.
@@ -37,7 +38,14 @@ export function TopikTestQuestionCard({
 
   return (
     <div className={cn("flex flex-col gap-3", showNumber && "rounded-lg border p-3")}>
-      {showNumber && <p className="text-sm font-semibold">{t("topik.test.itemNumber", { number: question.number })}</p>}
+      {/* "Câu mới" / "2/4" as it stood when the paper started (M7.30). Above the question line and
+          muted: during a listening sitting the tape is running, and nothing here may cover the
+          question or move the options. The number never changes while the paper is being sat, which
+          is the point — one that moved would say an answer had just been right. */}
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        {showNumber && <p className="text-sm font-semibold">{t("topik.test.itemNumber", { number: question.number })}</p>}
+        <TopikPriorBadge prior={question.prior} />
+      </div>
       {/* Two lines since M7.3: the block instruction, then this question's own question line. */}
       {question.instruction && (
         <p className="font-bold whitespace-pre-line" lang="ko">

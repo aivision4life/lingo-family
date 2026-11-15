@@ -671,7 +671,21 @@ export type TopikAttemptResult = z.infer<typeof topikAttemptResultSchema>;
  * session, not just the current one): shown small at the bottom of the practice screen so the
  * learner can see "I've gotten this one right 7/10 times" without it being a spoiler (it says
  * nothing about which option is correct). */
-export const topikQuestionStatsSchema = z.object({ attempts: z.number().int().nonnegative(), correct: z.number().int().nonnegative() });
+/**
+ * How a question stood at one moment: answers given, and how many were right (M7.30).
+ *
+ * The same shape wherever "2/4" is shown — the practice card, a running sitting, a result — because
+ * it is the same count, made by `shared/topikAnswered.ts#historyAsOf` on the server. The client
+ * never adds anything up: on a sitting the numbers are frozen at the moment the paper started, and
+ * a client that recomputed them would undo exactly that.
+ */
+export const topikQuestionHistorySchema = z.object({
+  attempts: z.number().int().nonnegative(),
+  correct: z.number().int().nonnegative(),
+});
+export type TopikQuestionHistoryView = z.infer<typeof topikQuestionHistorySchema>;
+
+export const topikQuestionStatsSchema = topikQuestionHistorySchema;
 export type TopikQuestionStats = z.infer<typeof topikQuestionStatsSchema>;
 
 /** Approves every question matching a filter without changing their content (the review screen's "approve group"). */
@@ -886,6 +900,9 @@ export const topikTestQuestionSchema = z.object({
   selected_option: topikCorrectOptionSchema.nullable(),
   /** Where this position's clip sits in the exam's mp3, so the screen can follow the tape. */
   clip: topikClipSchema.nullable(),
+  /** This question's own history **as it was when the paper started** (M7.30), never as it is now:
+   * a number that moved when an option was tapped would be feedback, and a sitting gives none. */
+  prior: topikQuestionHistorySchema,
 });
 
 export type TopikTestQuestion = z.infer<typeof topikTestQuestionSchema>;
@@ -964,6 +981,12 @@ export const topikTestFinishSchema = z.object({
   answers: z.array(z.object({ position: z.number().int().positive(), selected_option: topikCorrectOptionSchema })).optional(),
 });
 
+/** One side of the result's "câu mới / câu đã làm" split: how many, and how many right. */
+export const topikQuestionSplitSchema = z.object({
+  total: z.number().int().nonnegative(),
+  correct: z.number().int().nonnegative(),
+});
+
 /** One position in a finished result: the answer is out in the open now. */
 export const topikTestResultItemSchema = z.object({
   position: z.number().int().positive(),
@@ -984,6 +1007,10 @@ export const topikTestResultItemSchema = z.object({
   instruction: z.string().nullable(),
   stem: topikContentSchema.nullable(),
   options: z.array(topikContentSchema).nullable(),
+  /** What this question's history was when *this* sitting started (M7.30) — the state the learner
+   * was in at the time, which is what makes the verdict beside it mean anything. Reopening an old
+   * result months later shows the same numbers it showed on the day. */
+  prior: topikQuestionHistorySchema,
 });
 
 export const topikTestResultSchema = z.object({
@@ -1004,6 +1031,10 @@ export const topikTestResultSchema = z.object({
   from_number: z.number().int().positive().nullable(),
   to_number: z.number().int().positive().nullable(),
   finished_at: z.number().int().nullable(),
+  /** The score split by what the paper was asking of the learner (M7.30): questions met for the
+   * first time, and questions already answered before the paper started. */
+  new_questions: topikQuestionSplitSchema,
+  seen_questions: topikQuestionSplitSchema,
   items: z.array(topikTestResultItemSchema),
 });
 export type TopikTestResult = z.infer<typeof topikTestResultSchema>;

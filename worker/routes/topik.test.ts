@@ -1333,6 +1333,16 @@ describe("questions kept for a mock test", () => {
         await t.env.DB.prepare(
           "INSERT INTO topik_test_items (id, test_id, position, question_id, number, points, selected_option) VALUES (?, ?, ?, ?, ?, 2, ?)",
         ).bind(crypto.randomUUID(), testId, position, id, position, selected).run();
+        // Exactly what `gradeAndFinish` writes when a sitting is submitted: one attempt per
+        // position, and `selected_option = 0` for a position the tape ran past, so the schedule
+        // knows it was missed. A fixture without these would be a finished sitting no real one
+        // looks like, and "đã làm" is counted from them (M7.27).
+        await t.env.DB.prepare(
+          `INSERT INTO topik_attempts (id, profile_id, question_id, section, exam, number, selected_option, is_correct, scheduled, created_at)
+           VALUES (?, ?, ?, 'reading', 'Test/연습1', ?, ?, ?, 1, ?)`,
+        )
+          .bind(crypto.randomUUID(), profileId, id, position, selected ?? 0, selected === null ? 0 : 1, now)
+          .run();
       }
     }
   };

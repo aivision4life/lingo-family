@@ -841,7 +841,12 @@
       "historyScore": "{{score}}/{{total}}점",
       "atQuestionInRange": "{{number}}번 · 범위 {{from}}~{{to}}",
       "atQuestionsInRange": "{{first}}~{{last}}번 · 범위 {{from}}~{{to}}",
-      "passageNote": "같은 지문에 대한 두 문항입니다."
+      "passageNote": "같은 지문에 대한 두 문항입니다.",
+      "priorNew": "새 문제",
+      "priorCount": "{{correct}}/{{attempts}}",
+      "priorLabel": "{{attempts}}번 풀어 {{correct}}번 정답",
+      "familiarityNew": "새 문제: {{correct}}/{{total}} 정답",
+      "familiaritySeen": "풀어본 문제: {{correct}}/{{total}} 정답"
     },
     "history": {
       "title": "모의고사 기록",
