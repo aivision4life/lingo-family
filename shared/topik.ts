@@ -493,6 +493,13 @@ export const topikBlockSchema = z.object({
   later: z.number().int().nonnegative(),
   /** When the first of those `later` questions comes due (epoch ms); null when none are waiting. */
   next_due_at: z.number().int().nullable(),
+  /**
+   * Of `count`, how many this block is keeping for a mock test (M7.27): never answered in practice
+   * nor in a sitting, counted group-wise, so a practice session across every paper will not serve
+   * them. **Always 0 when one paper is chosen**, where practice still hands out new questions — the
+   * server settles which scope this is, the client never asks for the behaviour (M7.24).
+   */
+  reserved_for_tests: z.number().int().nonnegative().default(0),
 });
 export type TopikBlock = z.infer<typeof topikBlockSchema>;
 export const topikBlockListSchema = z.array(topikBlockSchema);
@@ -547,7 +554,12 @@ export const topikSessionRequestSchema = z
   })
   .refine((r) => r.to >= r.from, { message: "topik_range_invalid", path: ["to"] });
 export type TopikSessionRequest = z.infer<typeof topikSessionRequestSchema>;
-export const topikSessionResponseSchema = z.object({ questions: z.array(topikPracticeQuestionSchema) });
+export const topikSessionResponseSchema = z.object({
+  questions: z.array(topikPracticeQuestionSchema),
+  /** How many questions of the asked range were held back for a mock test (M7.27): the reason an
+   * "all papers" session can come back empty, which the screen has to be able to say out loud. */
+  reserved_for_tests: z.number().int().nonnegative().default(0),
+});
 
 /** `GET /topik/practice-range` — what a hand-typed practice range would really cover (M7.24). */
 export const topikPracticeRangeQuerySchema = z
@@ -556,6 +568,9 @@ export const topikPracticeRangeQuerySchema = z
     from: z.coerce.number().int().positive(),
     to: z.coerce.number().int().positive(),
     exam: z.string().min(1).optional(),
+    /** Optional like `GET /topik/blocks`'s, so an installed PWA running a build from before
+     * `reserved_for_tests` keeps working instead of getting a 400 (it just reserves nothing). */
+    profile_id: z.string().optional(),
   })
   .refine((r) => r.to >= r.from, { message: "topik_range_invalid", path: ["to"] });
 
@@ -577,6 +592,12 @@ export const topikPracticeRangeSchema = z.object({
   missing_number: z.number().int().nullable(),
   /** Per-exam contribution, for the "all exams" case where `missing_number` means nothing. */
   by_exam: z.array(z.object({ exam: z.string(), count: z.number().int() })),
+  /**
+   * Of `question_count`, how many are being kept for a mock test (M7.27) — so the card can say
+   * "N câu đang dành cho thi thử" instead of starting a session that is short or empty for a reason
+   * nothing on screen explains. 0 when one paper is chosen; see `topikBlockSchema`.
+   */
+  reserved_for_tests: z.number().int().nonnegative().default(0),
 });
 export type TopikPracticeRange = z.infer<typeof topikPracticeRangeSchema>;
 

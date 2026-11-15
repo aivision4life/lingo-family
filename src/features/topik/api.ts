@@ -58,13 +58,20 @@ export const useTopikBlocks = (profileId: string, section: TopikSection, exam: s
 
 /** What a hand-typed practice range would really cover (M7.24). Read-only, so asking per keystroke
  * costs one SELECT — the same bargain the mock test's preview makes. */
-export const useTopikPracticeRange = (section: TopikSection, exam: string | null, from: number, to: number, enabled: boolean) =>
+export const useTopikPracticeRange = (
+  profileId: string,
+  section: TopikSection,
+  exam: string | null,
+  from: number,
+  to: number,
+  enabled: boolean,
+) =>
   useQuery({
-    queryKey: ["topik", "practice-range", section, exam, from, to],
+    queryKey: ["topik", "practice-range", profileId, section, exam, from, to],
     queryFn: () =>
       api(
         "GET",
-        `/topik/practice-range?section=${section}&from=${from}&to=${to}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`,
+        `/topik/practice-range?section=${section}&from=${from}&to=${to}&profile_id=${profileId}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`,
         topikPracticeRangeSchema,
       ),
     enabled,

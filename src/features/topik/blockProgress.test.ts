@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { blockProgress, blockTotals } from "./blockProgress";
 
-const total = (count: number, unseen: number, mastered: number, due = 0, later = 0, next_due_at: number | null = null) => ({
+const total = (
+  count: number,
+  unseen: number,
+  mastered: number,
+  due = 0,
+  later = 0,
+  next_due_at: number | null = null,
+  reserved_for_tests = 0,
+) => ({
   count,
   unseen,
   mastered,
   due,
   later,
   next_due_at,
+  reserved_for_tests,
 });
 
 describe("blockTotals", () => {
@@ -29,6 +38,12 @@ describe("blockTotals", () => {
 
   it("is zero for an empty list (no blocks yet)", () => {
     expect(blockTotals([])).toEqual(total(0, 0, 0));
+  });
+
+  // The total row says how much of the whole section a mock test is holding (M7.27), so the number
+  // has to add up across blocks like every other one.
+  it("adds up what is kept for a mock test", () => {
+    expect(blockTotals([total(6, 4, 0, 0, 0, null, 4), total(5, 5, 0, 0, 0, null, 5)])).toEqual(total(11, 9, 0, 0, 0, null, 9));
   });
 });
 

@@ -15,7 +15,7 @@ beforeAll(async () => {
 afterAll(() => t.dispose());
 
 beforeEach(async () => {
-  for (const table of ["topik_attempts", "topik_cards", "topik_segments", "topik_audio", "topik_questions", "profiles"]) {
+  for (const table of ["topik_test_items", "topik_tests", "topik_attempts", "topik_cards", "topik_segments", "topik_audio", "topik_questions", "profiles"]) {
     await t.env.DB.prepare(`DELETE FROM ${table}`).run();
   }
   adult = ((await t.api("POST", "/profiles", profile())).body as { id: string }).id;
@@ -43,6 +43,14 @@ const input = (over: Partial<TopikQuestionInput> = {}): TopikQuestionInput => ({
   correct_option: 3,
   ...over,
 });
+
+/**
+ * Practice scoped to **one paper**, which is the scope that still serves questions nobody has
+ * answered yet (M7.27): across every paper those are kept for a mock test. Every test about some
+ * other rule says which paper it means, so the reservation rule is proved by its own tests and does
+ * not quietly decide the outcome of theirs.
+ */
+const onePaper = (exam = "Test/연습1") => `&exam=${encodeURIComponent(exam)}`;
 
 const createQuestion = async (over: Partial<TopikQuestionInput> = {}) => {
   const res = await t.api("POST", "/topik/questions", { ...input(over), profile_id: adult });
@@ -179,7 +187,9 @@ describe("blocks + practice session", () => {
 
     const blocks = (await t.api("GET", "/topik/blocks?section=reading")).body as { block: string; from: number; to: number; count: number }[];
     expect(blocks).toEqual([
-      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0, due: 0, later: 0, next_due_at: null },
+      // No profile named, so nothing can be reserved for a mock test (M7.27) — there is no history
+      // to reserve against, and an older PWA build must keep getting its list.
+      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0, due: 0, later: 0, next_due_at: null, reserved_for_tests: 0 },
     ]);
   });
 
@@ -190,10 +200,16 @@ describe("blocks + practice session", () => {
     await createQuestion({ number: 9, exam: "Test/연습3", block: "9" });
 
     const blocksFor = async (profileId: string) =>
-      (await t.api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`)).body as { block: string; count: number; unseen: number }[];
+      (await t.api("GET", `/topik/blocks?section=reading&profile_id=${profileId}`)).body as {
+        block: string;
+        count: number;
+        unseen: number;
+        reserved_for_tests: number;
+      }[];
+    // Nothing answered yet, so across every paper every question is a mock test's to give (M7.27).
     expect(await blocksFor(adult)).toEqual([
-      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0, due: 0, later: 0, next_due_at: null },
-      { section: "reading", block: "9", from: 9, to: 9, count: 1, unseen: 1, mastered: 0, due: 0, later: 0, next_due_at: null },
+      { section: "reading", block: "1~2", from: 1, to: 2, count: 2, unseen: 2, mastered: 0, due: 0, later: 0, next_due_at: null, reserved_for_tests: 2 },
+      { section: "reading", block: "9", from: 9, to: 9, count: 1, unseen: 1, mastered: 0, due: 0, later: 0, next_due_at: null, reserved_for_tests: 1 },
     ]);
 
     await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 1, duration_ms: 1000 });
@@ -201,10 +217,13 @@ describe("blocks + practice session", () => {
     await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 3, duration_ms: 1000 });
 
     const afterAdult = await blocksFor(adult);
-    expect(afterAdult[0]).toMatchObject({ block: "1~2", count: 2, unseen: 1 });
-    expect(afterAdult[1]).toMatchObject({ block: "9", count: 1, unseen: 1 });
-    // Another profile's history is its own.
-    expect(await blocksFor(kid)).toMatchObject([{ unseen: 2 }, { unseen: 1 }]);
+    expect(afterAdult[0]).toMatchObject({ block: "1~2", count: 2, unseen: 1, reserved_for_tests: 1 });
+    expect(afterAdult[1]).toMatchObject({ block: "9", count: 1, unseen: 1, reserved_for_tests: 1 });
+    // Another profile's history is its own — and so is what is being kept back for it.
+    expect(await blocksFor(kid)).toMatchObject([
+      { unseen: 2, reserved_for_tests: 2 },
+      { unseen: 1, reserved_for_tests: 1 },
+    ]);
   });
 
   // M6.11: the bar's dark segment. "Mastered" = the question's own card reached ts-fsrs Review,
@@ -311,11 +330,12 @@ describe("blocks + practice session", () => {
   // The flag the screen draws its "this one does not count" label from. Display only — the server
   // decides again when the answer arrives — but it must agree with that decision.
   it("tells the screen, per question, whether answering will count", async () => {
+    // One paper: that is the scope where a question nobody has answered still reaches a session.
     const fresh = await createQuestion({ number: 1 });
-    const answered = await createQuestion({ number: 2, exam: "Test/연습2" });
+    const answered = await createQuestion({ number: 2 });
     await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: answered.id, selected_option: 3, duration_ms: 1000 });
 
-    const body = (await t.api("GET", `/topik/session?section=reading&from=1&to=2&profile_id=${adult}&mode=all`)).body as {
+    const body = (await t.api("GET", `/topik/session?section=reading&from=1&to=2&profile_id=${adult}&mode=all${onePaper()}`)).body as {
       questions: { id: string; counts_toward_schedule: boolean }[];
     };
     const flag = new Map(body.questions.map((q) => [q.id, q.counts_toward_schedule]));
@@ -363,19 +383,24 @@ describe("blocks + practice session", () => {
 
     it("brings the other half of a pair in when the range ends inside it", async () => {
       await paperWithPair();
-      expect(await sessionNumbers(19, 19)).toEqual([19, 20]);
-      expect(await sessionNumbers(20, 20)).toEqual([19, 20]);
+      expect(await sessionNumbers(19, 19, onePaper("Range-35회"))).toEqual([19, 20]);
+      expect(await sessionNumbers(20, 20, onePaper("Range-35회"))).toEqual([19, 20]);
     });
 
     it("leaves a range alone when nothing straddles its edges", async () => {
       await paperWithPair();
-      expect(await sessionNumbers(18, 18)).toEqual([18]);
-      expect(await sessionNumbers(21, 21)).toEqual([21]);
+      expect(await sessionNumbers(18, 18, onePaper("Range-35회"))).toEqual([18]);
+      expect(await sessionNumbers(21, 21, onePaper("Range-35회"))).toEqual([21]);
     });
 
     it("gathers one kind of question from every paper by default, and from one when asked", async () => {
-      await paperWithPair();
-      await createQuestion({ section: "reading", exam: "Range-36회", number: 18, block: "18" });
+      const made = await paperWithPair();
+      const other = await createQuestion({ section: "reading", exam: "Range-36회", number: 18, block: "18" });
+      // Across every paper a session only re-serves what has been answered (M7.27), so both 18s
+      // are answered first — this test is about the gathering, not about the reservation.
+      for (const id of [made[18]!, other.id]) {
+        await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: id, selected_option: 1, duration_ms: 100 });
+      }
       expect(await sessionNumbers(18, 18)).toEqual([18, 18]);
       const oneExam = await sessionNumbers(18, 18, "&exam=Range-36회");
       expect(oneExam).toEqual([18]);
@@ -465,7 +490,8 @@ describe("blocks + practice session", () => {
   it("asks as many questions as the profile's session_size says", async () => {
     for (const n of [1, 2, 3, 4, 5, 6, 7]) await createQuestion({ number: n, block: "1~7" });
     const sessionFor = async (profileId: string) =>
-      ((await t.api("GET", `/topik/session?section=reading&from=1&to=7&profile_id=${profileId}`)).body as { questions: unknown[] }).questions.length;
+      ((await t.api("GET", `/topik/session?section=reading&from=1&to=7&profile_id=${profileId}${onePaper()}`)).body as { questions: unknown[] })
+        .questions.length;
 
     const short = ((await t.api("POST", "/profiles", profile({ name: "Ngắn", session_size: 5 }))).body as { id: string }).id;
     expect(await sessionFor(short)).toBe(5);
@@ -485,15 +511,15 @@ describe("blocks + practice session", () => {
     // either way and prove nothing.
     for (let n = 1; n <= 105; n += 1) await createQuestion({ number: n, block: "1~105" });
     const big = ((await t.api("POST", "/profiles", profile({ name: "Dài", session_size: 20 }))).body as { id: string }).id;
-    const res = await t.api("GET", `/topik/session?section=reading&from=1&to=105&profile_id=${big}`);
+    const res = await t.api("GET", `/topik/session?section=reading&from=1&to=105&profile_id=${big}${onePaper()}`);
     expect(res.status).toBe(200);
     expect((res.body as { questions: unknown[] }).questions).toHaveLength(20);
   });
 
   it("a practice session never includes the answer, and defaults to the empty-card order", async () => {
     await createQuestion({ number: 1 });
-    await createQuestion({ number: 2, exam: "Test/연습2" });
-    const res = await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=2`);
+    await createQuestion({ number: 2 });
+    const res = await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=2${onePaper()}`);
     const { questions } = res.body as { questions: Record<string, unknown>[] };
     expect(questions).toHaveLength(2);
     expect(questions[0]).not.toHaveProperty("correct_option");
@@ -678,7 +704,7 @@ describe("per-question vocabulary + explanation (M6.2 'tap a word', M6.3 answer 
       )
       .run();
 
-    const res = await tv.api("GET", `/topik/session?profile_id=${adultV}&section=reading&from=1&to=1`);
+    const res = await tv.api("GET", `/topik/session?profile_id=${adultV}&section=reading&from=1&to=1${onePaper()}`);
     const questions = (res.body as { questions: { id: string; vocab_ready: boolean }[] }).questions;
     expect(questions).toEqual([expect.objectContaining({ id: "q1", vocab_ready: false })]); // not generated yet, the response does not wait for it
     await tv.settle();
@@ -695,7 +721,7 @@ describe("per-question vocabulary + explanation (M6.2 'tap a word', M6.3 answer 
     await tv.settle();
     llm.requests.length = 0;
 
-    await tv.api("GET", `/topik/session?profile_id=${adultV}&section=reading&from=1&to=1`);
+    await tv.api("GET", `/topik/session?profile_id=${adultV}&section=reading&from=1&to=1${onePaper()}`);
     await tv.settle();
     expect(llm.requests).toHaveLength(0);
   });
@@ -773,7 +799,7 @@ describe("answer explanation exposure (M6.3)", () => {
 
   it("never appears in the practice session (would leak the answer)", async () => {
     await createAndWait();
-    const session = await tv.api("GET", `/topik/session?profile_id=${adultE}&section=reading&from=1&to=1`);
+    const session = await tv.api("GET", `/topik/session?profile_id=${adultE}&section=reading&from=1&to=1${onePaper()}`);
     const q = (session.body as { questions: Record<string, unknown>[] }).questions[0]!;
     expect(q).not.toHaveProperty("explanation_vi");
     expect(q).not.toHaveProperty("key_terms");
@@ -932,7 +958,7 @@ describe("listening audio", () => {
     await t.api("PATCH", `/topik/questions/${q.id}/segment`, { profile_id: adult, segment_id: segmentId });
 
     const session = async () =>
-      ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3`)).body as { questions: unknown[] }).questions;
+      ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3${onePaper("Listen-60회")}`)).body as { questions: unknown[] }).questions;
     expect(await session()).toHaveLength(0);
 
     await t.api("PATCH", `/topik/audio/${audioId}`, { profile_id: adult, verified: true });
@@ -943,14 +969,14 @@ describe("listening audio", () => {
     await listening(1); // never linked to a segment
     const audioId = await addAudio(true);
     await addSegment(audioId, 1, 1000, 20000, 26000);
-    const session = (await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3`)).body as { questions: unknown[] };
+    const session = (await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3${onePaper("Listen-60회")}`)).body as { questions: unknown[] };
     expect(session.questions).toHaveLength(0);
   });
 
   // Reading has no audio; the new gate must not touch it.
   it("does not apply the audio gate to reading questions", async () => {
     await createQuestion({ number: 1 });
-    const session = (await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=3`)).body as { questions: unknown[] };
+    const session = (await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=3${onePaper()}`)).body as { questions: unknown[] };
     expect(session.questions).toHaveLength(1);
   });
 
@@ -1005,7 +1031,7 @@ describe("listening transcript", () => {
     return q;
   };
   const session = async () =>
-    ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3`)).body as {
+    ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=1&to=3${onePaper("Listen-60회")}`)).body as {
       questions: { stem: { text: string | null }; vocab: unknown[]; audio: Record<string, unknown> | null }[];
     }).questions;
 
@@ -1046,7 +1072,7 @@ describe("listening transcript", () => {
     await t.env.DB.prepare("UPDATE topik_questions SET vocab = ?, vocab_checked_at = ? WHERE id = ?")
       .bind(JSON.stringify([{ surface: "지문", lemma: "지문", pos: "noun", gloss_vi: "đoạn văn" }]), Date.now(), q.id)
       .run();
-    const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=3`)).body as {
+    const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=1&to=3${onePaper()}`)).body as {
       questions: { stem: { text: string | null }; vocab: unknown[]; audio: unknown }[];
     }).questions;
     expect(questions[0]).toMatchObject({ stem: { text: "읽기 지문" }, audio: null });
@@ -1150,7 +1176,7 @@ describe("a pair of questions sharing one clip", () => {
 
   it("gives both questions of the pair the same group", async () => {
     const { q21, q22, segmentId } = await pair();
-    const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=21&to=22`)).body as {
+    const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=listening&from=21&to=22${onePaper("Listen-70회")}`)).body as {
       questions: { id: string; group_id: string }[];
     }).questions;
     expect(questions.map((q) => q.group_id)).toEqual([segmentId, segmentId]);
@@ -1204,7 +1230,7 @@ describe("a pair of questions sharing one clip", () => {
 
     it("gives both questions the same group, from group_key", async () => {
       const { q19, q20 } = await readingPair();
-      const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=19&to=20`)).body as {
+      const questions = ((await t.api("GET", `/topik/session?profile_id=${adult}&section=reading&from=19&to=20${onePaper("Read-35회")}`)).body as {
         questions: { id: string; group_id: string }[];
       }).questions;
       expect(questions.map((q) => q.group_id)).toEqual([GROUP_KEY, GROUP_KEY]);
@@ -1267,5 +1293,127 @@ describe("a pair of questions sharing one clip", () => {
     const after = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_attempts").first<{ n: number }>();
     const cards = await t.env.DB.prepare("SELECT count(*) AS n FROM topik_cards").first<{ n: number }>();
     expect([after!.n, cards!.n]).toEqual([before!.n, 0]);
+  });
+});
+
+/**
+ * Questions kept for a mock test (M7.27).
+ *
+ * Practising across every paper is for going back over what has been met; a question nobody has
+ * answered yet is worth more as a first sitting of a mock test, and there is no second chance at a
+ * first sitting. "Đã làm" has one definition on the server — an answer in practice **or** an
+ * answer in a sitting — and these tests are what makes it one definition rather than two that
+ * agree today.
+ */
+describe("questions kept for a mock test", () => {
+  const sessionNumbers = async (extra = "") => {
+    const body = (await t.api("GET", `/topik/session?section=reading&from=1&to=9&profile_id=${adult}&mode=all${extra}`)).body as {
+      questions: { number: number }[];
+      reserved_for_tests: number;
+    };
+    return { numbers: body.questions.map((q) => q.number).sort((a, b) => a - b), reserved: body.reserved_for_tests };
+  };
+
+  /** A sitting of `profileId` that answered `answeredIds` and merely held `unansweredIds`.
+   * Seeded as rows rather than driven through `/topik/tests`, which needs a listening paper with
+   * approved clips — the rule under test is about the column, not about the sitting's lifecycle. */
+  const sitting = async (profileId: string, answeredIds: string[], unansweredIds: string[] = []) => {
+    const testId = crypto.randomUUID();
+    const now = Date.now();
+    await t.env.DB.prepare(
+      `INSERT INTO topik_tests (id, profile_id, section, kind, source_exam, question_count, total_points, status, started_at, created_at)
+       VALUES (?, ?, 'reading', 'original', 'Test/연습1', ?, ?, 'finished', ?, ?)`,
+    )
+      .bind(testId, profileId, answeredIds.length + unansweredIds.length, (answeredIds.length + unansweredIds.length) * 2, now, now)
+      .run();
+    let position = 0;
+    for (const [ids, selected] of [[answeredIds, 2], [unansweredIds, null]] as const) {
+      for (const id of ids) {
+        position += 1;
+        await t.env.DB.prepare(
+          "INSERT INTO topik_test_items (id, test_id, position, question_id, number, points, selected_option) VALUES (?, ?, ?, ?, ?, 2, ?)",
+        ).bind(crypto.randomUUID(), testId, position, id, position, selected).run();
+      }
+    }
+  };
+
+  it("leaves a question nobody has answered out of an all-papers session, and still serves it from one paper", async () => {
+    const q1 = await createQuestion({ number: 1 });
+    await createQuestion({ number: 2 });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 1, duration_ms: 100 });
+
+    // Across every paper: only the answered one comes back, and the response says why the rest did
+    // not — the screen has to be able to say it out loud instead of showing an empty session.
+    expect(await sessionNumbers()).toEqual({ numbers: [1], reserved: 1 });
+    // One paper is the deliberate way to practise new questions, and it is unchanged.
+    expect(await sessionNumbers(onePaper())).toEqual({ numbers: [1, 2], reserved: 0 });
+  });
+
+  it("counts an answer given inside a mock test as having done the question", async () => {
+    await createQuestion({ number: 1 });
+    const inTest = await createQuestion({ number: 2 });
+    const neverAnswered = await createQuestion({ number: 9, block: "9" });
+    await sitting(adult, [inTest.id], [neverAnswered.id]);
+
+    // The sitting's answered position counts; the position its tape never reached does not — that
+    // paper may have stopped at question 3, and burning questions nobody saw is the whole mistake.
+    expect(await sessionNumbers()).toEqual({ numbers: [2], reserved: 2 });
+  });
+
+  it("keeps another profile's sitting out of this profile's history", async () => {
+    const q = await createQuestion({ number: 1 });
+    await sitting(kid, [q.id]);
+    expect(await sessionNumbers()).toEqual({ numbers: [], reserved: 1 });
+  });
+
+  // A pair shares one passage and is one screen everywhere else (M7.5/M7.21), so it may not be
+  // split here either: answering one half brings the whole pair into the session.
+  it("brings a whole pair in when one of its questions has been answered", async () => {
+    const made: Record<number, string> = {};
+    for (const n of [1, 2]) made[n] = (await createQuestion({ number: n, block: "1~2" })).id;
+    await t.env.DB.prepare("UPDATE topik_questions SET group_key = 'reading|Test/연습1|1' WHERE number IN (1, 2)").run();
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: made[1]!, selected_option: 1, duration_ms: 100 });
+
+    expect(await sessionNumbers()).toEqual({ numbers: [1, 2], reserved: 0 });
+  });
+
+  it("tells the block picker how much of each block is being kept, and nothing when one paper is chosen", async () => {
+    const q1 = await createQuestion({ number: 1 });
+    await createQuestion({ number: 2 });
+    await createQuestion({ number: 9, block: "9" });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 1, duration_ms: 100 });
+
+    const blocks = async (extra = "") =>
+      (await t.api("GET", `/topik/blocks?section=reading&profile_id=${adult}${extra}`)).body as {
+        block: string;
+        count: number;
+        reserved_for_tests: number;
+      }[];
+    expect(await blocks()).toMatchObject([
+      { block: "1~2", count: 2, reserved_for_tests: 1 },
+      { block: "9", count: 1, reserved_for_tests: 1 },
+    ]);
+    // One paper reserves nothing: the row the learner taps and the number on it always agree.
+    expect(await blocks(onePaper())).toMatchObject([
+      { block: "1~2", reserved_for_tests: 0 },
+      { block: "9", reserved_for_tests: 0 },
+    ]);
+  });
+
+  it("tells the range preview the same number, so the card never starts an empty session", async () => {
+    const q1 = await createQuestion({ number: 1 });
+    await createQuestion({ number: 2 });
+    await t.api("POST", "/topik/attempts", { profile_id: adult, question_id: q1.id, selected_option: 1, duration_ms: 100 });
+
+    const preview = async (extra = "") =>
+      (await t.api("GET", `/topik/practice-range?section=reading&from=1&to=2&profile_id=${adult}${extra}`)).body as {
+        question_count: number;
+        reserved_for_tests: number;
+      };
+    expect(await preview()).toMatchObject({ question_count: 2, reserved_for_tests: 1 });
+    expect(await preview(onePaper())).toMatchObject({ question_count: 2, reserved_for_tests: 0 });
+    // No profile named (an older PWA build): it reserves nothing rather than answering 400.
+    const anonymous = (await t.api("GET", "/topik/practice-range?section=reading&from=1&to=2")).body as { reserved_for_tests: number };
+    expect(anonymous.reserved_for_tests).toBe(0);
   });
 });

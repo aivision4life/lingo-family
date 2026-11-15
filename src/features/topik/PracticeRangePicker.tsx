@@ -19,11 +19,13 @@ import { useTopikPracticeRange } from "./api";
  * `GET /topik/practice-range` for why those two rules cannot be shared.
  */
 export function PracticeRangePicker({
+  profileId,
   section,
   exam,
   maxNumber,
   onStart,
 }: {
+  profileId: string;
   section: TopikSection;
   /** Null = every paper. */
   exam: string | null;
@@ -39,9 +41,12 @@ export function PracticeRangePicker({
   const from = Number(fromText);
   const to = Number(toText);
   const valid = Number.isInteger(from) && Number.isInteger(to) && from >= 1 && to >= from;
-  const preview = useTopikPracticeRange(section, exam, from, to, valid);
+  const preview = useTopikPracticeRange(profileId, section, exam, from, to, valid);
   const range = preview.data ?? null;
   const empty = range !== null && range.question_count === 0;
+  /** The range holds questions, but every one of them is being kept for a mock test (M7.27) — so
+   * starting it could only open an empty session. Said in place rather than discovered in there. */
+  const reservedOnly = range !== null && range.question_count > 0 && range.reserved_for_tests === range.question_count;
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border p-4">
@@ -75,7 +80,11 @@ export function PracticeRangePicker({
             className="w-24"
           />
         </label>
-        <Button type="button" disabled={!valid || empty || range === null} onClick={() => range && onStart({ from: range.from, to: range.to })}>
+        <Button
+          type="button"
+          disabled={!valid || empty || reservedOnly || range === null}
+          onClick={() => range && onStart({ from: range.from, to: range.to })}
+        >
           {t("topik.picker.rangeStart")}
         </Button>
       </div>
@@ -92,6 +101,12 @@ export function PracticeRangePicker({
             <p className="text-destructive">{t("topik.picker.rangeEmpty")}</p>
           ) : (
             <p className="text-muted-foreground">{t("topik.picker.rangeCount", { count: range.question_count })}</p>
+          )}
+          {/* How many of them a session here would not serve, and why. */}
+          {range.reserved_for_tests > 0 && (
+            <p className={reservedOnly ? "text-destructive" : "text-muted-foreground"}>
+              {t("topik.reservedOnly", { count: range.reserved_for_tests })}
+            </p>
           )}
           {/* A hole is only a hole inside one paper (M7.24); across all of them it is a paper that
               is not typed up yet, so the breakdown is the honest answer instead. */}

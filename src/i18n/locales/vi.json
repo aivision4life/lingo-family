@@ -539,6 +539,8 @@
     "blockLabel": "Câu {{block}}",
     "blockMastered": "thuộc {{mastered}}",
     "blockUnanswered": "chưa làm {{unseen}}",
+    "blockReserved": "dành cho thi thử {{count}}",
+    "reservedOnly": "{{count}} câu đang dành cho thi thử — chọn đề cụ thể để ôn",
     "blockTotal": "Tổng cộng",
     "practice": {
       "title": "Câu {{from}}-{{to}}",

@@ -539,6 +539,8 @@
     "blockLabel": "{{block}}번 문제",
     "blockMastered": "암기 {{mastered}}",
     "blockUnanswered": "미시도 {{unseen}}",
+    "blockReserved": "모의고사용 {{count}}",
+    "reservedOnly": "{{count}}문항은 모의고사용입니다 — 복습하려면 회차를 선택하세요",
     "blockTotal": "전체",
     "practice": {
       "title": "{{from}}-{{to}}번 문제",

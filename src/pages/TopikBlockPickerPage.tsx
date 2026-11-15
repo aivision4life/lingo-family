@@ -103,6 +103,7 @@ export function TopikBlockPickerPage() {
           since M7.24 that costs nothing, as each question decides for itself whether it counts. */}
       {(blocks.data?.length ?? 0) > 0 && (
         <PracticeRangePicker
+          profileId={profileId}
           section={section}
           exam={exam}
           maxNumber={maxNumber}
@@ -115,27 +116,41 @@ export function TopikBlockPickerPage() {
   );
 }
 
-/** Every block, then one total row set apart by a rule above it (M6.9). */
+/**
+ * Every block, then one total row set apart by a rule above it (M6.9).
+ *
+ * A block whose every question is being kept for a mock test (M7.27) is **not a link**: opening it
+ * could only produce an empty session, and an empty session that explains nothing is the thing
+ * this project keeps finding. It says so in place instead, and names the way in — one paper.
+ */
 function BlockList({ blocks, section, exam }: { blocks: TopikBlock[]; section: TopikSection; exam: string | null }) {
   const { t } = useTranslation();
   const totals = blockTotals(blocks);
+  const allPapers = exam === null;
 
   return (
     <>
-      {blocks.map((b) => (
-        <LinkButton
-          key={b.block}
-          to={`/topik/practice?section=${section}&from=${b.from}&to=${b.to}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`}
-          variant="secondary"
-          size="lg"
-          className="h-auto flex-col items-stretch gap-1.5 py-3"
-        >
-          <BlockRow label={t("topik.blockLabel", { block: b.block })} block={b} />
-        </LinkButton>
-      ))}
+      {blocks.map((b) =>
+        allPapers && b.count > 0 && b.reserved_for_tests === b.count ? (
+          // Same padding as the size="lg" links around it, so the column does not jump.
+          <div key={b.block} className="rounded-lg border bg-muted/40 px-6 py-3">
+            <BlockRow label={t("topik.blockLabel", { block: b.block })} block={b} allPapers />
+          </div>
+        ) : (
+          <LinkButton
+            key={b.block}
+            to={`/topik/practice?section=${section}&from=${b.from}&to=${b.to}${exam ? `&exam=${encodeURIComponent(exam)}` : ""}`}
+            variant="secondary"
+            size="lg"
+            className="h-auto flex-col items-stretch gap-1.5 py-3"
+          >
+            <BlockRow label={t("topik.blockLabel", { block: b.block })} block={b} allPapers={allPapers} />
+          </LinkButton>
+        ),
+      )}
       {/* px-6 matches the size="lg" rows above, so the labels and bars line up in one column. */}
       <div className="mt-1 border-t px-6 pt-3">
-        <BlockRow label={t("topik.blockTotal")} block={totals} bold />
+        <BlockRow label={t("topik.blockTotal")} block={totals} allPapers={allPapers} bold />
       </div>
     </>
   );
@@ -160,10 +175,14 @@ function BlockList({ blocks, section, exam }: { blocks: TopikBlock[]; section: T
 function BlockRow({
   label,
   block,
+  allPapers,
   bold = false,
 }: {
   label: string;
-  block: Pick<TopikBlock, "count" | "unseen" | "mastered" | "due" | "later" | "next_due_at">;
+  block: Pick<TopikBlock, "count" | "unseen" | "mastered" | "due" | "later" | "next_due_at" | "reserved_for_tests">;
+  /** "Tất cả các đề" is the scope that keeps unanswered questions for a mock test (M7.27), so the
+   * same block says "chưa làm N" in one paper and "dành cho thi thử N" across all of them. */
+  allPapers: boolean;
   bold?: boolean;
 }) {
   const { t, i18n } = useTranslation();
@@ -172,6 +191,8 @@ function BlockRow({
   // Why a block with work left can still open an empty session: everything in it has been answered
   // and is waiting out its interval. Without this line the screen looks broken (M7.2).
   const waiting = block.later > 0 && block.next_due_at !== null;
+  // Nothing here can be practised across every paper — the whole block is a mock test's to give.
+  const reservedOnly = allPapers && block.count > 0 && block.reserved_for_tests === block.count;
 
   return (
     <div className="flex w-full flex-col gap-1.5">
@@ -187,7 +208,10 @@ function BlockRow({
             {/* The size first and alone: every number after it is a plain count of that total. */}
             <span className="text-muted-foreground">{t("topik.blockSize", { total: block.count })}</span>
             <span className={status === "partial" ? "font-medium" : undefined}> · {t("topik.blockMastered", { mastered: block.mastered })}</span>
-            <span className="text-muted-foreground"> · {t("topik.blockUnanswered", { unseen: block.unseen })}</span>
+            <span className="text-muted-foreground">
+              {" · "}
+              {allPapers ? t("topik.blockReserved", { count: block.reserved_for_tests }) : t("topik.blockUnanswered", { unseen: block.unseen })}
+            </span>
           </span>
         )}
       </div>
@@ -196,6 +220,7 @@ function BlockRow({
           {t("topik.blockWaiting", { count: block.later, when: formatDueFromNow(block.next_due_at!, i18n.language) })}
         </p>
       )}
+      {reservedOnly && <p className="text-xs text-muted-foreground">{t("topik.reservedOnly", { count: block.reserved_for_tests })}</p>}
       <div
         // Not bg-muted (the usual track): it is the same token value as the secondary button these
         // rows sit on, so the unfinished part would be invisible exactly where it matters most.

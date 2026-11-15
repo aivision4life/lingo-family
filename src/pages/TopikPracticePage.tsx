@@ -57,7 +57,14 @@ export function TopikPracticePage() {
   if (questions.length === 0)
     return (
       <Shell from={from} to={to}>
-        <NothingDue profileId={profile.id} section={section} from={from} to={to} mode={mode} />
+        <NothingDue
+          profileId={profile.id}
+          section={section}
+          from={from}
+          to={to}
+          mode={mode}
+          reservedForTests={session.data.reserved_for_tests}
+        />
       </Shell>
     );
 
@@ -117,12 +124,16 @@ function NothingDue({
   from,
   to,
   mode,
+  reservedForTests,
 }: {
   profileId: string;
   section: TopikSection;
   from: number;
   to: number;
   mode: TopikSessionMode;
+  /** Questions the server kept for a mock test (M7.27) — the other reason a range serves nothing,
+   * and the only one that is not about the clock. */
+  reservedForTests: number;
 }) {
   const { t, i18n } = useTranslation();
   const blocks = useTopikBlocks(profileId, section);
@@ -138,6 +149,9 @@ function NothingDue({
   return (
     <div className="flex flex-col items-center gap-2 py-10 text-center">
       <p className="text-lg">{t("topik.practice.nothingToday")}</p>
+      {/* Said before the schedule lines: if this is why the session is empty, the clock has nothing
+          to do with it and "come back in 3 days" would be the wrong thing to read. */}
+      {reservedForTests > 0 && <p className="text-sm text-muted-foreground">{t("topik.reservedOnly", { count: reservedForTests })}</p>}
       {later > 0 && nextDueAt !== null && (
         <p className="text-sm text-muted-foreground">
           {t("topik.practice.nothingDueDetail", { count: later, when: formatDueFromNow(nextDueAt, i18n.language) })}

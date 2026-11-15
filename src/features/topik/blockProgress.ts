@@ -2,8 +2,9 @@
 import type { TopikBlock } from "@shared/topik";
 
 type Counts = Pick<TopikBlock, "count" | "unseen" | "mastered">;
-/** The totals row needs the waiting numbers too, so it can explain an empty whole section. */
-type Totals = Counts & Pick<TopikBlock, "due" | "later" | "next_due_at">;
+/** The totals row needs the waiting numbers too, so it can explain an empty whole section — and
+ * what is being kept for a mock test (M7.27), which explains an empty one for a different reason. */
+type Totals = Counts & Pick<TopikBlock, "due" | "later" | "next_due_at" | "reserved_for_tests">;
 
 /**
  * Sums every block for the total row. Blocks never share a question (the server groups by the
@@ -17,11 +18,12 @@ export function blockTotals(blocks: readonly Totals[]): Totals {
       mastered: total.mastered + b.mastered,
       due: total.due + b.due,
       later: total.later + b.later,
+      reserved_for_tests: total.reserved_for_tests + b.reserved_for_tests,
       // The soonest of them: that is when this section has something to offer again.
       next_due_at:
         b.next_due_at === null ? total.next_due_at : total.next_due_at === null ? b.next_due_at : Math.min(total.next_due_at, b.next_due_at),
     }),
-    { count: 0, unseen: 0, mastered: 0, due: 0, later: 0, next_due_at: null },
+    { count: 0, unseen: 0, mastered: 0, due: 0, later: 0, next_due_at: null, reserved_for_tests: 0 },
   );
 }
 

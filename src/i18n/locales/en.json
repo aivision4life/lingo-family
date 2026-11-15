@@ -539,6 +539,8 @@
     "blockLabel": "Questions {{block}}",
     "blockMastered": "{{mastered}} known",
     "blockUnanswered": "{{unseen}} to do",
+    "blockReserved": "{{count}} saved for a mock test",
+    "reservedOnly": "{{count}} questions are saved for a mock test — pick one paper to practise them",
     "blockTotal": "All blocks",
     "practice": {
       "title": "Questions {{from}}-{{to}}",

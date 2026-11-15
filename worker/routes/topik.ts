@@ -11,7 +11,7 @@
 import { and, asc, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { State } from "ts-fsrs";
-import { topikSectionSchema } from "../../shared/enums";
+import { topikSectionSchema, type TopikSection } from "../../shared/enums";
 import { z } from "zod";
 import { applyReview, emptyCardFields } from "../../shared/scheduling";
 import {
@@ -41,6 +41,8 @@ import {
   type TopikQuestion,
 } from "../../shared/topik";
 import { expandToGroups, missingNumber } from "../../shared/topikRange";
+import { splitReservedForTests } from "../../shared/topikAnswered";
+import { answeredQuestionIds } from "../services/topikAnswered";
 import { profiles, topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments } from "../../db/schema";
 import { readInD1Chunks } from "../lib/d1Chunk";
 import { getDb, type AppEnv } from "../env";
@@ -63,6 +65,26 @@ const err = (error: string) => ({ error });
 
 /** Escapes LIKE wildcards so user input is matched literally (same rule as `worker/routes/words.ts`). */
 const likePattern = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
+/**
+ * A question practice can actually serve: approved, and — for listening — attached to a clip whose
+ * exam an adult has approved (M7.1). A one-clip offset plays perfectly normal audio, so a wrong
+ * mapping is invisible while practising and would surface only as answers that stop making sense.
+ *
+ * One definition for the three reads that have to agree about it: the session, the range preview
+ * and the "kept for a mock test" count. `exam` narrows to one paper, absent means every paper.
+ */
+const practisable = (section: TopikSection, exam?: string) =>
+  and(
+    eq(topik_questions.section, section),
+    eq(topik_questions.verified, true),
+    exam ? eq(topik_questions.exam, exam) : undefined,
+    section === "listening"
+      ? sql`${topik_questions.segment_id} IS NOT NULL AND EXISTS (
+            SELECT 1 FROM topik_audio a
+            WHERE a.section = ${topik_questions.section} AND a.exam = ${topik_questions.exam} AND a.verified = 1)`
+      : undefined,
+  );
 
 /**
  * Clips for a set of questions, in one query. Only the review screen and a practice session ever
@@ -539,7 +561,35 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
           later: number;
           next_due_at: number | null;
         }>();
-        return c.json(rows.results.map((r) => ({ section, ...r })));
+
+      /**
+       * How much of each block is being kept for a mock test (M7.27).
+       *
+       * Only the "every paper" scope reserves anything — with one paper chosen, practice still
+       * hands out new questions — and only a known profile has a history to reserve against. The
+       * count is group-wise, from the same rule the session itself applies, so the number on the
+       * row and the questions the row opens can never disagree.
+       */
+      const reservedByBlock = new Map<string, number>();
+      if (profile_id && !exam) {
+        const db = getDb(c.env);
+        const [rows2, answered] = await Promise.all([
+          db
+            .select({
+              id: topik_questions.id,
+              block: topik_questions.block,
+              segment_id: topik_questions.segment_id,
+              group_key: topik_questions.group_key,
+            })
+            .from(topik_questions)
+            .where(practisable(section)),
+          answeredQuestionIds(db, profile_id, section),
+        ]);
+        for (const q of splitReservedForTests(rows2, answered).reserved) {
+          reservedByBlock.set(q.block, (reservedByBlock.get(q.block) ?? 0) + 1);
+        }
+      }
+        return c.json(rows.results.map((r) => ({ section, ...r, reserved_for_tests: reservedByBlock.get(r.block) ?? 0 })));
       },
     )
 
@@ -553,14 +603,8 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
      * all-exams case gets a per-paper breakdown instead — the honest answer to "what will I get".
      */
     .get("/topik/practice-range", zv("query", topikPracticeRangeQuerySchema), async (c) => {
-      const { section, from, to, exam } = c.req.valid("query");
+      const { section, from, to, exam, profile_id } = c.req.valid("query");
       const db = getDb(c.env);
-      const audioReady =
-        section === "listening"
-          ? sql`${topik_questions.segment_id} IS NOT NULL AND EXISTS (
-                SELECT 1 FROM topik_audio a
-                WHERE a.section = ${topik_questions.section} AND a.exam = ${topik_questions.exam} AND a.verified = 1)`
-          : undefined;
       const inWindow = await db
         .select({
           id: topik_questions.id,
@@ -572,12 +616,9 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         .from(topik_questions)
         .where(
           and(
-            eq(topik_questions.section, section),
-            eq(topik_questions.verified, true),
+            practisable(section, exam),
             gte(topik_questions.number, Math.max(1, from - TOPIK_MAX_GROUP_SPAN)),
             lte(topik_questions.number, to + TOPIK_MAX_GROUP_SPAN),
-            exam ? eq(topik_questions.exam, exam) : undefined,
-            audioReady,
           ),
         )
         .orderBy(asc(topik_questions.number));
@@ -590,6 +631,11 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
       const byExam = new Map<string, number>();
       for (const q of inRange) byExam.set(q.exam, (byExam.get(q.exam) ?? 0) + 1);
 
+      // What a session on this range would hold back for a mock test (M7.27) — same scope rule as
+      // the block list: every paper reserves, one paper does not.
+      const reserved =
+        profile_id && !exam ? splitReservedForTests(inRange, await answeredQuestionIds(db, profile_id, section)).reserved.length : 0;
+
       return c.json({
         from: range.from,
         to: range.to,
@@ -598,22 +644,13 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         question_count: inRange.length,
         missing_number: exam ? missingNumber(range, new Set(inRange.map((q) => q.number))) : null,
         by_exam: [...byExam.entries()].map(([e, count]) => ({ exam: e, count })).sort((a, b) => a.exam.localeCompare(b.exam)),
+        reserved_for_tests: reserved,
       });
     })
 
     .get("/topik/session", zv("query", topikSessionRequestSchema), async (c) => {
       const { profile_id, section, from, to, mode, exam } = c.req.valid("query");
       const db = getDb(c.env);
-      // A listening question is only usable once it has a clip AND an adult has approved that
-      // exam's boundaries (M7.1): a one-clip offset plays perfectly normal audio, so a wrong
-      // mapping is invisible while practising and would surface only as answers that stop making
-      // sense. Reading questions have no audio and are unaffected.
-      const audioReady =
-        section === "listening"
-          ? sql`${topik_questions.segment_id} IS NOT NULL AND EXISTS (
-                SELECT 1 FROM topik_audio a
-                WHERE a.section = ${topik_questions.section} AND a.exam = ${topik_questions.exam} AND a.verified = 1)`
-          : undefined;
       /**
        * The range is widened to whole groups before anything is chosen (M7.24).
        *
@@ -629,18 +666,33 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
         .from(topik_questions)
         .where(
           and(
-            eq(topik_questions.section, section),
-            eq(topik_questions.verified, true),
+            practisable(section, exam),
             gte(topik_questions.number, Math.max(1, from - TOPIK_MAX_GROUP_SPAN)),
             lte(topik_questions.number, to + TOPIK_MAX_GROUP_SPAN),
-            exam ? eq(topik_questions.exam, exam) : undefined,
-            audioReady,
           ),
         )
         .orderBy(asc(topik_questions.number));
       const range = expandToGroups({ from, to }, topikGroupsOf(inWindow));
-      const questions = inWindow.filter((q) => q.number >= range.from && q.number <= range.to);
-      if (questions.length === 0) return c.json({ questions: [] });
+      const inRange = inWindow.filter((q) => q.number >= range.from && q.number <= range.to);
+      if (inRange.length === 0) return c.json({ questions: [], reserved_for_tests: 0 });
+
+      /**
+       * With every paper in scope, a session only re-serves what this profile has **already
+       * answered** (SPEC F12, M7.27): a question nobody has met yet is worth more as a first
+       * sitting of a mock test than as one more practice item, and there is no second chance at a
+       * first sitting. Choosing one paper is the deliberate way to practise new questions, so that
+       * scope is left exactly as it was.
+       *
+       * The server decides from the scope it was given — there is no client flag for it (M7.24) —
+       * and `splitReservedForTests` keeps a group whole, so a pair whose first question has been
+       * answered comes in complete rather than half.
+       */
+      const { served, reserved } = exam
+        ? { served: inRange, reserved: [] }
+        : splitReservedForTests(inRange, await answeredQuestionIds(db, profile_id, section));
+      const questions = served;
+      // Not an error and not an empty block: the screen says these are being kept for a mock test.
+      if (questions.length === 0) return c.json({ questions: [], reserved_for_tests: reserved.length });
 
       // Chunked: this IN list is every verified question of the chosen block, which grows with the
       // bank (a 21~50 block across several papers is already past D1's 100-parameter ceiling).
@@ -707,7 +759,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
           refreshContent(c, profile_id, row, { vocab: !row.vocab_checked_at, explain: !row.explain_checked_at });
         }
       }
-      return c.json({ questions: result });
+      return c.json({ questions: result, reserved_for_tests: reserved.length });
     })
 
     /** Polled by the practice screen while a session-triggered (or manually started) generation is
