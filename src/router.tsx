@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router";
 import { AppLayout, FocusLayout } from "@/components/layout/AppLayout";
+import { importChunk } from "@/features/pwa/importChunk";
 import { RequireProfile, RootRedirect } from "@/features/profiles/guards";
 import { AlbumPage } from "@/pages/AlbumPage";
 import { AddWordPage } from "@/pages/AddWordPage";
@@ -56,20 +57,21 @@ export const router = createBrowserRouter([
           // The review/management screen and the audio probe are adult-only tools opened now and
           // then, and they drag the whole question editor in with them: both are loaded on demand
           // so they stay out of the entry chunk, which is near its ceiling
-          // (`scripts/viteGuards/buildIntegrity.ts`).
-          { path: "topik/manage", lazy: async () => ({ Component: (await import("@/pages/TopikManagePage")).TopikManagePage }) },
+          // (`scripts/viteGuards/buildIntegrity.ts`). `importChunk` reloads the page once when an
+          // installed PWA from the previous deploy asks for a chunk name that no longer exists.
+          { path: "topik/manage", lazy: () => importChunk(async () => ({ Component: (await import("@/pages/TopikManagePage")).TopikManagePage })) },
           { path: "topik/tests", element: <TopikTestPickerPage /> },
           // Static, so it is ranked above "topik/tests/:id" and never read as a test id.
           // Loaded on demand: it is opened now and then, and the entry chunk is near its ceiling
           // (`scripts/viteGuards/buildIntegrity.ts`).
           {
             path: "topik/tests/history",
-            lazy: async () => ({ Component: (await import("./pages/TopikTestHistoryPage")).TopikTestHistoryPage }),
+            lazy: () => importChunk(async () => ({ Component: (await import("./pages/TopikTestHistoryPage")).TopikTestHistoryPage })),
           },
           // Scaffolding for the M6.5 mixed tape; removed once that mode lands.
           {
             path: "topik/tests/audio-probe",
-            lazy: async () => ({ Component: (await import("./pages/TopikAudioProbePage")).TopikAudioProbePage }),
+            lazy: () => importChunk(async () => ({ Component: (await import("./pages/TopikAudioProbePage")).TopikAudioProbePage })),
           },
           { path: "settings", element: <SettingsPage /> }, // 10
           { path: "stats", element: <StatsPage /> }, // 11
