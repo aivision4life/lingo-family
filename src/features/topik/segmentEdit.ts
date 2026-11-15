@@ -72,10 +72,37 @@ export const canApprove = (segments: readonly TopikSegment[], durationMs: number
  * That was a fault in the data, fixed in the data (`mergeShortSegments` + `npm run
  * topik-speech-end`, M7.6), so the rule here stays the simple one — a longer tail would only add
  * dead air, since playback stopping does not stop the learner thinking.
+ *
+ * What the window holds for a pair, measured on all 16 pair clips (questions 21-24 of the 8 papers)
+ * on 2026-11-14: `speech_end_ms` sits right after the 1.1-1.6 s announcement in every one, so the
+ * data is as M7.6 left it. The window therefore runs: the dialogue, then the first question's own
+ * answer pause — 10 to 20 s of silence, kept in full — then the announcement, then this tail. That
+ * silence in the middle is a consequence of having one window per clip, not something this rule
+ * chose; it is an open design question, not a data fault, so do not "repair" it with
+ * `topik-speech-end`.
  */
 export const PRACTICE_TAIL_MS = 5_000;
 export const practiceEnd = (s: Pick<TopikSegment, "speech_end_ms" | "end_ms">) =>
   Math.min(s.speech_end_ms + PRACTICE_TAIL_MS, s.end_ms);
+
+/**
+ * Where "go to question N" lands in a clip that carries more than one question: a little before
+ * `speech_end_ms`, which in such a clip sits right after the announcement of the last question
+ * ("이십이 번"). That mark already exists and was approved by ear in M7.6, so the jump needs no new
+ * timestamp — unlike "where the dialogue ends", which nobody has listened for (SPEC §11 M7.20 is
+ * what an unheard mark costs). The lead is longer than the announcement (1.1-1.6 s measured on 16
+ * clips) so it is heard from its start, and never reaches back before the clip itself.
+ */
+export const ANNOUNCEMENT_LEAD_MS = 2_000;
+export const announcementStart = (s: Pick<TopikSegment, "start_ms" | "speech_end_ms">) =>
+  Math.max(s.start_ms, s.speech_end_ms - ANNOUNCEMENT_LEAD_MS);
+
+/**
+ * The question a clip's closing announcement names: the last one it carries. Null for a clip with a
+ * single question — nothing is announced inside it, so there is nowhere to jump to and no button.
+ */
+export const announcedQuestion = (numbers: readonly number[]): number | null =>
+  numbers.length > 1 ? Math.max(...numbers) : null;
 
 /** `m:ss.s` — one decimal, which is as precise as a boundary can be judged by ear. */
 export function formatDuration(ms: number): string {

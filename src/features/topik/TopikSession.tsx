@@ -270,7 +270,9 @@ export function TopikSession({
       </div>
 
       {/* One player for the whole screen: a pair is one recording, played once. */}
-      {group.questions[0]?.audio && <TopikClipPlayer clip={group.questions[0].audio} questionId={group.group_id} />}
+      {group.questions[0]?.audio && (
+        <TopikClipPlayer clip={group.questions[0].audio} questionId={group.group_id} numbers={group.questions.map((q) => q.number)} />
+      )}
       {/* What the two questions share decides the sentence: a clip plays once, a passage is read.
           Saying "đoạn nghe" above a reading passage was the first thing visible when reading pairs
           arrived (M7.21), and the group's own data already knew which it was. */}

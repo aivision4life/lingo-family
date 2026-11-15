@@ -10,6 +10,8 @@ import {
   metricsOf,
   parseTimeInput,
   practiceEnd,
+  announcedQuestion,
+  announcementStart,
   segmentProblems,
   segmentWarnings,
   tailPreview,
@@ -109,6 +111,24 @@ describe("practiceEnd", () => {
   // at 132.9s — 15 seconds before "이십이 번" was ever said.
   it("covers a pair's second-question announcement once speech_end is right", () => {
     expect(practiceEnd({ speech_end_ms: 149_200, end_ms: 174_500 })).toBe(154_200);
+  });
+});
+
+describe("go to the next question of a pair", () => {
+  // 35회's clip 21, production numbers: the announcement is spoken at 148.1-149.2 s into the clip.
+  it("lands just before the announcement, which is where speech_end_ms sits", () => {
+    expect(announcementStart({ start_ms: 1_008_200, speech_end_ms: 1_157_300 })).toBe(1_155_300);
+  });
+
+  it("never reaches back before the clip", () => {
+    expect(announcementStart({ start_ms: 10_000, speech_end_ms: 11_000 })).toBe(10_000);
+  });
+
+  it("names the last question of a clip that carries several, and nothing for a clip with one", () => {
+    expect(announcedQuestion([21, 22])).toBe(22);
+    expect(announcedQuestion([22, 21])).toBe(22);
+    expect(announcedQuestion([5])).toBeNull();
+    expect(announcedQuestion([])).toBeNull();
   });
 });
 
