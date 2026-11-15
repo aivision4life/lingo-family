@@ -843,6 +843,16 @@
       "atQuestionsInRange": "{{first}}~{{last}}번 · 범위 {{from}}~{{to}}",
       "passageNote": "같은 지문에 대한 두 문항입니다."
     },
+    "history": {
+      "title": "모의고사 기록",
+      "allSections": "전체",
+      "empty": "제출한 시험이 아직 없습니다.",
+      "chartTitle": "{{section}} 영역 추이",
+      "chartLabel": "시간에 따른 점수 백분율 그래프",
+      "kindOriginal": "원본 기출",
+      "range": "{{from}}-{{to}}번",
+      "scoreAndPercent": "{{score}}/{{total}}점 · {{percent}}%"
+    },
     "picker": {
       "examFilter": "회차 선택",
       "examAll": "모든 회차",

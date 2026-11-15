@@ -969,3 +969,99 @@ describe("sitting a range of questions", () => {
     expect(run.questions.map((q) => q.number)).toEqual([16, 17, 18]);
   });
 });
+
+/**
+ * The history screen (M7.29). It reads `topik_tests` only, so what is worth testing is the set of
+ * rows it answers with: submitted sittings of this profile, newest first, both sections unless
+ * asked — a running or abandoned sitting in there would read as a 0% in the chart.
+ */
+describe("mock test history (M7.29)", () => {
+  type HistoryBody = {
+    sittings: {
+      id: string;
+      section: string;
+      kind: string;
+      source_exam: string | null;
+      from_number: number | null;
+      to_number: number | null;
+      score_points: number;
+      total_points: number;
+      correct_count: number;
+      finished_at: number;
+    }[];
+  };
+
+  const history = async (query = "") =>
+    ((await t.api("GET", `/topik/tests/history?profile_id=${adult}${query}`)).body as HistoryBody).sittings;
+
+  /** A reading question needs no clip, so a reading sitting is the cheapest second section. */
+  const readingSitting = async () => {
+    await t.api("POST", "/topik/questions", { ...input({ section: "reading", number: 1, exam: "Read-35회" }), profile_id: adult });
+    const run = (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam: "Read-35회", from: 1, to: 1 }))
+      .body as { id: string };
+    await t.api("POST", `/topik/tests/${run.id}/finish`, { profile_id: adult });
+    return run.id;
+  };
+
+  it("is empty for a profile that has never submitted a sitting", async () => {
+    expect(await history()).toEqual([]);
+  });
+
+  it("names the paper, the range and the score of each submitted sitting", async () => {
+    for (const n of [1, 2]) await question(n);
+    const test = await start();
+    await t.api("PUT", `/topik/tests/${test.id}/items/1`, { profile_id: adult, selected_option: 2 });
+    await t.api("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult });
+
+    expect(await history()).toMatchObject([
+      {
+        id: test.id,
+        section: "listening",
+        kind: "original",
+        source_exam: "Test-35회",
+        from_number: 1,
+        to_number: 2,
+        score_points: 2,
+        total_points: 4,
+        correct_count: 1,
+      },
+    ]);
+  });
+
+  it("leaves out a sitting that is still running or was abandoned", async () => {
+    await question(1);
+    const running = await start();
+    const abandoned = await start();
+    await t.api("POST", `/topik/tests/${abandoned.id}/abandon`, { profile_id: adult });
+    expect(await history()).toEqual([]);
+    expect(running.id).not.toBe(abandoned.id);
+  });
+
+  it("puts the newest sitting first and keeps both sections in one list", async () => {
+    await question(1);
+    const first = await start();
+    await t.api("POST", `/topik/tests/${first.id}/finish`, { profile_id: adult });
+    const reading = await readingSitting();
+
+    const rows = await history();
+    expect(rows.map((h) => h.section)).toEqual(["reading", "listening"]);
+    expect(rows[0]!.id).toBe(reading);
+    expect(rows[0]!.finished_at).toBeGreaterThanOrEqual(rows[1]!.finished_at);
+  });
+
+  it("narrows to one section when asked, and never shows another profile's sittings", async () => {
+    await question(1);
+    const listening = await start();
+    await t.api("POST", `/topik/tests/${listening.id}/finish`, { profile_id: adult });
+    await readingSitting();
+
+    expect((await history("&section=listening")).map((h) => h.id)).toEqual([listening.id]);
+    expect((await history("&section=reading")).map((h) => h.section)).toEqual(["reading"]);
+    const theirs = (await t.api("GET", `/topik/tests/history?profile_id=${other}`)).body as HistoryBody;
+    expect(theirs.sittings).toEqual([]);
+  });
+
+  it("does not read 'history' as a test id", async () => {
+    expect((await t.api("GET", `/topik/tests/history?profile_id=${adult}`)).status).toBe(200);
+  });
+});

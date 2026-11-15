@@ -843,6 +843,16 @@
       "atQuestionsInRange": "Questions {{first}}–{{last}} · range {{from}}–{{to}}",
       "passageNote": "Both questions are about the same passage."
     },
+    "history": {
+      "title": "Mock test history",
+      "allSections": "All",
+      "empty": "No submitted sittings yet.",
+      "chartTitle": "{{section}} progress",
+      "chartLabel": "Score percentage over time",
+      "kindOriginal": "Original paper",
+      "range": "Questions {{from}}-{{to}}",
+      "scoreAndPercent": "{{score}}/{{total}} pts · {{percent}}%"
+    },
     "picker": {
       "examFilter": "Filter by paper",
       "examAll": "All papers",

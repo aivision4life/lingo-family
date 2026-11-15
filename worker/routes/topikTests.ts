@@ -182,6 +182,58 @@ export const topikTestRoutes = () =>
      * What a range would really be (M7.14) — asked on every keystroke while it is typed, so it is
      * **read-only**: it SELECTs, works out the widening and the length, and creates no sitting.
      */
+    /**
+     * Every submitted sitting of one profile, newest first (M7.29) — the history screen.
+     *
+     * Separate from `/options`, whose history is per paper and per section: this screen compares a
+     * listening drill against a mixed reading paper, so it cannot be assembled from entries that
+     * are already filtered down to one card. `section` is optional, and filtering is done here
+     * rather than on the client so a profile with a long history does not send both sections over
+     * the wire to show one.
+     *
+     * Running and abandoned sittings are left out: neither has a score, and a 0 in the chart for a
+     * paper that was never submitted would be a lie about how the practice is going.
+     */
+    .get(
+      "/topik/tests/history",
+      zv("query", z.object({ profile_id: z.string().min(1), section: topikSectionSchema.optional() })),
+      async (c) => {
+        const { profile_id, section } = c.req.valid("query");
+        const db = getDb(c.env);
+        // Same reason as on the picker: this is a screen where a sitting whose time ran out
+        // unattended turns into history, so it is graded before the list is read.
+        await expireOverdueTests(db, profile_id, resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url));
+
+        const rows = await db
+          .select()
+          .from(topik_tests)
+          .where(
+            and(
+              eq(topik_tests.profile_id, profile_id),
+              eq(topik_tests.status, "finished"),
+              ...(section ? [eq(topik_tests.section, section)] : []),
+            ),
+          )
+          .orderBy(desc(topik_tests.finished_at), desc(topik_tests.started_at));
+
+        return c.json({
+          sittings: rows.map((r) => ({
+            id: r.id,
+            section: r.section,
+            kind: r.kind,
+            source_exam: r.source_exam,
+            from_number: r.from_number,
+            to_number: r.to_number,
+            question_count: r.question_count,
+            correct_count: r.correct_count ?? 0,
+            score_points: r.score_points ?? 0,
+            total_points: r.total_points,
+            finished_at: (r.finished_at ?? r.started_at).getTime(),
+          })),
+        });
+      },
+    )
+
     .get("/topik/tests/range", zv("query", topikTestRangeQuerySchema), async (c) => {
       const { section, kind, exam, from, to } = c.req.valid("query");
       const db = getDb(c.env);

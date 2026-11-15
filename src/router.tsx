@@ -15,6 +15,7 @@ import { DecksPage, NotFoundPage, StatsPage } from "@/pages/SimplePages";
 import { TopikBlockPickerPage } from "@/pages/TopikBlockPickerPage";
 import { TopikAudioProbePage } from "./pages/TopikAudioProbePage";
 import { TopikTestPage } from "./pages/TopikTestPage";
+import { TopikTestHistoryPage } from "./pages/TopikTestHistoryPage";
 import { TopikTestPickerPage } from "./pages/TopikTestPickerPage";
 import { TopikManagePage } from "@/pages/TopikManagePage";
 import { TopikPracticePage } from "@/pages/TopikPracticePage";
@@ -57,6 +58,8 @@ export const router = createBrowserRouter([
           { path: "topik", element: <TopikBlockPickerPage /> },
           { path: "topik/manage", element: <TopikManagePage /> },
           { path: "topik/tests", element: <TopikTestPickerPage /> },
+          // Static, so it is ranked above "topik/tests/:id" and never read as a test id.
+          { path: "topik/tests/history", element: <TopikTestHistoryPage /> },
           // Scaffolding for the M6.5 mixed tape; removed once that mode lands.
           { path: "topik/tests/audio-probe", element: <TopikAudioProbePage /> },
           { path: "settings", element: <SettingsPage /> }, // 10

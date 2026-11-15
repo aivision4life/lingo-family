@@ -769,6 +769,40 @@ export const topikTestOptionsSchema = z.object({
 export type TopikTestOptions = z.infer<typeof topikTestOptionsSchema>;
 
 /**
+ * One finished sitting, as the history screen lists it: the picker's own `history` entries are
+ * scoped to one paper and one section, while this screen compares every sitting a profile has
+ * ever submitted. The paper is named here (`kind` / `source_exam`) because a row has to say which
+ * paper it was without the list it sits in deciding that for it.
+ *
+ * Only submitted sittings appear, so there is no `status`: a running or abandoned one has no score
+ * to compare and would read as a 0%.
+ */
+export const topikTestSittingSchema = z.object({
+  id: z.string(),
+  section: topikSectionSchema,
+  kind: topikTestKindSchema,
+  source_exam: z.string().nullable(),
+  from_number: z.number().int().positive().nullable(),
+  to_number: z.number().int().positive().nullable(),
+  question_count: z.number().int().nonnegative(),
+  correct_count: z.number().int().nonnegative(),
+  score_points: z.number().int().nonnegative(),
+  total_points: z.number().int().nonnegative(),
+  finished_at: z.number().int(),
+});
+export type TopikTestSitting = z.infer<typeof topikTestSittingSchema>;
+
+export const topikTestHistorySchema = z.object({ sittings: z.array(topikTestSittingSchema) });
+export type TopikTestHistory = z.infer<typeof topikTestHistorySchema>;
+
+/**
+ * A sitting's score as a percentage. Sittings are compared by percent and never by raw points,
+ * because a 20-question drill and a whole 50-question paper have different totals: "38 điểm" says
+ * nothing next to "18 điểm" unless both are out of the same paper.
+ */
+export const topikScorePercent = (score: number, total: number) => (total <= 0 ? 0 : Math.round((score / total) * 100));
+
+/**
  * Which questions to sit (M7.14).
  *
  * One shape, always a range: the three shortcut buttons on the picker fill one in ("20" means

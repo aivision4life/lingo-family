@@ -843,6 +843,16 @@
       "atQuestionsInRange": "Câu {{first}}–{{last}} · khoảng {{from}}–{{to}}",
       "passageNote": "Hai câu này hỏi về cùng một đoạn văn."
     },
+    "history": {
+      "title": "Lịch sử thi thử",
+      "allSections": "Tất cả",
+      "empty": "Chưa có lần thi nào đã nộp.",
+      "chartTitle": "Tiến bộ phần {{section}}",
+      "chartLabel": "Biểu đồ phần trăm điểm theo thời gian",
+      "kindOriginal": "Đề gốc",
+      "range": "Câu {{from}}-{{to}}",
+      "scoreAndPercent": "{{score}}/{{total}} điểm · {{percent}}%"
+    },
     "picker": {
       "examFilter": "Lọc theo đề",
       "examAll": "Tất cả đề",

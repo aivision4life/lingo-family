@@ -16,6 +16,7 @@ import {
   topikQuestionStatsSchema,
   topikSessionResponseSchema,
   topikTestClockSchema,
+  topikTestHistorySchema,
   topikTestOptionsSchema,
   topikTestRangePreviewSchema,
   topikTestResultSchema,
@@ -278,6 +279,21 @@ export const useTopikTestOptions = (profileId: string, section: TopikSection) =>
   useQuery({
     queryKey: ["topik", "tests", "options", profileId, section],
     queryFn: () => api("GET", `/topik/tests/options?profile_id=${profileId}&section=${section}`, topikTestOptionsSchema),
+    enabled: profileId !== "",
+  });
+
+/**
+ * Every submitted sitting of this profile (M7.29), newest first. `section` null = both sections,
+ * which is what the history screen opens on; the filter narrows it on the server.
+ */
+export const useTopikTestHistory = (profileId: string, section: TopikSection | null) =>
+  useQuery({
+    queryKey: ["topik", "tests", "history", profileId, section],
+    queryFn: () => {
+      const qs = new URLSearchParams({ profile_id: profileId });
+      if (section) qs.set("section", section);
+      return api("GET", `/topik/tests/history?${qs}`, topikTestHistorySchema);
+    },
     enabled: profileId !== "",
   });
 

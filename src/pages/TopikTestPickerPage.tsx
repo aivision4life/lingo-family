@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import type { TopikSection } from "@shared/enums";
 import type { TopikMixedOption, TopikTestCreate, TopikTestOption } from "@shared/topik";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/LinkButton";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
 import { useCreateTopikTest, useTopikTestOptions } from "@/features/topik/api";
 import { TestRangePicker } from "@/features/topik/TestRangePicker";
@@ -41,18 +42,25 @@ export function TopikTestPickerPage() {
           blurb has to follow the section. */}
       <p className="text-sm text-muted-foreground">{t(section === "reading" ? "topik.test.introReading" : "topik.test.intro")}</p>
 
-      <div className="flex gap-2" role="group" aria-label={t("topik.test.sectionLabel")}>
-        {(["listening", "reading"] as const).map((value) => (
-          <Button
-            key={value}
-            type="button"
-            variant={section === value ? "default" : "outline"}
-            aria-pressed={section === value}
-            onClick={() => setParams(value === "listening" ? {} : { section: value }, { replace: true })}
-          >
-            {t(`topik.section.${value}`)}
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-2" role="group" aria-label={t("topik.test.sectionLabel")}>
+          {(["listening", "reading"] as const).map((value) => (
+            <Button
+              key={value}
+              type="button"
+              variant={section === value ? "default" : "outline"}
+              aria-pressed={section === value}
+              onClick={() => setParams(value === "listening" ? {} : { section: value }, { replace: true })}
+            >
+              {t(`topik.section.${value}`)}
+            </Button>
+          ))}
+        </div>
+        {/* Every sitting of every paper, with the trend — the per-paper lines below only say what
+            happened on that one paper. */}
+        <LinkButton to="/topik/tests/history" variant="outline" className="ml-auto">
+          {t("topik.history.title")}
+        </LinkButton>
       </div>
       {!profile ? null : options.isPending ? (
         <p className="text-muted-foreground">{t("common.loading")}</p>
