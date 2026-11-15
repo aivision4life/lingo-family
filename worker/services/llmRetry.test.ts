@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createLlmClient, LlmError } from "./llm";
-import { retryAfterMs } from "./llmRetry";
+import { MODEL_EXHAUSTED_MS, resetModelExhausted, retryAfterMs } from "./llmRetry";
+
+// "The primary is out of quota" is remembered at module scope: no test may inherit it.
+beforeEach(() => resetModelExhausted());
 
 const KEY = "secret-test-key";
 const req = { system: "sys", user: "u", jsonSchema: {} };
@@ -28,22 +31,23 @@ function mockGemini(steps: Record<string, Step[]>) {
   return { fetch, calls };
 }
 
-/** Client with recorded (instant) sleeps; random = 0.5 → no jitter. */
+/** Client with recorded (instant) sleeps; random = 0.5 → no jitter. `clock.now` is the time it sees. */
 function client(steps: Record<string, Step[]>, fallback?: string, random = 0.5) {
   const mock = mockGemini(steps);
   const sleeps: number[] = [];
+  const clock = { now: 1_000_000 };
   const llm = createLlmClient(
     { LLM_API_KEY: KEY, LLM_MODEL: "main", LLM_FALLBACK_MODEL: fallback },
-    { fetch: mock.fetch, sleep: async (ms) => void sleeps.push(ms), random: () => random },
+    { fetch: mock.fetch, sleep: async (ms) => void sleeps.push(ms), random: () => random, now: () => clock.now },
   )!;
-  return { llm, calls: mock.calls, sleeps };
+  return { llm, calls: mock.calls, sleeps, clock };
 }
 
 const fail = (p: Promise<unknown>) => p.then(() => { throw new Error("expected failure"); }, (e: unknown) => e as LlmError);
 
 describe("LLM retry", () => {
-  it("retries 503 / 500 / 429 with exponential backoff (1s, 3s, 9s) and returns the answer", async () => {
-    const { llm, calls, sleeps } = client({ main: [503, 500, 429, 200] });
+  it("retries 503 / 500 with exponential backoff (1s, 3s, 9s) and returns the answer", async () => {
+    const { llm, calls, sleeps } = client({ main: [503, 500, 503, 200] });
     expect(await llm.generate(req)).toEqual({ text: "ok from main", model: "main" });
     expect(calls).toEqual(["main", "main", "main", "main"]);
     expect(sleeps).toEqual([1000, 3000, 9000]);
@@ -58,7 +62,7 @@ describe("LLM retry", () => {
   });
 
   it("retries network errors and honours Retry-After when it is longer", async () => {
-    const { llm, sleeps } = client({ main: ["network", { status: 429, retryAfter: "5" }, 200] });
+    const { llm, sleeps } = client({ main: ["network", { status: 503, retryAfter: "5" }, 200] });
     expect((await llm.generate(req)).model).toBe("main");
     expect(sleeps).toEqual([1000, 5000]);
   });
@@ -104,6 +108,63 @@ describe("LLM fallback model", () => {
     const { llm, calls } = client({ main: [503] }, "main");
     await fail(llm.generate(req));
     expect(calls).toHaveLength(4);
+  });
+});
+
+// 429 = out of quota. Asking the same model again a few seconds later cannot help; production paid
+// four calls and ~13 s for every result that way (2026-11-15: 31 calls, 31 answers of 429).
+describe("out of quota (429)", () => {
+  it("goes straight to the fallback: no retry of the primary, no wait", async () => {
+    const { llm, calls, sleeps } = client({ main: [429], backup: [200] }, "backup");
+    expect(await llm.generate(req)).toEqual({ text: "ok from backup", model: "backup" });
+    expect(calls).toEqual(["main", "backup"]);
+    expect(sleeps).toEqual([]);
+  });
+
+  it("stops retrying as soon as a retry is answered with 429", async () => {
+    const { llm, calls, sleeps } = client({ main: [503, 429], backup: [200] }, "backup");
+    expect((await llm.generate(req)).model).toBe("backup");
+    expect(calls).toEqual(["main", "main", "backup"]);
+    expect(sleeps).toEqual([1000]);
+  });
+
+  it("leaves the primary alone for 10 minutes, then asks it again", async () => {
+    const { llm, calls, clock } = client({ main: [429, 200], backup: [200] }, "backup");
+    await llm.generate(req);
+    expect(calls).toEqual(["main", "backup"]);
+
+    clock.now += MODEL_EXHAUSTED_MS - 1;
+    expect((await llm.generate(req)).model).toBe("backup");
+    expect(calls).toEqual(["main", "backup", "backup"]); // the primary was not even asked
+
+    clock.now += 1;
+    expect((await llm.generate(req)).model).toBe("main");
+    expect(calls).toEqual(["main", "backup", "backup", "main"]);
+  });
+
+  it("reports the fallback's own failure while the primary is being skipped", async () => {
+    const { llm, calls } = client({ main: [429], backup: [200, 503] }, "backup");
+    await llm.generate(req);
+    const err = await fail(llm.generate(req));
+    expect(err.code).toBe("unavailable");
+    expect(err.message).toContain("backup");
+    expect(calls).toEqual(["main", "backup", "backup"]);
+  });
+
+  it("without a fallback it fails at once as unavailable, and the primary is still asked next time", async () => {
+    const { llm, calls, sleeps } = client({ main: [429] });
+    expect((await fail(llm.generate(req))).code).toBe("unavailable");
+    expect(calls).toEqual(["main"]);
+    expect(sleeps).toEqual([]);
+    await fail(llm.generate(req));
+    expect(calls).toEqual(["main", "main"]); // nothing to skip to, so nothing is skipped
+  });
+
+  it("the flag can be cleared (tests), and belongs to one model", async () => {
+    const first = client({ main: [429, 200], backup: [200] }, "backup");
+    await first.llm.generate(req);
+    resetModelExhausted();
+    expect((await first.llm.generate(req)).model).toBe("main");
   });
 });
 

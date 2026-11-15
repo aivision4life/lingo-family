@@ -72,14 +72,41 @@ const geminiResponseSchema = z.object({
 });
 
 const geminiErrorSchema = z.object({
-  error: z.object({ message: z.string().optional(), status: z.string().optional() }),
+  error: z.object({ message: z.string().optional(), status: z.string().optional(), details: z.array(z.unknown()).optional() }),
+});
+const quotaFailureSchema = z.object({
+  violations: z.array(z.object({ quotaMetric: z.string().optional(), quotaId: z.string().optional() })),
 });
 const DETAIL_MAX = 300;
+const QUOTA_MAX = 400;
 
 /**
- * Short, key-free description of a failed Gemini response (max 300 chars): the API's
- * `error.status: error.message` when the body is JSON, else the raw text, else — for an empty
- * body — a few response headers that tell who answered (Google, a proxy, an edge rule).
+ * Which quota a 429 is about, pulled out on its own so the 300-character cut cannot lose it.
+ * Google's message opens with two sentences of advice and only then names the metric: the log used
+ * to end at "Quota exceeded for metric: generativelangua", which is exactly the part that says
+ * whether the limit is per minute, per day, or zero. Reads both places it appears: the structured
+ * `details` (a QuotaFailure names a `quotaId` such as "...PerDay..." and a `quotaMetric`) and the
+ * message text ("Quota exceeded for metric: <metric>, limit: N"). Metric names only, nothing secret.
+ */
+export function quotaSummary(message: string, details: unknown[]): string {
+  const found = new Set<string>();
+  for (const detail of details) {
+    const failure = quotaFailureSchema.safeParse(detail);
+    if (!failure.success) continue;
+    for (const v of failure.data.violations) found.add([v.quotaId, v.quotaMetric].filter(Boolean).join(" @ "));
+  }
+  for (const m of message.matchAll(/Quota exceeded for metric: ([^\s,]+)(?:, limit: (\d+))?/g)) {
+    found.add(m[2] === undefined ? m[1]! : `${m[1]} limit=${m[2]}`);
+  }
+  found.delete("");
+  return [...found].join("; ").slice(0, QUOTA_MAX);
+}
+
+/**
+ * Short, key-free description of a failed Gemini response: the API's `error.status: error.message`
+ * when the body is JSON, else the raw text, else — for an empty body — a few response headers that
+ * tell who answered (Google, a proxy, an edge rule). That part is cut at 300 characters; a quota
+ * error then gets ` | quota: …` appended (`quotaSummary`), outside the cut.
  */
 export function describeGeminiError(status: number, bodyText: string, headers: Headers): string {
   let json: unknown = null;
@@ -90,15 +117,18 @@ export function describeGeminiError(status: number, bodyText: string, headers: H
   }
   const parsed = geminiErrorSchema.safeParse(json);
   let detail: string;
+  let quota = "";
   if (parsed.success && (parsed.data.error.status || parsed.data.error.message)) {
     detail = `${parsed.data.error.status ?? status}: ${parsed.data.error.message ?? ""}`;
+    quota = quotaSummary(parsed.data.error.message ?? "", parsed.data.error.details ?? []);
   } else if (bodyText.trim()) {
     detail = bodyText.trim();
   } else {
     const h = (name: string) => headers.get(name);
     detail = `(empty body) content-type=${h("content-type") ?? "-"} server=${h("server") ?? "-"} via=${h("via") ?? "-"} cf-ray=${h("cf-ray") ?? "-"}`;
   }
-  return detail.replace(/\s+/g, " ").slice(0, DETAIL_MAX);
+  const short = detail.replace(/\s+/g, " ").slice(0, DETAIL_MAX);
+  return quota ? `${short} | quota: ${quota}` : short;
 }
 
 /** One generateContent call. HTTP / network problems become AttemptError (retryable or not). */

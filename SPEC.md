@@ -283,7 +283,7 @@ Decisions (M3.0, 2026-11-13):
 ### F6. AI enrichment & explanations — P0 (enrich), P1 (explain)
 - [x] Enrichment (used by F2) returns **strict JSON** validated by a schema; invalid output → one retry → error message.
 - [x] **Content sanity check (M2.11):** the schema only checks shape, not script — it missed a stray Latin letter inside a Korean sentence ("이야기에 a 빠져들다..."). Every vi/en/ko string the LLM generates (word & phrase glosses, example sentences and their translations, a typed sentence's AI translations/suggested rewrite) is also checked for the wrong script (`worker/services/contentCheck.ts`): Korean text must be Hangul (digits/punctuation/common loanword acronyms like TV/AI allowed; a lone Latin letter is always wrong), English text must not contain Hangul/Han/Kana, Vietnamese text must not contain Hangul. A violation shares the schema's one-retry budget (`generateStructured`'s optional `validateContent`); if it is still wrong afterwards, that one example/phrase/suggestion is dropped (logged, never saved) rather than failing the whole enrichment — a required, non-droppable field (e.g. a word's own gloss) is only logged. `npm run scan-llm-content` lists (never fixes) existing rows that would be flagged.
-- [x] Resilient LLM calls: 429/500/503 and network errors are retried 3 times (backoff 1s, 3s, 9s with jitter), then the optional `LLM_FALLBACK_MODEL` is tried once; 400/401/403 are not retried. Retries and the fallback do not use extra quota. `ai_cache.model` records the model that answered. If the AI is still busy, the UI says "AI is busy, try again in a few minutes" with a **Try again** button and keeps what was typed.
+- [x] Resilient LLM calls: 500/503 and network errors are retried 3 times (backoff 1s, 3s, 9s with jitter), then the optional `LLM_FALLBACK_MODEL` is tried once; 400/401/403 are not retried. **429 (out of quota) is not retried either** (changed 2026-11-15, see §11): it goes straight to the fallback model, and the primary is skipped for the next 10 minutes. Retries and the fallback do not use extra quota. `ai_cache.model` records the model that answered. If the AI is still busy, the UI says "AI is busy, try again in a few minutes" with a **Try again** button and keeps what was typed.
 - [x] Example sentences match the profile's level: kid → very short and concrete; beginner → simple; Korean (owner) → workplace/IT context allowed.
 - [x] Enrichment also returns (M1.7: phrases with 1 example each; M1.8: `image_prompt`, prompt versions `enrich-v4` / `phrases-v2`): an **`image_prompt`** for the word, each example and each phrase; **1–3 suggested phrases**, each with reading, glosses, 1–2 examples (with translations and `image_prompt`).
   - `image_prompt` rules: **English**, one concrete scene with visible objects/people/actions; abstract words are illustrated by a typical situation (e.g. "promise" → two children hooking little fingers); no text or letters in the picture. The fixed style (F3) is appended by the server, not by the LLM.
@@ -1369,3 +1369,33 @@ Chạy thử ngay trên dữ liệu thật: **126 câu** bị trùng khoá (106 
 **Kết quả:** 8 đề đọc × 50 câu = **400 câu**, ghi đè 156, chèn mới 244, giữ nguyên 156 câu đã duyệt. Nội dung mới sửa một loạt lỗi gõ của bản cũ (`컴표터`→`컴퓨터`, `우제국`→`우체국`, `이백만 월`→`이백만 원`, `했빛`→`햇빛`, `고르시시오`→`고르십시오`), trong đó vài lỗi nằm ngay trong đáp án.
 
 **Và một bài học nhỏ về test:** năm test "đọc số kỳ thi từ tiêu đề" đỏ ngay khi bảy số thật vào bảng nhãn, vì chúng dùng chính 36/37/41회 làm ví dụ. Đổi sang **91/92/93회** — những số không phải đề thật và sẽ không bao giờ vào bảng. Một test minh hoạ luật A không nên mượn dữ liệu mà luật B cũng nhận.
+
+### Model chính hết hạn mức, và ba lần thử lại biến nó thành lỗi của tính năng khác (2026-11-15)
+
+**Triệu chứng nhìn từ ngoài:** không có. Mọi thứ "chạy": từ vựng và giải thích TOPIK vẫn hiện ra, chỉ là chậm, và thỉnh thoảng không có. Thứ lộ ra nó là một con số tình cờ nhìn thấy trong `ai_cache`: 757 trên 846 mục do model **dự phòng** trả lời.
+
+**Số đo (chỉ SELECT trên production, rồi `wrangler tail` một phiên luyện tập thật):**
+
+| | |
+|---|---|
+| Mục `ai_cache` do model chính trả lời, 8–15/10 | 52 / 86 |
+| Như trên, 1–15/11 (không có script hàng loạt nào chạy) | **4 / 330** |
+| Một phiên đọc câu 1–10 lúc 03:19 UTC: lượt gọi model chính | 31, **cả 31 đều 429 `RESOURCE_EXHAUSTED`**, kể cả lượt đầu tiên; 0 lượt 503 |
+| Kết quả của phiên đó | 7, đều do model dự phòng |
+| Lượt sinh trong phiên ra được kết quả, 1–15/11 | từ vựng 190 / 328 (58%), **giải thích 66 / 307 (21%)** |
+| Dòng cuối của log phiên đó, ở +30,0 giây | `waitUntil() tasks did not complete within the allowed time … cancelled` |
+
+**Cơ chế:** 429 nằm trong danh sách "tạm thời, thử lại". Nên mỗi kết quả tốn bốn lượt gọi model chính (1 + 3 lần thử lại, chờ 1 + 3 + 9 giây) trước khi model dự phòng được hỏi. Một câu cần từ vựng rồi giải thích đi qua vòng đó **hai lần nối tiếp**: 27–33 giây, đúng mép giới hạn ~30 giây của việc chạy nền. Giải thích là thứ chạy sau nên là thứ bị cắt. Câu bị cắt giữ `explain_checked_at = null`, phiên sau lại thử, lại tốn bốn lượt.
+
+**Giả thuyết đầu sai một nửa, và phải đo mới biết.** Giả thuyết: phiên bắn ~20 lượt cùng lúc → vượt giới hạn theo phút → thử lại đốt hạn mức ngày. Log bác phần đầu: lượt gọi **đầu tiên** của phiên, sau ít nhất ba phút Worker không gọi Gemini lần nào, đã bị 429. Giới hạn theo phút thì lượt đầu phải qua. Và model chính gần như không bao giờ trả lời, kể cả ngay sau giờ đặt lại hạn mức ngày (từ 19/10: 8 lần, rải ở các giờ bất kỳ). Khớp hơn là khoá này gần như không còn hạn mức miễn phí cho model đó. Loại hạn mức chính xác lúc ấy **không đọc được**, vì dòng log cắt message của Google ở 300 ký tự, dừng đúng ở `Quota exceeded for metric: generativelangua`.
+
+**Đã sửa (`worker/services/llmRetry.ts`, `llm.ts`):**
+- 429 không thử lại model chính, chuyển thẳng sang model dự phòng. 500/503/lỗi mạng giữ nguyên ba lần thử lại.
+- Sau một lần 429, bỏ qua model chính 10 phút (`isModelExhausted`, theo khuôn M2.9 của Workers AI): theo isolate, không bền, và chỉ áp dụng khi có model dự phòng để chuyển sang.
+- Dòng log của lỗi 429 giữ tên hạn mức sau ` | quota: `, nằm ngoài chỗ cắt 300 ký tự.
+
+> **Một lỗi "tạm thời" và một lỗi "hết hạn mức" trông giống nhau ở mã HTTP nhưng cần hai phản xạ ngược nhau.** Thử lại là đúng với 503 và là đổ thêm dầu với 429. Gộp chúng vào một danh sách là quyết định hợp lý lúc viết — khi model chính còn hạn mức — và không ai xem lại khi điều kiện đổi.
+
+> **Cơ chế dự phòng hoạt động tốt thì che mất việc thứ chính đã hỏng.** Không có gì báo lỗi suốt một tháng vì model dự phòng luôn đỡ được. Một con số "bao nhiêu phần trăm do dự phòng trả lời" nhìn thấy được ở đâu đó (màn "AI status" hiện chỉ nói về lượt gọi cuối) sẽ lộ chuyện này từ tuần đầu.
+
+**Chưa làm:** đưa tỉ lệ dự phòng lên màn "AI status"; và 102 câu có nội dung AI cũ nhưng `*_checked_at` null (văn bản đã đổi sau các lần nhập lại) sẽ tự sinh lại khi vào phiên — 54 từ vựng và 81 giải thích sẽ gọi Gemini, mỗi câu một lần.

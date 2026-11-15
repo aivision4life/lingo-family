@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ProfileCreate } from "../../shared/profile";
 import { createLlmClient } from "../services/llm";
+import { resetModelExhausted } from "../services/llmRetry";
 import { sampleEnrichment } from "../test/fakeLlm";
 import { createTestEnv, testApp } from "../test/testEnv";
 
@@ -37,6 +38,7 @@ afterAll(() => t.dispose());
 beforeEach(async () => {
   for (const table of ["ai_cache", "usage_daily", "profiles"]) await t.env.DB.prepare(`DELETE FROM ${table}`).run();
   calls.length = 0;
+  resetModelExhausted(); // "the primary is out of quota" is remembered at module scope
   adult = ((await t.api("POST", "/profiles", profile)).body as { id: string }).id;
 });
 
@@ -55,9 +57,23 @@ describe("enrich with retries and the fallback model", () => {
     expect(calls).toHaveLength(5);
   });
 
+  // Out of quota is not "busy": no retry of the primary, straight to the fallback, and the next
+  // request does not even ask the primary (2026-11-15; this test used to be part of the one below,
+  // which retried a 429 like any other transient error).
+  it("primary out of quota (429) → the fallback answers at once, and the primary is skipped next time", async () => {
+    status = { main: 429, backup: 200 };
+    expect((await enrich("학년")).status).toBe(200);
+    expect(calls).toEqual(["main", "backup"]);
+    expect(await one<{ count: number }>("SELECT count FROM usage_daily WHERE service = 'llm'")).toEqual({ count: 1 });
+    expect(await one<{ model: string }>("SELECT model FROM ai_cache")).toEqual({ model: "backup" });
+
+    expect((await enrich("교실")).status).toBe(200);
+    expect(calls).toEqual(["main", "backup", "backup"]);
+  });
+
   it("primary recovers after a retry: the primary model is recorded", async () => {
     let n = 0;
-    status = new Proxy({} as Record<string, number>, { get: (_, m) => (m === "main" ? (n++ === 0 ? 429 : 200) : 404) });
+    status = new Proxy({} as Record<string, number>, { get: (_, m) => (m === "main" ? (n++ === 0 ? 503 : 200) : 404) });
     expect((await enrich("학교")).status).toBe(200);
     expect(await one<{ model: string }>("SELECT model FROM ai_cache")).toEqual({ model: "main" });
     expect(await one<{ count: number }>("SELECT count FROM usage_daily WHERE service = 'llm'")).toEqual({ count: 1 });

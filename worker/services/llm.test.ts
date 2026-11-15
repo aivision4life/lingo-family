@@ -90,6 +90,38 @@ describe("describeGeminiError", () => {
     expect(empty).toBe("(empty body) content-type=text/html server=gws via=- cf-ray=abc-ICN");
   });
 
+  // What Google answers when a model is out of quota, shaped like the real thing: two sentences of
+  // advice first, the metric only after them. The old log ended at "...metric: generativelangua".
+  it("keeps the quota's name on a 429, past the 300-character cut", () => {
+    const message =
+      "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: " +
+      "https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n" +
+      "* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.8-flash\n" +
+      "Please retry in 41.5s.";
+    const details = [
+      { "@type": "type.googleapis.com/google.rpc.Help", links: [{ description: "Learn more", url: "https://ai.google.dev" }] },
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaMetric: "generativelanguage.googleapis.com/generate_content_free_tier_requests", quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }],
+      },
+    ];
+    const text = describeGeminiError(429, JSON.stringify({ error: { code: 429, message, status: "RESOURCE_EXHAUSTED", details } }), h());
+    expect(text.startsWith("RESOURCE_EXHAUSTED: You exceeded your current quota")).toBe(true);
+    expect(text).toContain(" | quota: ");
+    expect(text).toContain("GenerateRequestsPerDayPerProjectPerModel-FreeTier @ generativelanguage.googleapis.com/generate_content_free_tier_requests");
+    expect(text).toContain("generativelanguage.googleapis.com/generate_content_free_tier_requests limit=0");
+    expect(text).not.toContain("\n");
+  });
+
+  it("reads the quota from the message alone when there are no structured details", () => {
+    const body = JSON.stringify({ error: { status: "RESOURCE_EXHAUSTED", message: `${"x".repeat(400)} * Quota exceeded for metric: a.b/requests_per_minute, limit: 15` } });
+    expect(describeGeminiError(429, body, h())).toMatch(/ \| quota: a\.b\/requests_per_minute limit=15$/);
+  });
+
+  it("adds nothing for an error that is not about a quota", () => {
+    expect(describeGeminiError(503, JSON.stringify({ error: { status: "UNAVAILABLE", message: "The model is overloaded." } }), h())).toBe("UNAVAILABLE: The model is overloaded.");
+  });
+
   it("is limited to 300 characters and one line", () => {
     const long = describeGeminiError(500, JSON.stringify({ error: { message: `a\n${"x".repeat(1000)}` } }), h());
     expect(long.length).toBe(300);
