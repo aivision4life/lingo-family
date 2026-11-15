@@ -79,10 +79,18 @@ export function mixedLengthOptions(candidates: readonly MixedCandidate[]): Mixed
 /**
  * Picks the clips for one mixed sitting.
  *
- * Questions the profile has not met in its last few sittings come first; only when every clip at a
- * position has been seen does it reuse one, and then the one seen longest ago. With a bank of two
- * papers the third mixed test in a row has no choice but to repeat — preferring the oldest is what
- * keeps the repeats spread out instead of landing on the same paper every time.
+ * Each position is filled from the first non-empty of three groups (M7.28):
+ *  1. **chưa làm** — a clip with a question this profile has never answered, on either screen;
+ *  2. **đã làm nhưng chưa thuộc** — every question answered, but at least one not mastered yet;
+ *  3. the rest — answered and mastered, which is what a sitting falls back to.
+ *
+ * A group is judged by its **weakest** question, so one unanswered half puts the whole pair in
+ * group 1: the two questions share a recording, and the clip is drawn or not drawn as one.
+ *
+ * Inside the chosen group the older rule decides: clips the profile has not met in its last few
+ * sittings first, then the one seen longest ago, then the random. With a bank of two papers the
+ * third mixed test in a row has no choice but to repeat — preferring the oldest is what keeps the
+ * repeats spread out instead of landing on the same paper every time.
  */
 export function planMixedTest(args: {
   candidates: readonly MixedCandidate[];
@@ -90,6 +98,10 @@ export function planMixedTest(args: {
   from: number;
   to: number;
   seen: SeenRanks;
+  /** Question ids this profile has answered — `answeredQuestionIds`, the one "đã làm" (M7.27). */
+  answered?: ReadonlySet<string>;
+  /** Question ids this profile has mastered — `masteredQuestionIds`, the one "thuộc" (M6.11). */
+  mastered?: ReadonlySet<string>;
   /** Injected so a test can pin the choice; `Math.random` in the Worker. */
   random: () => number;
 }): { ok: true; picks: MixedPick[] } | { ok: false; missingPosition: number } {
@@ -100,7 +112,7 @@ export function planMixedTest(args: {
     const here = candidatesStartingAt(args.candidates, position).filter((c) => lastNumber(c) <= args.to);
     if (here.length === 0) return { ok: false, missingPosition: position };
 
-    const chosen = pickCandidate(here, args.seen, args.random);
+    const chosen = pickCandidate(here, args, args.random);
     const ordered = [...chosen.numbers.keys()].sort((a, b) => chosen.numbers[a]! - chosen.numbers[b]!);
     for (const i of ordered) {
       picks.push({ position: chosen.numbers[i]!, question_id: chosen.question_ids[i]!, group_id: chosen.group_id, exam: chosen.exam });
@@ -111,15 +123,38 @@ export function planMixedTest(args: {
   return { ok: true, picks };
 }
 
-/** Unseen clips first; among equals, the one whose most recent showing is furthest back. */
-function pickCandidate(here: readonly MixedCandidate[], seen: SeenRanks, random: () => number): MixedCandidate {
+/**
+ * How much work a clip still represents: 0 = it holds a question never answered, 1 = all answered
+ * but something is not mastered, 2 = answered and mastered throughout. The clip takes its
+ * **weakest** question's number, so a pair is never split across groups.
+ *
+ * With no history passed in (the range preview, which plans with an empty `seen`) every clip lands
+ * in group 0 and the ranking collapses to the recency rule alone.
+ */
+function needTier(c: MixedCandidate, answered: ReadonlySet<string>, mastered: ReadonlySet<string>): number {
+  return Math.min(...c.question_ids.map((id) => (!answered.has(id) ? 0 : mastered.has(id) ? 2 : 1)));
+}
+
+/** The weakest group of clips first; inside it, unseen before seen, then seen longest ago. */
+function pickCandidate(
+  here: readonly MixedCandidate[],
+  history: { seen: SeenRanks; answered?: ReadonlySet<string>; mastered?: ReadonlySet<string> },
+  random: () => number,
+): MixedCandidate {
+  const answered = history.answered ?? EMPTY;
+  const mastered = history.mastered ?? EMPTY;
+  const neediest = Math.min(...here.map((c) => needTier(c, answered, mastered)));
+  const group = here.filter((c) => needTier(c, answered, mastered) === neediest);
+
   // A clip's own recency is its *most recently* seen question: a pair where one half was asked
   // last time has been seen, whatever the other half says.
   const recency = (c: MixedCandidate) => {
-    const ranks = c.question_ids.map((id) => seen.get(id)).filter((r): r is number => r !== undefined);
+    const ranks = c.question_ids.map((id) => history.seen.get(id)).filter((r): r is number => r !== undefined);
     return ranks.length === 0 ? Infinity : Math.min(...ranks);
   };
-  const best = Math.max(...here.map(recency));
-  const tier = here.filter((c) => recency(c) === best);
+  const best = Math.max(...group.map(recency));
+  const tier = group.filter((c) => recency(c) === best);
   return tier[Math.min(tier.length - 1, Math.floor(random() * tier.length))]!;
 }
+
+const EMPTY: ReadonlySet<string> = new Set<string>();

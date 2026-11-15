@@ -55,6 +55,7 @@ import { zv } from "../lib/validate";
 import { readInD1Chunks, writeInD1Chunks } from "../lib/d1Chunk";
 import { audioSpan, isContiguousFromOne, lengthOptions, pointsOf, scoreTest } from "../services/topikTest";
 import { mixedLengthOptions, planMixedTest, reachableLength, type MixedCandidate } from "../services/topikMixed";
+import { answeredQuestionIds, masteredQuestionIds } from "../services/topikAnswered";
 import { toCardFields } from "../services/topikCards";
 
 const err = (error: string) => ({ error });
@@ -616,13 +617,15 @@ async function drawMixed(db: Db, profileId: string, section: "reading" | "listen
   const candidates = await mixedCandidates(db, section);
   const range = expandToGroups(asked, candidates.map((c) => c.numbers));
 
-  const plan = planMixedTest({
-    candidates,
-    from: range.from,
-    to: range.to,
-    seen: await seenRanks(db, profileId, section),
-    random: Math.random,
-  });
+  // The draw ranks what is still to be learnt first (M7.28), so it reads the two definitions the
+  // rest of the app already uses: "đã làm" (practice or a sitting) and "thuộc" (the card reached
+  // ts-fsrs Review, exactly what the block picker's bar shows).
+  const [seen, answered, mastered] = await Promise.all([
+    seenRanks(db, profileId, section),
+    answeredQuestionIds(db, profileId, section),
+    masteredQuestionIds(db, profileId, section),
+  ]);
+  const plan = planMixedTest({ candidates, from: range.from, to: range.to, seen, answered, mastered, random: Math.random });
   if (!plan.ok) return { error: { ...err("topik_test_bank_short"), missing_position: plan.missingPosition } };
 
   const rows = await questionsOf(db, plan.picks.map((p) => p.question_id));

@@ -10,7 +10,6 @@
 // topikExplain.ts.
 import { and, asc, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
-import { State } from "ts-fsrs";
 import { topikSectionSchema, type TopikSection } from "../../shared/enums";
 import { z } from "zod";
 import { applyReview, emptyCardFields } from "../../shared/scheduling";
@@ -43,6 +42,7 @@ import {
 import { expandToGroups, missingNumber } from "../../shared/topikRange";
 import { splitReservedForTests } from "../../shared/topikAnswered";
 import { answeredQuestionIds } from "../services/topikAnswered";
+import { MASTERED_CARD_STATE } from "../../shared/topikMastery";
 import { profiles, topik_attempts, topik_audio, topik_cards, topik_questions, topik_segments } from "../../db/schema";
 import { readInD1Chunks } from "../lib/d1Chunk";
 import { getDb, type AppEnv } from "../env";
@@ -549,7 +549,7 @@ export const topikRoutes = ({ makeLlm }: { makeLlm: MakeLlm }) => {
            AND (?5 = '' OR q.exam = ?5)
          GROUP BY q.block ORDER BY min(q.number)`,
       )
-        .bind(section, profile_id ?? "", State.Review, nowMs, exam ?? "")
+        .bind(section, profile_id ?? "", MASTERED_CARD_STATE, nowMs, exam ?? "")
         .all<{
           block: string;
           from: number;

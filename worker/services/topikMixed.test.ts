@@ -145,6 +145,120 @@ describe("planMixedTest", () => {
     const plan = planMixedTest({ candidates: [clip("a", [1]), clip("b", [1])], from: 1, to: 1, seen, random: () => 1 });
     expect(plan.ok).toBe(true);
   });
+
+  // M7.28: what is still to be learnt comes before what is already known, so a sitting does not
+  // spend its 20 questions on the ones the learner has mastered.
+  describe("priority: unanswered, then not mastered, then the rest", () => {
+    const ids = (c: MixedCandidate) => c.question_ids;
+
+    it("takes the unanswered clip over one answered but not mastered", () => {
+      const a = clip("a", [1]); // answered, not mastered
+      const b = clip("b", [1]); // never answered
+      const plan = planMixedTest({
+        candidates: [a, b],
+        from: 1,
+        to: 1,
+        seen,
+        answered: new Set(ids(a)),
+        mastered: new Set<string>(),
+        random: pinned(0),
+      });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks[0]!.exam).toBe("b");
+    });
+
+    it("takes the not-mastered clip over a mastered one", () => {
+      const a = clip("a", [1]); // answered and mastered
+      const b = clip("b", [1]); // answered, still learning
+      const plan = planMixedTest({
+        candidates: [a, b],
+        from: 1,
+        to: 1,
+        seen,
+        answered: new Set([...ids(a), ...ids(b)]),
+        mastered: new Set(ids(a)),
+        random: pinned(0),
+      });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks[0]!.exam).toBe("b");
+    });
+
+    it("prefers a question never answered even when it was in the most recent sitting", () => {
+      // The ranking is by group first: an unanswered question that only *played* in an abandoned
+      // sitting still counts as work to do, so recency cannot promote the mastered clip over it.
+      const a = clip("a", [1]); // answered and mastered, not seen lately
+      const b = clip("b", [1]); // never answered, but played last sitting
+      const plan = planMixedTest({
+        candidates: [a, b],
+        from: 1,
+        to: 1,
+        seen: new Map([["b-1", 1]]),
+        answered: new Set(ids(a)),
+        mastered: new Set(ids(a)),
+        random: pinned(0),
+      });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks[0]!.exam).toBe("b");
+    });
+
+    it("keeps the old rules inside one group: seen longest ago, then the random", () => {
+      // All three are answered and not mastered, so recency decides and picks "b".
+      const cs = [clip("a", [1]), clip("b", [1]), clip("c", [1])];
+      const plan = planMixedTest({
+        candidates: cs,
+        from: 1,
+        to: 1,
+        seen: new Map([
+          ["a-1", 1],
+          ["b-1", 3],
+          ["c-1", 2],
+        ]),
+        answered: new Set(cs.flatMap(ids)),
+        mastered: new Set<string>(),
+        random: pinned(0),
+      });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks[0]!.exam).toBe("b");
+    });
+
+    it("puts a whole pair in the unanswered group when one half is unanswered", () => {
+      // "a" has 21 answered and mastered but 22 never answered; "b" is answered throughout and
+      // not mastered. Judged by its weakest question, "a" is the needier pair.
+      const a = clip("a", [21, 22]);
+      const b = clip("b", [21, 22]);
+      const plan = planMixedTest({
+        candidates: [a, b],
+        from: 21,
+        to: 22,
+        seen,
+        answered: new Set(["a-21", ...ids(b)]),
+        mastered: new Set(["a-21"]),
+        random: pinned(0),
+      });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks.every((p) => p.exam === "a")).toBe(true);
+    });
+
+    it("falls back to the mastered clips rather than failing the position", () => {
+      const cs = [clip("a", [1]), clip("b", [1])];
+      const all = new Set(cs.flatMap(ids));
+      const plan = planMixedTest({ candidates: cs, from: 1, to: 1, seen, answered: all, mastered: all, random: pinned(0) });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks).toHaveLength(1);
+    });
+
+    it("ranks by recency alone when no history is passed in (the range preview)", () => {
+      const plan = planMixedTest({
+        candidates: [clip("a", [1]), clip("b", [1])],
+        from: 1,
+        to: 1,
+        seen: new Map([["a-1", 1]]),
+        random: pinned(0),
+      });
+      if (!plan.ok) throw new Error("expected a plan");
+      expect(plan.picks[0]!.exam).toBe("b");
+    });
+  });
   // M7.14: a mixed sitting can start anywhere, which is the whole point of drilling one kind of
   // question — "câu 16 đến 18, each from a different paper".
   describe("over a range that does not start at 1", () => {

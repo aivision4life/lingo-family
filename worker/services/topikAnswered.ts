@@ -15,7 +15,8 @@
  */
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { TopikSection } from "../../shared/enums";
-import { topik_attempts, topik_test_items, topik_tests } from "../../db/schema";
+import { topik_attempts, topik_cards, topik_questions, topik_test_items, topik_tests } from "../../db/schema";
+import { MASTERED_CARD_STATE } from "../../shared/topikMastery";
 import type { getDb } from "../env";
 
 /**
@@ -52,4 +53,30 @@ export async function answeredQuestionIds(
   // `question_id` is nullable in both tables (deleting a question keeps the history, M6.4).
   for (const row of [...practice, ...sittings]) if (row.question_id) ids.add(row.question_id);
   return ids;
+}
+
+/**
+ * Every question id of `section` this profile has **mastered** — the query side of the one
+ * definition in `shared/topikMastery.ts`, which is what the block picker's bar already shows.
+ *
+ * Joined to the question table rather than filtered by a list of ids, for the same reason as
+ * above: one fixed-size statement whatever the bank grows to.
+ */
+export async function masteredQuestionIds(
+  db: ReturnType<typeof getDb>,
+  profileId: string,
+  section: TopikSection,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ question_id: topik_cards.question_id })
+    .from(topik_cards)
+    .innerJoin(topik_questions, eq(topik_questions.id, topik_cards.question_id))
+    .where(
+      and(
+        eq(topik_cards.profile_id, profileId),
+        eq(topik_questions.section, section),
+        eq(topik_cards.state, MASTERED_CARD_STATE),
+      ),
+    );
+  return new Set(rows.map((r) => r.question_id));
 }
