@@ -13,11 +13,8 @@ import { ReviewPage } from "@/pages/ReviewPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { DecksPage, NotFoundPage, StatsPage } from "@/pages/SimplePages";
 import { TopikBlockPickerPage } from "@/pages/TopikBlockPickerPage";
-import { TopikAudioProbePage } from "./pages/TopikAudioProbePage";
 import { TopikTestPage } from "./pages/TopikTestPage";
-import { TopikTestHistoryPage } from "./pages/TopikTestHistoryPage";
 import { TopikTestPickerPage } from "./pages/TopikTestPickerPage";
-import { TopikManagePage } from "@/pages/TopikManagePage";
 import { TopikPracticePage } from "@/pages/TopikPracticePage";
 import { WordDetailPage } from "@/pages/WordDetailPage";
 import { WordLibraryPage } from "@/pages/WordLibraryPage";
@@ -56,12 +53,24 @@ export const router = createBrowserRouter([
           { path: "chars/:char", element: <CharacterPage /> }, // 8
           { path: "decks", element: <DecksPage /> }, // 9
           { path: "topik", element: <TopikBlockPickerPage /> },
-          { path: "topik/manage", element: <TopikManagePage /> },
+          // The review/management screen and the audio probe are adult-only tools opened now and
+          // then, and they drag the whole question editor in with them: both are loaded on demand
+          // so they stay out of the entry chunk, which is near its ceiling
+          // (`scripts/viteGuards/buildIntegrity.ts`).
+          { path: "topik/manage", lazy: async () => ({ Component: (await import("@/pages/TopikManagePage")).TopikManagePage }) },
           { path: "topik/tests", element: <TopikTestPickerPage /> },
           // Static, so it is ranked above "topik/tests/:id" and never read as a test id.
-          { path: "topik/tests/history", element: <TopikTestHistoryPage /> },
+          // Loaded on demand: it is opened now and then, and the entry chunk is near its ceiling
+          // (`scripts/viteGuards/buildIntegrity.ts`).
+          {
+            path: "topik/tests/history",
+            lazy: async () => ({ Component: (await import("./pages/TopikTestHistoryPage")).TopikTestHistoryPage }),
+          },
           // Scaffolding for the M6.5 mixed tape; removed once that mode lands.
-          { path: "topik/tests/audio-probe", element: <TopikAudioProbePage /> },
+          {
+            path: "topik/tests/audio-probe",
+            lazy: async () => ({ Component: (await import("./pages/TopikAudioProbePage")).TopikAudioProbePage }),
+          },
           { path: "settings", element: <SettingsPage /> }, // 10
           { path: "stats", element: <StatsPage /> }, // 11
           { path: "*", element: <NotFoundPage /> },
