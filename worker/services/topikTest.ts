@@ -1,6 +1,6 @@
 // Pure rules for a mock test (M6.4): which questions a sitting covers, where its audio runs, and
 // what it scored. No D1/R2 here, so each rule is unit tested on its own.
-import { DEFAULT_QUESTION_POINTS, type TopikTestLength } from "../../shared/topik";
+import { DEFAULT_QUESTION_POINTS, TOPIK_TEST_LENGTHS, type TopikTestLength } from "../../shared/topik";
 
 /** How many questions each offered length covers. "full" means whatever the paper has ready. */
 export function lengthQuestionCount(length: TopikTestLength, ready: number): number {
@@ -28,8 +28,7 @@ export type TestLengthOption = { length: TopikTestLength; available: boolean; qu
  * is the actual situation while a paper is still being typed up.
  */
 export function lengthOptions(ready: number, contiguous: boolean): TestLengthOption[] {
-  const fixed = [20, 30] as const;
-  const options = fixed.map((length) => ({ length: length as TopikTestLength, available: contiguous && ready >= length, questions: length }));
+  const options = TOPIK_TEST_LENGTHS.map((length) => ({ length: length as TopikTestLength, available: contiguous && ready >= length, questions: length }));
   return [...options, { length: "full" as const, available: contiguous && ready > 0, questions: ready }];
 }
 

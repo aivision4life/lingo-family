@@ -1,6 +1,6 @@
 // Drawing a mixed mock test (M6.5): each position filled from the whole question bank instead of
 // from one paper. Pure — no D1, no randomness of its own — so every rule below is unit tested.
-import type { TopikTestLength } from "../../shared/topik";
+import { TOPIK_TEST_LENGTHS, type TopikTestLength } from "../../shared/topik";
 import type { TestLengthOption } from "./topikTest";
 
 /**
@@ -67,8 +67,7 @@ export type MixedLengthOption = TestLengthOption & { missing_position: number | 
 /** The three lengths for the mixed card, each saying why it cannot be taken. */
 export function mixedLengthOptions(candidates: readonly MixedCandidate[]): MixedLengthOption[] {
   const reach = reachableLength(candidates);
-  const fixed = [20, 30] as const;
-  const options = fixed.map((length) => ({
+  const options = TOPIK_TEST_LENGTHS.map((length) => ({
     length: length as TopikTestLength,
     available: reach >= length,
     questions: length as number,

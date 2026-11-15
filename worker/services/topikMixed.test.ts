@@ -49,11 +49,11 @@ describe("reachableLength", () => {
 });
 
 describe("mixedLengthOptions", () => {
-  it("offers 20 and 30 with the position that is missing", () => {
+  it("offers 20 and 32 with the position that is missing", () => {
     const options = mixedLengthOptions(bank(["a"], 24));
     expect(options.map((o) => [o.length, o.available, o.missing_position])).toEqual([
       [20, true, null],
-      [30, false, 25],
+      [32, false, 25],
       ["full", true, null],
     ]);
   });

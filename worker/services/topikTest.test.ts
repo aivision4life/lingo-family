@@ -44,8 +44,13 @@ describe("lengthOptions", () => {
     expect(options[2]).toEqual({ length: "full", available: true, questions: 12 });
   });
 
+  it("the middle length is 32 questions: 31 ready is one short", () => {
+    expect(lengthOptions(31, true).map((o) => [o.length, o.available])).toEqual([[20, true], [32, false], ["full", true]]);
+    expect(lengthOptions(32, true)[1]).toEqual({ length: 32, available: true, questions: 32 });
+  });
+
   it("offers nothing at all when the numbering has a hole", () => {
-    expect(lengthOptions(30, false).every((o) => !o.available)).toBe(true);
+    expect(lengthOptions(32, false).every((o) => !o.available)).toBe(true);
   });
 
   it("offers nothing for a paper with no ready questions", () => {

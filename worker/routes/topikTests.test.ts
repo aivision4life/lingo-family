@@ -119,7 +119,7 @@ describe("mock test", () => {
     expect(body.papers[0]).toMatchObject({ exam: "Test-35회", ready_questions: 3, contiguous: true, history: [] });
     expect(body.papers[0]!.lengths).toEqual([
       { length: 20, available: false, questions: 20 },
-      { length: 30, available: false, questions: 30 },
+      { length: 32, available: false, questions: 32 },
       { length: "full", available: true, questions: 3 },
     ]);
   });
@@ -358,7 +358,7 @@ describe("mixed mock test (M6.5)", () => {
     expect(body.mixed).toMatchObject({ ready_questions: 6, reachable: 3, history: [] });
     expect(body.mixed!.lengths).toEqual([
       { length: 20, available: false, questions: 20, missing_position: 4 },
-      { length: 30, available: false, questions: 30, missing_position: 4 },
+      { length: 32, available: false, questions: 32, missing_position: 4 },
       { length: "full", available: true, questions: 3, missing_position: null },
     ]);
   });

@@ -685,8 +685,8 @@ export const TOPIK_ERRORS = {
 // --- Mock test (M6.4) -------------------------------------------------------------------------
 
 /** How many questions one sitting covers. "full" = every question the paper has ready. */
-export const TOPIK_TEST_LENGTHS = [20, 30] as const;
-export const topikTestLengthSchema = z.union([z.literal(20), z.literal(30), z.literal("full")]);
+export const TOPIK_TEST_LENGTHS = [20, 32] as const;
+export const topikTestLengthSchema = z.union([z.literal(20), z.literal(32), z.literal("full")]);
 export type TopikTestLength = z.infer<typeof topikTestLengthSchema>;
 
 /** One length offered for a paper, with the reason when it cannot be taken. */
