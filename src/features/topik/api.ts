@@ -354,6 +354,27 @@ export const usePauseTopikTest = () =>
   });
 
 /**
+ * Asks the server for five more minutes (M7.31). Only the server decides, and only in the last
+ * minutes of a reading paper: the client sends no amount and adds nothing of its own.
+ */
+export const useExtendTopikTest = () =>
+  useMutation({
+    mutationFn: ({ testId, ...body }: { testId: string; profile_id: string }) =>
+      api("POST", `/topik/tests/${testId}/extend`, topikTestClockSchema, body),
+  });
+
+/** Hides a sitting from the history (M7.32). Nothing is deleted: the attempts that fed the
+ * schedule and the items that "đã làm" is counted from stay exactly where they are. */
+export const useHideTopikTest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ testId, profile_id }: { testId: string; profile_id: string }) =>
+      api("DELETE", `/topik/tests/${testId}?profile_id=${encodeURIComponent(profile_id)}`, z.object({ id: z.string(), hidden_at: z.number() })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["topik", "tests"] }),
+  });
+};
+
+/**
  * Saves one answer. Deliberately **not** wired to any loading state: the tape does not stop for
  * the network, so a failure here is swallowed by the caller and replayed at `finish`.
  */

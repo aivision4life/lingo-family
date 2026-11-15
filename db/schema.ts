@@ -664,6 +664,23 @@ export const topik_tests = sqliteTable(
      * result says so instead of pretending otherwise. */
     pause_count: integer("pause_count").notNull().default(0),
     paused_ms: integer("paused_ms").notNull().default(0),
+    /**
+     * Extra time granted in the last minutes of the paper (M7.31), in presses and milliseconds.
+     *
+     * Kept apart from `length_ms` even though an extension moves that too: the result and the
+     * history have to be able to say "+10 phút" rather than quietly showing a longer paper, and a
+     * sitting that was extended is not comparable with one that was not.
+     */
+    extension_count: integer("extension_count").notNull().default(0),
+    extension_ms: integer("extension_ms").notNull().default(0),
+    /**
+     * Removed from the history by hand (M7.32) — hidden, never deleted.
+     *
+     * The sitting's rows stay exactly as they are: `topik_attempts` already fed the FSRS schedule
+     * and `topik_test_items` is what "đã làm" is counted from, so dropping them would silently
+     * rewrite what the learner has studied. Only the history list and its chart skip it.
+     */
+    hidden_at: timestamp("hidden_at"),
     correct_count: integer("correct_count"),
     score_points: integer("score_points"),
     created_at: createdAt(),

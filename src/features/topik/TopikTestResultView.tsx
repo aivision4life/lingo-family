@@ -55,6 +55,14 @@ export function TopikTestResultView({ result, profileId, level }: { result: Topi
         {/* The server submitted this one itself when the time ran out (M7.13): said plainly, or a
             score lower than the paper felt is a mystery. */}
         {result.auto_submitted && <p className="text-sm text-amber-700 dark:text-amber-500">{t("topik.test.autoSubmitted")}</p>}
+        {/* Extra time was asked for and given (M7.31). Same rule as a pause: a score reached with
+            ten more minutes is a real score, but it is not the paper's own time, and the result is
+            the only place that can still say so. */}
+        {result.extension_count > 0 && (
+          <p className="text-sm text-amber-700 dark:text-amber-500">
+            {t("topik.test.extendedSummary", { count: result.extension_count, minutes: Math.round(result.extension_ms / 60_000) })}
+          </p>
+        )}
         {/* What the paper was actually asking of the learner (M7.30): questions met for the first
             time score differently from ones already answered before, and one "32/50" hides that. */}
         {familiaritySides(result).length > 0 && (

@@ -16,6 +16,7 @@ const sitting = (over: Partial<TopikTestSitting> = {}): TopikTestSitting => ({
   score_points: 20,
   total_points: 40,
   finished_at: 0,
+  extension_ms: 0,
   ...over,
 });
 
@@ -82,5 +83,19 @@ describe("scoreChart", () => {
   it("treats a sitting worth no points as 0% instead of dividing by zero", () => {
     const { series } = scoreChart([sitting({ score_points: 0, total_points: 0 })]);
     expect(series[0]!.dots[0]).toMatchObject({ percent: 0, y: bottom });
+  });
+});
+
+describe("extended sittings", () => {
+  it("marks the dot of a sitting that was given extra time, and no other", () => {
+    const chart = scoreChart([
+      sitting({ id: "plain", finished_at: DAY }),
+      sitting({ id: "extended", finished_at: 2 * DAY, extension_ms: 10 * 60_000 }),
+    ]);
+    const dots = chart.series[0]!.dots;
+    expect(dots.map((d) => [d.id, d.extended])).toEqual([
+      ["plain", false],
+      ["extended", true],
+    ]);
   });
 });

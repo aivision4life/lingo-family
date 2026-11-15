@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { TopikTestClockView, TopikTestRun } from "@shared/topik";
-import { elapsedMs, isPaused, isStarted, remainingMs, type TestClock } from "@shared/topikClock";
-import { usePauseTopikTest, useStartTopikTest } from "./api";
+import { canExtend, elapsedMs, EXTENSION_STEP_MS, isPaused, isStarted, remainingMs, type TestClock } from "@shared/topikClock";
+import { useExtendTopikTest, usePauseTopikTest, useStartTopikTest } from "./api";
 
 /** How often the countdown redraws. A second is as precise as a countdown needs to be. */
 const TICK_MS = 1_000;
@@ -16,6 +16,8 @@ const clockOf = (view: TopikTestClockView | TopikTestRun): TestClock => ({
   paused_at: view.paused_at,
   paused_ms: view.paused_ms,
   pause_count: view.pause_count,
+  extension_count: view.extension_count,
+  extension_ms: view.extension_ms,
 });
 
 export type SittingClock = {
@@ -29,6 +31,16 @@ export type SittingClock = {
   expired: boolean;
   pauseCount: number;
   pausedMs: number;
+  /** Extra time already granted (M7.31): how many presses, and how much in total. */
+  extensionCount: number;
+  extensionMs: number;
+  /** Whether "+5 phút" may be pressed right now — the same condition the server checks. */
+  canExtend: boolean;
+  /** How many minutes one press is worth, so the label is never out of step with the server. */
+  extensionStepMinutes: number;
+  /** Asks the server for another step. The server decides; this only applies its answer. */
+  extend: () => void;
+  extending: boolean;
   /** Starts the clock on the server. Safe to call twice; the second call changes nothing. */
   start: () => Promise<void>;
   setPaused: (paused: boolean) => void;
@@ -50,6 +62,7 @@ export function useTestClock(test: TopikTestRun, profileId: string): SittingCloc
   const [, setTick] = useState(0);
   const startMutation = useStartTopikTest();
   const pauseMutation = usePauseTopikTest();
+  const extendMutation = useExtendTopikTest();
   // How far the device's clock is from the server's, measured once when the screen opened: the
   // sitting arrived stamped with `server_now`, and this is what `Date.now()` said at that moment.
   // Kept from the first render on purpose — a later refetch would only re-measure the same offset.
@@ -77,6 +90,12 @@ export function useTestClock(test: TopikTestRun, profileId: string): SittingCloc
     pauseMutation.mutate({ testId: test.id, profile_id: profileId, paused }, { onSuccess: (view) => setClock(clockOf(view)) });
   };
 
+  // Never optimistic, unlike the pause: the minutes are the server's to give, and showing five
+  // extra minutes that the server then refused would be the one lie this clock must not tell.
+  const extend = () => {
+    extendMutation.mutate({ testId: test.id, profile_id: profileId }, { onSuccess: (view) => setClock(clockOf(view)) });
+  };
+
   return {
     remainingMs: left,
     elapsedMs: elapsedMs(clock, now),
@@ -86,6 +105,12 @@ export function useTestClock(test: TopikTestRun, profileId: string): SittingCloc
     expired: isStarted(clock) && !isPaused(clock) && left <= 0,
     pauseCount: clock.pause_count,
     pausedMs: clock.paused_ms,
+    extensionCount: clock.extension_count,
+    extensionMs: clock.extension_ms,
+    canExtend: canExtend(clock, now) && !extendMutation.isPending,
+    extensionStepMinutes: EXTENSION_STEP_MS / 60_000,
+    extend,
+    extending: extendMutation.isPending,
     start,
     setPaused,
   };

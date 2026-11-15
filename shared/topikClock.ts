@@ -63,6 +63,9 @@ export type TestClock = {
   paused_at: number | null;
   paused_ms: number;
   pause_count: number;
+  /** How much extra time was granted, and in how many presses (M7.31). */
+  extension_count: number;
+  extension_ms: number;
 };
 
 export const isStarted = (clock: TestClock) => clock.ends_at !== null;
@@ -126,3 +129,42 @@ export function resumedClock(clock: TestClock, now: number): TestClock {
 /** Total time spent paused, including a pause that is still open right now. */
 export const pausedTotalMs = (clock: TestClock, now: number) =>
   clock.paused_ms + (clock.paused_at === null ? 0 : Math.max(0, now - clock.paused_at));
+
+// --- Asking for more time (M7.31) ---------------------------------------------------------------
+//
+// The strict clock above is the point of a mock test, so extra time is deliberately narrow: it can
+// only be asked for in the last few minutes, never once the time is up, and never by the client on
+// its own — the server adds it and keeps a count, so a result can say "+10 phút" instead of
+// pretending the sitting was sat under exam conditions.
+//
+// One step moves `ends_at` **and** `length_ms` by the same amount. `ends_at` alone would make
+// `elapsedMs` (= `length_ms − remaining`) jump backwards, i.e. rewind the tape; moving both leaves
+// the position where it is and simply makes the paper longer, which is what being given more time
+// means.
+
+/** One press of "+5 phút". */
+export const EXTENSION_STEP_MS = 5 * 60_000;
+
+/** When the "time is nearly up" banner appears — and, with it, the button that asks for more. */
+export const TIME_WARNING_MS = 3 * 60_000;
+export const isInLastMinutes = (remaining: number) => remaining > 0 && remaining <= TIME_WARNING_MS;
+
+/**
+ * Whether more time may be asked for right now: the paper is running, the warning is showing, and
+ * the time has not run out. The client shows the button on exactly this condition and the server
+ * checks the very same one, so there is no state where the button is there but the request fails.
+ */
+export const canExtend = (clock: TestClock, now: number) =>
+  isStarted(clock) && !isPaused(clock) && isInLastMinutes(remainingMs(clock, now));
+
+/** One extension. Returns the clock unchanged when it is not allowed, so the caller can compare. */
+export function extendedClock(clock: TestClock, now: number, stepMs = EXTENSION_STEP_MS): TestClock {
+  if (!canExtend(clock, now)) return clock;
+  return {
+    ...clock,
+    length_ms: (clock.length_ms ?? 0) + stepMs,
+    ends_at: (clock.ends_at ?? now) + stepMs,
+    extension_count: clock.extension_count + 1,
+    extension_ms: clock.extension_ms + stepMs,
+  };
+}

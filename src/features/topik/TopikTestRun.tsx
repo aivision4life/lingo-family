@@ -18,29 +18,18 @@ import { Button } from "@/components/ui/button";
 import { useAbandonTopikTest, useFinishTopikTest, useSaveTopikTestAnswer } from "./api";
 import { answerAcknowledged, answerGiven, answeredCount, emptyQueue, unsentAnswers, type AnswerQueue } from "./answerQueue";
 import { groupNumbers, groupQuestions } from "./groups";
-import { isInLastMinutes, READING_WARNING_MS } from "./readingClock";
+import { isInLastMinutes } from "./readingClock";
 import { sharedStem, stemView } from "./questionStem";
 import { KoreanText } from "./KoreanText";
 import { TopikTestGrid } from "./TopikTestGrid";
 import { formatRemaining, isParked, positionAt, progressFraction, shownPosition, type ParkedAt } from "./testClock";
 import { sittingHeader, type SittingHeader } from "./sittingHeader";
 import { TopikTestQuestionCard } from "./TopikTestQuestionCard";
+import { TopikTimeWarning } from "./TopikTimeWarning";
 import { useSittingTape } from "./useSittingTape";
 import { useTestClock } from "./useTestClock";
 
-/** The header's four states turned into words; the choice between them is `sittingHeader`. */
-function headerText(header: SittingHeader, t: ReturnType<typeof useTranslation>["t"]): string {
-  switch (header.kind) {
-    case "single":
-      return t("topik.test.atQuestion", { number: header.number, total: header.total });
-    case "pair":
-      return t("topik.test.atQuestions", { from: header.first, to: header.last, total: header.total });
-    case "singleInRange":
-      return t("topik.test.atQuestionInRange", { number: header.number, from: header.from, to: header.to });
-    case "pairInRange":
-      return t("topik.test.atQuestionsInRange", { first: header.first, last: header.last, from: header.from, to: header.to });
-  }
-}
+
 
 /**
  * Sitting a mock test (M6.4). The recording paces the paper: it runs from the first clip's start to
@@ -56,6 +45,21 @@ function headerText(header: SittingHeader, t: ReturnType<typeof useTranslation>[
  */
 export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestRun; profileId: string; onFinished: (r: TopikTestResult) => void }) {
   const { t } = useTranslation();
+  /** The header's four states turned into words; the choice between them is `sittingHeader`.
+   * Kept inside the component so it can use `t` as it is, without writing out i18next's own `t`
+   * type — doing that makes TypeScript give up on the typed resources ("excessively deep"). */
+  const headerText = (header: SittingHeader): string => {
+    switch (header.kind) {
+      case "single":
+        return t("topik.test.atQuestion", { number: header.number, total: header.total });
+      case "pair":
+        return t("topik.test.atQuestions", { from: header.first, to: header.last, total: header.total });
+      case "singleInRange":
+        return t("topik.test.atQuestionInRange", { number: header.number, from: header.from, to: header.to });
+      case "pairInRange":
+        return t("topik.test.atQuestionsInRange", { first: header.first, last: header.last, from: header.from, to: header.to });
+    }
+  };
   const navigate = useNavigate();
   const save = useSaveTopikTestAnswer();
   const finish = useFinishTopikTest();
@@ -155,7 +159,7 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between gap-2 text-sm">
-          <span className="font-medium">{headerText(sittingHeader({ from, to }, { from: test.from_number, to: test.to_number }, test.question_count), t)}</span>
+          <span className="font-medium">{headerText(sittingHeader({ from, to }, { from: test.from_number, to: test.to_number }, test.question_count))}</span>
           <span className="font-mono tabular-nums text-muted-foreground">{t("topik.test.timeLeft", { time: formatRemaining(left) })}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-border" role="progressbar" aria-valuenow={answered} aria-valuemax={test.question_count}>
@@ -173,12 +177,9 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         />
       )}
 
-      {/* The clock is nearly out: a banner that stays, not a toast that flashes past. */}
-      {reading && clock.started && !clock.paused && isInLastMinutes(left) && (
-        <p role="status" className="rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm font-medium dark:bg-amber-950/40">
-          {t("topik.test.lastMinutes", { minutes: READING_WARNING_MS / 60_000 })}
-        </p>
-      )}
+      {/* The clock is nearly out: a banner that stays, not a toast that flashes past — and the one
+          place "+5 phút" is offered from (M7.31). */}
+      {reading && clock.started && !clock.paused && isInLastMinutes(left) && <TopikTimeWarning clock={clock} />}
 
       {/* Which paper this question came from. Only in a mixed sitting, where it is genuinely new
           information — on an original paper it is the same label on all 50 and just noise. */}
@@ -311,6 +312,13 @@ export function TopikTestRun({ test, profileId, onFinished }: { test: TopikTestR
         </p>
       )}
       {clock.pauseCount > 0 && <p className="text-xs text-amber-700 dark:text-amber-500">{t("topik.test.pausedNote", { count: clock.pauseCount })}</p>}
+      {/* Said while the paper is still being sat, not only afterwards: the extra minutes are part
+          of how this sitting went, and the result will say the same thing (M7.31). */}
+      {clock.extensionCount > 0 && (
+        <p className="text-xs text-amber-700 dark:text-amber-500">
+          {t("topik.test.extendedNote", { minutes: Math.round(clock.extensionMs / 60_000) })}
+        </p>
+      )}
 
       {/* Folded away, but kept: if a handover ever goes wrong on a phone there are no developer
           tools to find out why, and this is the only record of what the tape actually did. */}

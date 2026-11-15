@@ -19,7 +19,9 @@ export const CHART_GRID = [0, 50, 100] as const;
 /** Original papers and mixed ones are two separate lines, so one row of colours decides both. */
 export const CHART_KINDS: readonly TopikTestKind[] = TOPIK_TEST_KINDS;
 
-export type ChartDot = { id: string; x: number; y: number; percent: number; at: number };
+/** `extended` = the sitting was given extra time (M7.31), so its dot is drawn hollow: it is still
+ * on the trend, because it happened, but it was not sat in the paper's own time. */
+export type ChartDot = { id: string; x: number; y: number; percent: number; at: number; extended: boolean };
 export type ChartSeries = { kind: TopikTestKind; dots: ChartDot[]; polyline: string };
 export type ChartGrid = { percent: number; y: number };
 export type ScoreChart = { series: ChartSeries[]; grid: ChartGrid[]; from: number; to: number };
@@ -52,7 +54,7 @@ export function scoreChart(sittings: readonly TopikTestSitting[]): ScoreChart {
       .filter((s) => s.kind === kind)
       .map((s) => {
         const percent = topikScorePercent(s.score_points, s.total_points);
-        return { id: s.id, x: x(s.finished_at), y: y(percent), percent, at: s.finished_at };
+        return { id: s.id, x: x(s.finished_at), y: y(percent), percent, at: s.finished_at, extended: s.extension_ms > 0 };
       });
     return { kind, dots, polyline: dots.map((d) => `${d.x},${d.y}`).join(" ") };
   }).filter((s) => s.dots.length > 0);

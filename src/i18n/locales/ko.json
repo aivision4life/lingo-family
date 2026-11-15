@@ -846,7 +846,10 @@
       "priorCount": "{{correct}}/{{attempts}}",
       "priorLabel": "{{attempts}}번 풀어 {{correct}}번 정답",
       "familiarityNew": "새 문제: {{correct}}/{{total}} 정답",
-      "familiaritySeen": "풀어본 문제: {{correct}}/{{total}} 정답"
+      "familiaritySeen": "풀어본 문제: {{correct}}/{{total}} 정답",
+      "extend": "+{{minutes}}분",
+      "extendedNote": "{{minutes}}분을 추가로 받았습니다.",
+      "extendedSummary": "시간 추가 {{count}}회, 총 {{minutes}}분 — 실제 시험 조건은 아닙니다."
     },
     "history": {
       "title": "모의고사 기록",
@@ -856,7 +859,13 @@
       "chartLabel": "시간에 따른 점수 백분율 그래프",
       "kindOriginal": "원본 기출",
       "range": "{{from}}-{{to}}번",
-      "scoreAndPercent": "{{score}}/{{total}}점 · {{percent}}%"
+      "scoreAndPercent": "{{score}}/{{total}}점 · {{percent}}%",
+      "extended": "+{{minutes}}분",
+      "extendedLegend": "시간 추가 있음",
+      "deleteLabel": "이 응시 기록을 목록에서 삭제",
+      "deleteTitle": "이 응시 기록을 목록에서 삭제할까요?",
+      "deleteBody": "목록과 그래프에서 사라집니다. 푼 문제는 그대로 '푼 문제'로 남고 복습 일정도 바뀌지 않습니다.",
+      "deleteConfirm": "목록에서 삭제"
     },
     "picker": {
       "examFilter": "회차 선택",

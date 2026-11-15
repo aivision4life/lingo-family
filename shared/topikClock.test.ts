@@ -5,6 +5,10 @@ import {
   isExpired,
   isPaused,
   isStarted,
+  canExtend,
+  EXTENSION_STEP_MS,
+  extendedClock,
+  isInLastMinutes,
   PAUSED_ABANDON_MS,
   pausedClock,
   pausedTotalMs,
@@ -14,11 +18,21 @@ import {
   shouldAbandonPaused,
   startedClock,
   tapeLengthMs,
+  TIME_WARNING_MS,
   type TestClock,
 } from "./topikClock";
 
 const T0 = 1_700_000_000_000;
-const idle: TestClock = { started_at: T0, length_ms: null, ends_at: null, paused_at: null, paused_ms: 0, pause_count: 0 };
+const idle: TestClock = {
+  started_at: T0,
+  length_ms: null,
+  ends_at: null,
+  paused_at: null,
+  paused_ms: 0,
+  pause_count: 0,
+  extension_count: 0,
+  extension_ms: 0,
+};
 const clip = (audio_key: string, start_ms: number, end_ms: number): TopikClip => ({
   audio_key,
   start_ms,
@@ -139,5 +153,57 @@ describe("pausing", () => {
     const paused = pausedClock(running, T0 + 1_000);
     expect(pausedClock(paused, T0 + 2_000)).toBe(paused);
     expect(resumedClock(running, T0 + 2_000)).toBe(running);
+  });
+});
+
+// --- extra time (M7.31) -------------------------------------------------------------------------
+//
+// The whole value of the clock above is that it cannot be talked round, so the one way to get more
+// time out of it is tested on its edges: when it is offered, and what it does to the paper.
+
+describe("extendedClock", () => {
+  const running = startedClock(idle, 30 * 60_000, T0);
+  /** Exactly inside the warning window: one second more left than the threshold is outside it. */
+  const nearlyUp = T0 + 30 * 60_000 - TIME_WARNING_MS;
+
+  it("is offered only inside the warning window, which is the same one the banner uses", () => {
+    expect(isInLastMinutes(TIME_WARNING_MS)).toBe(true);
+    expect(canExtend(running, nearlyUp)).toBe(true);
+    expect(canExtend(running, nearlyUp - 1)).toBe(false);
+  });
+
+  it("is refused once the time is up, and on a paper that never started", () => {
+    expect(canExtend(running, T0 + 30 * 60_000)).toBe(false);
+    expect(canExtend(running, T0 + 60 * 60_000)).toBe(false);
+    expect(canExtend(idle, T0)).toBe(false);
+  });
+
+  it("is refused while paused: the banner is not showing and no time is running out", () => {
+    expect(canExtend(pausedClock(running, nearlyUp), nearlyUp)).toBe(false);
+  });
+
+  it("moves the deadline and the paper's length by the same step, so nothing rewinds", () => {
+    const before = elapsedMs(running, nearlyUp);
+    const extended = extendedClock(running, nearlyUp);
+    expect(extended.ends_at).toBe(T0 + 30 * 60_000 + EXTENSION_STEP_MS);
+    expect(extended.length_ms).toBe(30 * 60_000 + EXTENSION_STEP_MS);
+    expect(remainingMs(extended, nearlyUp)).toBe(TIME_WARNING_MS + EXTENSION_STEP_MS);
+    // Where the paper has got to — which is where a tape would be — is untouched.
+    expect(elapsedMs(extended, nearlyUp)).toBe(before);
+  });
+
+  it("adds up over several presses, and counts them", () => {
+    const once = extendedClock(running, nearlyUp);
+    // Five more minutes, so the warning is over; the second press comes near the new deadline.
+    const later = T0 + 30 * 60_000 + EXTENSION_STEP_MS - 60_000;
+    const twice = extendedClock(once, later);
+    expect(twice.extension_count).toBe(2);
+    expect(twice.extension_ms).toBe(2 * EXTENSION_STEP_MS);
+    expect(twice.ends_at).toBe(T0 + 30 * 60_000 + 2 * EXTENSION_STEP_MS);
+  });
+
+  it("changes nothing at all when it is not allowed", () => {
+    expect(extendedClock(running, T0)).toBe(running);
+    expect(extendedClock(running, T0 + 60 * 60_000)).toBe(running);
   });
 });

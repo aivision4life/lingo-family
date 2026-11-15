@@ -846,7 +846,10 @@
       "priorCount": "{{correct}}/{{attempts}}",
       "priorLabel": "Answered {{attempts}} times, {{correct}} right",
       "familiarityNew": "New questions: {{correct}}/{{total}} right",
-      "familiaritySeen": "Questions seen before: {{correct}}/{{total}} right"
+      "familiaritySeen": "Questions seen before: {{correct}}/{{total}} right",
+      "extend": "+{{minutes}} min",
+      "extendedNote": "Asked for {{minutes}} more minutes.",
+      "extendedSummary": "Asked for more time {{count}} time(s), {{minutes}} minutes in total — not exam conditions."
     },
     "history": {
       "title": "Mock test history",
@@ -856,7 +859,13 @@
       "chartLabel": "Score percentage over time",
       "kindOriginal": "Original paper",
       "range": "Questions {{from}}-{{to}}",
-      "scoreAndPercent": "{{score}}/{{total}} pts · {{percent}}%"
+      "scoreAndPercent": "{{score}}/{{total}} pts · {{percent}}%",
+      "extended": "+{{minutes}} min",
+      "extendedLegend": "Had extra time",
+      "deleteLabel": "Remove this sitting from the history",
+      "deleteTitle": "Remove this sitting from the history?",
+      "deleteBody": "The sitting will no longer appear in the list or the chart. The questions you answered still count as answered, and the review schedule is unchanged.",
+      "deleteConfirm": "Remove from history"
     },
     "picker": {
       "examFilter": "Filter by paper",

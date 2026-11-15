@@ -846,7 +846,10 @@
       "priorCount": "{{correct}}/{{attempts}}",
       "priorLabel": "Đã làm {{attempts}} lần, đúng {{correct}} lần",
       "familiarityNew": "Câu mới: {{correct}}/{{total}} đúng",
-      "familiaritySeen": "Câu đã làm: {{correct}}/{{total}} đúng"
+      "familiaritySeen": "Câu đã làm: {{correct}}/{{total}} đúng",
+      "extend": "+{{minutes}} phút",
+      "extendedNote": "Đã xin thêm {{minutes}} phút.",
+      "extendedSummary": "Đã xin thêm giờ {{count}} lần, tổng {{minutes}} phút — không tính là điều kiện thi thật."
     },
     "history": {
       "title": "Lịch sử thi thử",
@@ -856,7 +859,13 @@
       "chartLabel": "Biểu đồ phần trăm điểm theo thời gian",
       "kindOriginal": "Đề gốc",
       "range": "Câu {{from}}-{{to}}",
-      "scoreAndPercent": "{{score}}/{{total}} điểm · {{percent}}%"
+      "scoreAndPercent": "{{score}}/{{total}} điểm · {{percent}}%",
+      "extended": "+{{minutes}} phút",
+      "extendedLegend": "Có xin thêm giờ",
+      "deleteLabel": "Xoá lượt thi này khỏi lịch sử",
+      "deleteTitle": "Xoá lượt thi này khỏi lịch sử?",
+      "deleteBody": "Lượt thi sẽ không còn trong danh sách và biểu đồ. Các câu đã làm vẫn được tính là đã làm và lịch ôn tập không thay đổi.",
+      "deleteConfirm": "Xoá khỏi lịch sử"
     },
     "picker": {
       "examFilter": "Lọc theo đề",

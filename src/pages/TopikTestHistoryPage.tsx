@@ -1,11 +1,23 @@
+import { Trash2 } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
 import { TOPIK_SECTIONS, type TopikSection } from "@shared/enums";
 import { topikScorePercent, type TopikTestSitting } from "@shared/topik";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/LinkButton";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
-import { useTopikTestHistory } from "@/features/topik/api";
+import { useHideTopikTest, useTopikTestHistory } from "@/features/topik/api";
 import { TopikScoreChart } from "@/features/topik/TopikScoreChart";
 
 /**
@@ -21,6 +33,11 @@ import { TopikScoreChart } from "@/features/topik/TopikScoreChart";
  *
  * A row is a link to `/topik/tests/:id`, which is the result screen that already exists: that is
  * where the answers are, so this screen never duplicates them.
+ *
+ * Deleting a row (M7.32) only **hides** the sitting: the attempts it wrote already moved cards in
+ * the FSRS schedule, and its items are what "đã làm" is counted from, so the learning stays and
+ * only the history forgets. Kid profiles have no delete button here, and the server refuses them
+ * as well.
  */
 export function TopikTestHistoryPage() {
   const { t } = useTranslation();
@@ -67,7 +84,7 @@ export function TopikTestHistoryPage() {
           <ul className="flex flex-col gap-2">
             {history.data.sittings.map((sitting) => (
               <li key={sitting.id}>
-                <SittingRow sitting={sitting} />
+                <SittingRow sitting={sitting} profileId={profile.id} canDelete={!profile.is_kid} />
               </li>
             ))}
           </ul>
@@ -81,9 +98,15 @@ export function TopikTestHistoryPage() {
   );
 }
 
-/** One sitting. The whole row is the tap target (≥ 44 px tall), not a small link inside it. */
-function SittingRow({ sitting }: { sitting: TopikTestSitting }) {
+/**
+ * One sitting: the row itself is the tap target (≥ 44 px tall), with the delete button beside it
+ * rather than inside it — a button nested in a link is invalid HTML and, on a phone, a tap that
+ * could do either thing.
+ */
+function SittingRow({ sitting, profileId, canDelete }: { sitting: TopikTestSitting; profileId: string; canDelete: boolean }) {
   const { t, i18n } = useTranslation();
+  const [confirming, setConfirming] = useState(false);
+  const hide = useHideTopikTest();
   const percent = topikScorePercent(sitting.score_points, sitting.total_points);
   const when = new Date(sitting.finished_at).toLocaleString(i18n.resolvedLanguage, {
     year: "numeric",
@@ -94,30 +117,65 @@ function SittingRow({ sitting }: { sitting: TopikTestSitting }) {
   });
 
   return (
-    <Link
-      to={`/topik/tests/${sitting.id}`}
-      className="flex min-h-11 flex-col gap-1 rounded-lg border p-3 active:bg-accent hover:bg-accent"
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-        <span className="font-medium">
-          {t(`topik.section.${sitting.section}`)}
-          {" · "}
-          {sitting.kind === "mixed" ? (
-            t("topik.test.mixedLabel")
-          ) : (
-            <span lang="ko">{sitting.source_exam ?? t("topik.history.kindOriginal")}</span>
+    <div className="flex items-stretch gap-2 rounded-lg border active:bg-accent hover:bg-accent">
+      <Link to={`/topik/tests/${sitting.id}`} className="flex min-h-11 flex-1 flex-col gap-1 p-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+          <span className="font-medium">
+            {t(`topik.section.${sitting.section}`)}
+            {" · "}
+            {sitting.kind === "mixed" ? (
+              t("topik.test.mixedLabel")
+            ) : (
+              <span lang="ko">{sitting.source_exam ?? t("topik.history.kindOriginal")}</span>
+            )}
+          </span>
+          <span className="text-sm font-semibold tabular-nums">
+            {t("topik.history.scoreAndPercent", { score: sitting.score_points, total: sitting.total_points, percent })}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-x-2 text-sm text-muted-foreground">
+          <span>{when}</span>
+          {sitting.from_number !== null && sitting.to_number !== null && (
+            <span>{t("topik.history.range", { from: sitting.from_number, to: sitting.to_number })}</span>
           )}
-        </span>
-        <span className="text-sm font-semibold tabular-nums">
-          {t("topik.history.scoreAndPercent", { score: sitting.score_points, total: sitting.total_points, percent })}
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-x-2 text-sm text-muted-foreground">
-        <span>{when}</span>
-        {sitting.from_number !== null && sitting.to_number !== null && (
-          <span>{t("topik.history.range", { from: sitting.from_number, to: sitting.to_number })}</span>
-        )}
-      </div>
-    </Link>
+          {/* Extra time was given (M7.31): on the row, not only on the result, or two scores that
+              are not comparable sit side by side looking as if they were. */}
+          {sitting.extension_ms > 0 && (
+            <span className="text-amber-700 dark:text-amber-500">
+              {t("topik.history.extended", { minutes: Math.round(sitting.extension_ms / 60_000) })}
+            </span>
+          )}
+        </div>
+      </Link>
+
+      {canDelete && (
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-auto shrink-0 self-stretch px-3 text-muted-foreground"
+          aria-label={t("topik.history.deleteLabel")}
+          disabled={hide.isPending}
+          onClick={() => setConfirming(true)}
+        >
+          <Trash2 className="size-5" aria-hidden />
+        </Button>
+      )}
+
+      <AlertDialog open={confirming} onOpenChange={(open) => !open && setConfirming(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("topik.history.deleteTitle")}</AlertDialogTitle>
+            {/* The one thing worth saying: this is not a way to undo the practice. */}
+            <AlertDialogDescription>{t("topik.history.deleteBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => hide.mutate({ testId: sitting.id, profile_id: profileId })}>
+              {t("topik.history.deleteConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

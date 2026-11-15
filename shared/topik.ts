@@ -803,6 +803,9 @@ export const topikTestSittingSchema = z.object({
   score_points: z.number().int().nonnegative(),
   total_points: z.number().int().nonnegative(),
   finished_at: z.number().int(),
+  /** Extra time granted during the sitting (M7.31): the row says "+10 phút" and the chart marks
+   * the dot differently, because a sitting with extra time is not the same evidence as one without. */
+  extension_ms: z.number().int().nonnegative(),
 });
 export type TopikTestSitting = z.infer<typeof topikTestSittingSchema>;
 
@@ -938,6 +941,9 @@ export const topikTestRunSchema = z.object({
   paused_at: z.number().int().nullable(),
   paused_ms: z.number().int(),
   pause_count: z.number().int(),
+  /** How much extra time has been asked for so far (M7.31), and in how many presses. */
+  extension_count: z.number().int(),
+  extension_ms: z.number().int(),
   /** The server's own clock, so a phone set to the wrong time still counts down correctly. */
   server_now: z.number().int(),
   /** The range being sat (M7.14): the sitting's header says "câu 21-30", not "câu 21 / 10". */
@@ -950,7 +956,8 @@ export const topikTestRunSchema = z.object({
 });
 export type TopikTestRun = z.infer<typeof topikTestRunSchema>;
 
-/** What `POST /topik/tests/:id/start` and `.../clock` answer with: the clock and nothing else. */
+/** What `POST /topik/tests/:id/start`, `.../clock` and `.../extend` answer with: the clock and
+ * nothing else. */
 export const topikTestClockSchema = z.object({
   started_at: z.number().int(),
   length_ms: z.number().int().nullable(),
@@ -958,11 +965,17 @@ export const topikTestClockSchema = z.object({
   paused_at: z.number().int().nullable(),
   paused_ms: z.number().int(),
   pause_count: z.number().int(),
+  extension_count: z.number().int(),
+  extension_ms: z.number().int(),
   server_now: z.number().int(),
 });
 export type TopikTestClockView = z.infer<typeof topikTestClockSchema>;
 
 export const topikTestPauseSchema = z.object({ profile_id: z.string().min(1), paused: z.boolean() });
+
+/** `POST /topik/tests/:id/extend` (M7.31) — the step is the server's constant, never the client's,
+ * so a request cannot ask for an hour. */
+export const topikTestExtendSchema = z.object({ profile_id: z.string().min(1) });
 
 export const topikTestAnswerSchema = z.object({
   profile_id: z.string().min(1),
@@ -1028,6 +1041,10 @@ export const topikTestResultSchema = z.object({
   paused_ms: z.number().int(),
   /** True when the time ran out and the server submitted the paper itself (M7.13). */
   auto_submitted: z.boolean(),
+  /** Extra time granted in the last minutes (M7.31). Said plainly on the result, for the same
+   * reason a pause is: the score was not achieved in the paper's own time. */
+  extension_count: z.number().int().nonnegative(),
+  extension_ms: z.number().int().nonnegative(),
   from_number: z.number().int().positive().nullable(),
   to_number: z.number().int().positive().nullable(),
   finished_at: z.number().int().nullable(),

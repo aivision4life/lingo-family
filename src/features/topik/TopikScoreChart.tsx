@@ -65,14 +65,31 @@ export function TopikScoreChart({ sittings }: { sittings: TopikTestSitting[] }) 
         {series.map((s) => (
           <g key={s.kind} className={KIND_COLOR[s.kind]}>
             {s.dots.length > 1 && <polyline points={s.polyline} fill="none" stroke="currentColor" strokeWidth={2} />}
+            {/* A sitting with extra time is drawn hollow (M7.31): it belongs on the trend — it
+                happened — but a filled dot would read as a result under exam conditions. */}
             {s.dots.map((d) => (
-              <circle key={d.id} cx={d.x} cy={d.y} r={3.5} fill="currentColor" />
+              <circle
+                key={d.id}
+                cx={d.x}
+                cy={d.y}
+                r={3.5}
+                fill={d.extended ? "var(--background)" : "currentColor"}
+                stroke="currentColor"
+                strokeWidth={d.extended ? 1.5 : 0}
+              />
             ))}
           </g>
         ))}
       </svg>
 
       <ul className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        {/* The hollow dot needs saying once; without it the chart has two shapes and no key. */}
+        {series.some((s) => s.dots.some((d) => d.extended)) && (
+          <li className="flex items-center gap-1.5">
+            <span aria-hidden className="size-2.5 rounded-full border-2 border-current" />
+            {t("topik.history.extendedLegend")}
+          </li>
+        )}
         {series.map((s) => (
           <li key={s.kind} className="flex items-center gap-1.5">
             <span aria-hidden className={`size-2.5 rounded-full bg-current ${KIND_COLOR[s.kind]}`} />

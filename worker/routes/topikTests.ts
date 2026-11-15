@@ -21,7 +21,7 @@
 // fixes `length_ms` and `ends_at`, `POST .../clock` pauses and resumes, and nothing the client
 // reports about time is believed. There is no scheduler: a paper whose time ran out while nobody
 // was looking is submitted by `expireOverdueTests`, called on the reads that would show it.
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { topikSectionSchema } from "../../shared/enums";
@@ -31,6 +31,7 @@ import {
   topikGroupsOf,
   topikTestAnswerSchema,
   topikTestCreateSchema,
+  topikTestExtendSchema,
   topikTestFinishSchema,
   topikTestPauseSchema,
   topikTestRangeQuerySchema,
@@ -38,6 +39,8 @@ import {
 import { historyAsOf, NO_QUESTION_HISTORY, splitByFamiliarity, type AnswerEvent, type QuestionHistory } from "../../shared/topikAnswered";
 import { expandToGroups, missingNumber, rangeCount, type NumberRange, type QuestionGroup } from "../../shared/topikRange";
 import {
+  canExtend,
+  extendedClock,
   isExpired,
   pausedClock,
   pausedTotalMs,
@@ -94,7 +97,17 @@ export const topikTestRoutes = () =>
       const history = await db
         .select()
         .from(topik_tests)
-        .where(and(eq(topik_tests.profile_id, profile_id), eq(topik_tests.section, section), eq(topik_tests.status, "finished")))
+        .where(
+          and(
+            eq(topik_tests.profile_id, profile_id),
+            eq(topik_tests.section, section),
+            eq(topik_tests.status, "finished"),
+            // A sitting removed from the history (M7.32) is gone from every list that shows
+            // history, this one included — "ẩn khỏi lịch sử" would mean little if the picker
+            // still listed it under the paper.
+            isNull(topik_tests.hidden_at),
+          ),
+        )
         .orderBy(desc(topik_tests.finished_at));
 
       const entry = (h: TestRow) => ({
@@ -212,6 +225,7 @@ export const topikTestRoutes = () =>
             and(
               eq(topik_tests.profile_id, profile_id),
               eq(topik_tests.status, "finished"),
+              isNull(topik_tests.hidden_at),
               ...(section ? [eq(topik_tests.section, section)] : []),
             ),
           )
@@ -230,6 +244,7 @@ export const topikTestRoutes = () =>
             score_points: r.score_points ?? 0,
             total_points: r.total_points,
             finished_at: (r.finished_at ?? r.started_at).getTime(),
+            extension_ms: r.extension_ms,
           })),
         });
       },
@@ -447,6 +462,74 @@ export const topikTestRoutes = () =>
       },
     )
 
+    /**
+     * Asking for more time (M7.31) — the "+5 phút" button.
+     *
+     * The clock stays the server's: the client never adds a minute of its own, it only asks, and
+     * the step is this file's constant. The window is narrow on purpose — only while the paper is
+     * running and the "nearly up" warning is showing — so extra time is a decision taken at the
+     * end of a paper, not a way to sit a 70-minute paper in a whole afternoon. Once the time is up
+     * there is nothing to extend: the sitting has been (or is about to be) graded.
+     *
+     * Reading only. A listening paper is paced by its recording, which is not made longer by
+     * moving a deadline; extending it would only break the tape's own arithmetic.
+     *
+     * Not forbidden for a kid profile: a child needing five more minutes is exactly the case this
+     * is for, and the result says it was given.
+     */
+    .post("/topik/tests/:id/extend", idParam, zv("json", topikTestExtendSchema), async (c) => {
+      const db = getDb(c.env);
+      const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
+      const test = await db.select().from(topik_tests).where(eq(topik_tests.id, c.req.valid("param").id)).get();
+      if (!test || test.profile_id !== c.req.valid("json").profile_id) return c.json(err("not_found"), 404);
+      if (test.status !== "running") return c.json(err("topik_test_not_running"), 409);
+      if (test.section !== "reading") return c.json(err("topik_test_not_extendable"), 409);
+      if (!canExtend(clockOf(test), now.getTime())) return c.json(err("topik_test_not_extendable"), 409);
+
+      const clock = extendedClock(clockOf(test), now.getTime());
+      const [extended] = await db
+        .update(topik_tests)
+        .set({
+          // Both move by the step: `ends_at` alone would send the paper's own position backwards
+          // (`elapsed = length_ms − remaining`). See `shared/topikClock.ts`.
+          length_ms: clock.length_ms,
+          ends_at: new Date(clock.ends_at!),
+          extension_count: clock.extension_count,
+          extension_ms: clock.extension_ms,
+        })
+        .where(eq(topik_tests.id, test.id))
+        .returning();
+      return c.json(clockView(extended!, now));
+    })
+
+    /**
+     * Removing a sitting from the history (M7.32) — hidden, never deleted.
+     *
+     * What the learner wants gone is the row and its dot on the chart. What must **not** go is what
+     * the sitting taught the schedule: `topik_attempts` has already moved cards, and
+     * `topik_test_items` is where "đã làm" is counted from (M7.30), so deleting either would
+     * quietly rewrite the learner's own history of study. So this writes one timestamp and nothing
+     * else; every list that shows history skips it, and nothing else changes.
+     *
+     * Adults only — a kid profile cannot delete anything anywhere in the app.
+     */
+    .delete("/topik/tests/:id", idParam, zv("query", z.object({ profile_id: z.string().min(1) })), async (c) => {
+      const { profile_id } = c.req.valid("query");
+      const db = getDb(c.env);
+      const denied = await requireAdult(c, profile_id);
+      if (denied) return denied;
+      const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
+      const test = await db.select().from(topik_tests).where(eq(topik_tests.id, c.req.valid("param").id)).get();
+      if (!test || test.profile_id !== profile_id) return c.json(err("not_found"), 404);
+      // A paper still being sat is not history yet: hiding it would strand a sitting that is
+      // running with no way back to it. Leave it or cancel it first.
+      if (test.status === "running") return c.json(err("topik_test_not_running"), 409);
+      if (test.hidden_at !== null) return c.json({ id: test.id, hidden_at: test.hidden_at.getTime() });
+
+      const [hidden] = await db.update(topik_tests).set({ hidden_at: now }).where(eq(topik_tests.id, test.id)).returning();
+      return c.json({ id: hidden!.id, hidden_at: hidden!.hidden_at!.getTime() });
+    })
+
     .post("/topik/tests/:id/finish", idParam, zv("json", topikTestFinishSchema), async (c) => {
       const { profile_id, answers } = c.req.valid("json");
       const db = getDb(c.env);
@@ -493,6 +576,8 @@ function clockOf(test: TestRow): TestClock {
     paused_at: test.paused_at?.getTime() ?? null,
     paused_ms: test.paused_ms,
     pause_count: test.pause_count,
+    extension_count: test.extension_count,
+    extension_ms: test.extension_ms,
   };
 }
 
@@ -917,6 +1002,8 @@ function resultPayload(
     pause_count: test.pause_count,
     paused_ms: test.paused_ms,
     auto_submitted: test.auto_submitted,
+    extension_count: test.extension_count,
+    extension_ms: test.extension_ms,
     from_number: test.from_number,
     to_number: test.to_number,
     finished_at: test.finished_at?.getTime() ?? null,

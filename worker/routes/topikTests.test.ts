@@ -616,6 +616,8 @@ type Clock = {
   paused_at: number | null;
   paused_ms: number;
   pause_count: number;
+  extension_count: number;
+  extension_ms: number;
   server_now: number;
 };
 
@@ -1162,5 +1164,174 @@ describe("a sitting's own question history (M7.30)", () => {
     await t.api("POST", `/topik/tests/${test.id}/abandon`, { profile_id: adult });
     expect(await stats(q1)).toEqual({ attempts: 1, correct: 1 });
     expect(await stats(q2)).toEqual({ attempts: 0, correct: 0 });
+  });
+});
+
+// --- extra time, and removing a sitting from the history (M7.31, M7.32) -------------------------
+//
+// Both are places where being generous would quietly destroy something: extra time must not be
+// available on request from the client, and "xoa" must not take the learning with it.
+
+/** A two-question reading paper: 70 minutes per 50 questions, rounded down, so 2:00 exactly. */
+async function readingPaper(exam = "Extend-1") {
+  for (const n of [1, 2]) {
+    const id = ((await t.api("POST", "/topik/questions", {
+      ...input({ number: n, section: "reading", exam, block: `${n}`, stem: { text: "( )", image_key: null } }),
+      profile_id: adult,
+    })).body as { id: string }).id;
+    await t.env.DB.prepare("UPDATE topik_questions SET verified = 1 WHERE id = ?").bind(id).run();
+  }
+  return (await t.api("POST", "/topik/tests", { profile_id: adult, section: "reading", exam, from: 1, to: 2 })).body as { id: string };
+}
+
+const READING_MS = 2 * 60_000;
+const STEP_MS = 5 * 60_000;
+const extend = (id: string, atMs: number, profile = adult) => at("POST", `/topik/tests/${id}/extend`, { profile_id: profile }, atMs);
+
+describe("asking for more time (M7.31)", () => {
+  it("adds five minutes to the deadline and to the paper's own length", async () => {
+    const test = await readingPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+
+    const clock = (await extend(test.id, T0 + 30_000)).body as Clock;
+    expect(clock.ends_at).toBe(T0 + READING_MS + STEP_MS);
+    // Both move together, or the paper's own position would jump backwards (shared/topikClock.ts).
+    expect(clock.length_ms).toBe(READING_MS + STEP_MS);
+    expect(clock.extension_count).toBe(1);
+    expect(clock.extension_ms).toBe(STEP_MS);
+  });
+
+  it("can be pressed again, each press worth another five minutes", async () => {
+    const test = await readingPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await extend(test.id, T0 + 30_000);
+    // The first extension pushed the end out to T0+7:00, so this is inside the new window.
+    const clock = (await extend(test.id, T0 + 5 * 60_000)).body as Clock;
+    expect(clock.extension_count).toBe(2);
+    expect(clock.ends_at).toBe(T0 + READING_MS + 2 * STEP_MS);
+  });
+
+  it("refuses once the time is up, and moves nothing", async () => {
+    const test = await readingPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    const res = await extend(test.id, T0 + READING_MS + 1_000);
+    expect(res.status).toBe(409);
+    const row = await t.env.DB.prepare("SELECT ends_at FROM topik_tests WHERE id = ?").bind(test.id).first<{ ends_at: number }>();
+    expect(row!.ends_at).toBe(T0 + READING_MS);
+  });
+
+  it("refuses a paper that has not been started, and one that is paused", async () => {
+    const test = await readingPaper();
+    expect((await extend(test.id, T0)).status).toBe(409);
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await at("POST", `/topik/tests/${test.id}/clock`, { profile_id: adult, paused: true }, T0 + 10_000);
+    expect((await extend(test.id, T0 + 20_000)).status).toBe(409);
+  });
+
+  it("refuses a listening paper, which is paced by its recording and not by a deadline", async () => {
+    const test = await threeQuestionPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    expect((await extend(test.id, T0 + 2 * 60_000 + 30_000)).status).toBe(409);
+  });
+
+  it("refuses another profile's sitting", async () => {
+    const test = await readingPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    expect((await extend(test.id, T0 + 30_000, other)).status).toBe(404);
+  });
+
+  it("says on the result and in the history how much extra time was given", async () => {
+    const test = await readingPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await extend(test.id, T0 + 30_000);
+    const result = (await at("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult }, T0 + 60_000)).body as {
+      extension_count: number;
+      extension_ms: number;
+    };
+    expect(result).toMatchObject({ extension_count: 1, extension_ms: STEP_MS });
+
+    const history = (await t.api("GET", `/topik/tests/history?profile_id=${adult}`)).body as { sittings: { extension_ms: number }[] };
+    expect(history.sittings[0]!.extension_ms).toBe(STEP_MS);
+  });
+
+  it("does not auto-submit a paper past the moment it would have ended without the extension", async () => {
+    const test = await readingPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await extend(test.id, T0 + 30_000);
+    const run = (await getAt(`/topik/tests/${test.id}?profile_id=${adult}`, T0 + READING_MS + 30_000)).body as { status: string };
+    expect(run.status).toBe("running");
+  });
+});
+
+describe("removing a sitting from the history (M7.32)", () => {
+  async function finished() {
+    const test = await readingPaper();
+    await at("POST", `/topik/tests/${test.id}/start`, { profile_id: adult }, T0);
+    await at("POST", `/topik/tests/${test.id}/finish`, { profile_id: adult }, T0 + 60_000);
+    return test;
+  }
+
+  const hide = (id: string, profile = adult) => t.api("DELETE", `/topik/tests/${id}?profile_id=${profile}`);
+
+  it("drops the sitting from the history and from the picker, and is safe to repeat", async () => {
+    const test = await finished();
+    expect((await hide(test.id)).status).toBe(200);
+
+    const history = (await t.api("GET", `/topik/tests/history?profile_id=${adult}`)).body as { sittings: unknown[] };
+    expect(history.sittings).toEqual([]);
+    const picker = (await t.api("GET", `/topik/tests/options?profile_id=${adult}&section=reading`)).body as {
+      papers: { history: unknown[] }[];
+    };
+    expect(picker.papers.every((p) => p.history.length === 0)).toBe(true);
+    expect((await hide(test.id)).status).toBe(200);
+  });
+
+  it("keeps every row the sitting wrote: the attempts, the items and the schedule", async () => {
+    const test = await finished();
+    const count = async (table: string) =>
+      (await t.env.DB.prepare(`SELECT count(*) AS n FROM ${table}`).first<{ n: number }>())!.n;
+    const due = async () => (await t.env.DB.prepare("SELECT due FROM topik_cards ORDER BY due LIMIT 1").first<{ due: number }>())!.due;
+    const before = { attempts: await count("topik_attempts"), items: await count("topik_test_items"), cards: await count("topik_cards"), due: await due() };
+    expect(before.attempts).toBeGreaterThan(0);
+    expect(before.cards).toBeGreaterThan(0);
+
+    await hide(test.id);
+
+    expect(await count("topik_attempts")).toBe(before.attempts);
+    expect(await count("topik_test_items")).toBe(before.items);
+    expect(await count("topik_cards")).toBe(before.cards);
+    expect(await due()).toBe(before.due);
+    const row = await t.env.DB.prepare("SELECT status, hidden_at FROM topik_tests WHERE id = ?").bind(test.id).first<{
+      status: string;
+      hidden_at: number | null;
+    }>();
+    expect(row).toMatchObject({ status: "finished" });
+    expect(row!.hidden_at).not.toBeNull();
+  });
+
+  it("leaves the questions of a hidden sitting counted as answered", async () => {
+    const test = await finished();
+    const prior = async () =>
+      ((await t.api("GET", `/topik/tests/${test.id}?profile_id=${adult}`)).body as { items: { prior: { attempts: number } }[] }).items.map(
+        (i) => i.prior.attempts,
+      );
+    const before = await prior();
+    await hide(test.id);
+    // The result screen is still reachable by its own link, and says exactly what it said before.
+    expect(await prior()).toEqual(before);
+  });
+
+  it("refuses a kid profile, another profile's sitting, and a paper still being sat", async () => {
+    const test = await finished();
+    const kid = ((await t.api("POST", "/profiles", profile({ name: "Be", is_kid: true }))).body as { id: string }).id;
+    expect((await hide(test.id, kid)).status).toBe(403);
+    expect((await hide(test.id, other)).status).toBe(404);
+
+    const running = await readingPaper("Extend-2");
+    await at("POST", `/topik/tests/${running.id}/start`, { profile_id: adult }, T0);
+    expect((await hide(running.id)).status).toBe(409);
+
+    const hidden = await t.env.DB.prepare("SELECT hidden_at FROM topik_tests WHERE id = ?").bind(test.id).first<{ hidden_at: number | null }>();
+    expect(hidden!.hidden_at).toBeNull();
   });
 });
