@@ -25,14 +25,33 @@ const phrase = (id: string, text: string, examples: ReturnType<typeof ex>[]) => 
 
 describe("focus items", () => {
   const word = {
+    id: "w",
     lang: "ko" as const,
+    term: "회사",
+    reading: "hoesa",
+    gloss_vi: "công ty",
+    gloss_en: "company",
+    gloss_ko: "",
+    audio_key: "audio/w.mp3",
     emoji: "🏢",
+    ...image,
     examples: [ex("e1", "첫째"), ex("e2", "둘째")],
     phrases: [phrase("p1", "회사원", [ex("e3", "셋째")]), phrase("p2", "회사일", [])],
   };
 
-  it("word detail order: the word's examples, then each phrase followed by its example", () => {
-    expect(itemsFromWord(word as never).map((i) => i.key)).toEqual(["example:e1", "example:e2", "phrase:p1", "example:e3", "phrase:p2"]);
+  it("word detail order: the word itself, its examples, then each phrase followed by its example", () => {
+    expect(itemsFromWord(word as never).map((i) => i.key)).toEqual(["word:w", "example:e1", "example:e2", "phrase:p1", "example:e3", "phrase:p2"]);
+  });
+
+  it("the word itself carries its reading and its glosses (M3.2: it can be practised too)", () => {
+    expect(itemsFromWord(word as never)[0]).toMatchObject({
+      kind: "word",
+      text: "회사",
+      reading: "hoesa",
+      lang: "ko",
+      audio_key: "audio/w.mp3",
+    });
+    expect(itemsFromWord(word as never)[0]?.translations).toEqual({ vi: "công ty", en: "company", ko: "" });
   });
 
   it("phrases carry a reading; example sentences have none", () => {
@@ -49,7 +68,8 @@ describe("focus items", () => {
 
   it("keys round-trip and bad values are rejected", () => {
     expect(parseFocusKey(focusKey("phrase", "abc-1"))).toEqual({ kind: "phrase", id: "abc-1" });
-    for (const bad of [null, "", "word:1", "example:", "phrase"]) expect(parseFocusKey(bad), String(bad)).toBeNull();
+    expect(parseFocusKey(focusKey("word", "w1"))).toEqual({ kind: "word", id: "w1" });
+    for (const bad of [null, "", "sentence:1", "example:", "phrase"]) expect(parseFocusKey(bad), String(bad)).toBeNull();
   });
 
   it("finds the active index and steps without wrapping", () => {

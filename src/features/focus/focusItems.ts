@@ -9,11 +9,11 @@ import type { WordDetail } from "@shared/word";
 
 type Example = z.infer<typeof exampleSchema>;
 
-export type FocusKind = "example" | "phrase";
+export type FocusKind = "word" | "example" | "phrase";
 
-/** One enlargeable item: an example sentence or a phrase. */
+/** One enlargeable item: a word, an example sentence or a phrase. */
 export type FocusItem = {
-  /** "example:<id>" or "phrase:<id>" (also the `?focus=` value). */
+  /** "word:<id>", "example:<id>" or "phrase:<id>" (also the `?focus=` value). */
   key: string;
   kind: FocusKind;
   id: string;
@@ -30,7 +30,7 @@ export type FocusItem = {
 export const focusKey = (kind: FocusKind, id: string) => `${kind}:${id}`;
 
 export function parseFocusKey(value: string | null): { kind: FocusKind; id: string } | null {
-  const m = /^(example|phrase):(.+)$/.exec(value ?? "");
+  const m = /^(word|example|phrase):(.+)$/.exec(value ?? "");
   return m ? { kind: m[1] as FocusKind, id: m[2]! } : null;
 }
 
@@ -57,6 +57,22 @@ export function exampleItem(ex: Example, lang: LearnLang, emoji: string | null =
   };
 }
 
+/** The word itself (M3.2): enlarged from its detail screen, and the first thing to practise saying. */
+export function wordItem(w: WordDetail): FocusItem {
+  return {
+    key: focusKey("word", w.id),
+    kind: "word",
+    id: w.id,
+    lang: w.lang,
+    text: w.term,
+    reading: w.reading || null,
+    translations: { vi: w.gloss_vi, en: w.gloss_en, ko: w.gloss_ko },
+    image: imageOf(w),
+    emoji: w.emoji,
+    audio_key: w.audio_key,
+  };
+}
+
 export function phraseItem(p: Phrase): FocusItem {
   return {
     key: focusKey("phrase", p.id),
@@ -72,9 +88,10 @@ export function phraseItem(p: Phrase): FocusItem {
   };
 }
 
-/** Word detail: the word's own examples first, then each phrase followed by its example(s). */
-export function itemsFromWord(w: Pick<WordDetail, "lang" | "emoji" | "examples" | "phrases">): FocusItem[] {
+/** Word detail: the word itself, then its own examples, then each phrase followed by its example(s). */
+export function itemsFromWord(w: WordDetail): FocusItem[] {
   return [
+    wordItem(w),
     ...w.examples.map((ex) => exampleItem(ex, w.lang, w.emoji)),
     ...w.phrases.flatMap((p) => [phraseItem(p), ...p.examples.map((ex) => exampleItem(ex, p.lang, p.emoji ?? w.emoji))]),
   ];

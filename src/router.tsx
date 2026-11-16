@@ -8,7 +8,6 @@ import { CharacterPage } from "@/pages/CharacterPage";
 import { HomePage } from "@/pages/HomePage";
 import { PracticePage } from "@/pages/PracticePage";
 import { ProfileEditorPage } from "@/pages/ProfileEditorPage";
-import { PronProbePage } from "@/pages/PronProbePage";
 import { ProfilePickerPage } from "@/pages/ProfilePickerPage";
 import { ReviewPage } from "@/pages/ReviewPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -49,8 +48,6 @@ export const router = createBrowserRouter([
           { path: "albums/:id", element: <AlbumPage /> }, // 4 (album, or the virtual "Unsorted")
           { path: "words/:id", element: <WordDetailPage /> }, // 6
           { path: "practice/:wordId?", element: <PracticePage /> }, // 7
-          // Scaffolding for M3.0 (microphone capture + Azure's raw answer); no link points here.
-          { path: "practice/probe", element: <PronProbePage /> },
           { path: "chars/:char", element: <CharacterPage /> }, // 8
           { path: "decks", element: <DecksPage /> }, // 9
           { path: "topik", element: <TopikBlockPickerPage /> },

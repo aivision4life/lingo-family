@@ -490,8 +490,34 @@
     "autoplayOff": "Auto-play: off",
     "autoplayHint": "Turn auto-play on or off when the view opens and when you change item",
     "record": "Record & score",
-    "kindExample": "Example sentence",
-    "kindPhrase": "Phrase"
+    "kind": {
+      "word": "Word",
+      "example": "Example sentence",
+      "phrase": "Phrase"
+    }
+  },
+  "pron": {
+    "record": "Record & score",
+    "stop": "Stop and score",
+    "again": "Record again",
+    "recording": "Recording… stops by itself after {{seconds}} seconds",
+    "scoring": "Scoring…",
+    "outOf": "/ 100 points",
+    "band": {
+      "good": "Good",
+      "fair": "Fair",
+      "poor": "Needs work",
+      "unknown": "No score"
+    },
+    "failure": {
+      "micDenied": "The microphone is not allowed. Give the app microphone permission, then record again.",
+      "micMissing": "No microphone was found on this device.",
+      "noSpeech": "Nothing was heard. Speak louder and more clearly, then record again.",
+      "quota": "No pronunciation scoring left today. Try again tomorrow.",
+      "badAudio": "That recording cannot be used. Please record again.",
+      "unavailable": "Pronunciation scoring is not enabled on this build.",
+      "network": "Scoring failed. Check your connection and try again."
+    }
   },
   "examples": {
     "assist": {

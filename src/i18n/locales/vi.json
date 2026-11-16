@@ -490,8 +490,34 @@
     "autoplayOff": "Tự phát: tắt",
     "autoplayHint": "Bật hoặc tắt tự phát âm thanh khi mở và khi chuyển mục",
     "record": "Ghi âm & chấm điểm",
-    "kindExample": "Câu ví dụ",
-    "kindPhrase": "Cụm từ"
+    "kind": {
+      "word": "Từ",
+      "example": "Câu ví dụ",
+      "phrase": "Cụm từ"
+    }
+  },
+  "pron": {
+    "record": "Thu âm & chấm điểm",
+    "stop": "Dừng và chấm",
+    "again": "Thu lại",
+    "recording": "Đang thu… tự dừng sau {{seconds}} giây",
+    "scoring": "Đang chấm…",
+    "outOf": "/ 100 điểm",
+    "band": {
+      "good": "Tốt",
+      "fair": "Tạm được",
+      "poor": "Chưa đúng",
+      "unknown": "Chưa có điểm"
+    },
+    "failure": {
+      "micDenied": "Chưa cho phép dùng micro. Hãy bật quyền micro cho ứng dụng rồi thu lại.",
+      "micMissing": "Không tìm thấy micro trên máy này.",
+      "noSpeech": "Không nghe thấy gì. Hãy nói to và rõ hơn rồi thu lại.",
+      "quota": "Hết lượt chấm phát âm hôm nay. Mai thử lại nhé.",
+      "badAudio": "Bản thu không dùng được. Hãy thu lại.",
+      "unavailable": "Bản này chưa bật chấm phát âm.",
+      "network": "Không chấm được. Kiểm tra mạng rồi thử lại."
+    }
   },
   "examples": {
     "assist": {

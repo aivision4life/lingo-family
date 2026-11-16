@@ -9,6 +9,8 @@ import { SpeedToggle } from "@/features/audio/AudioButtons";
 import { mediaUrl, playAudio, stopAudio } from "@/features/audio/player";
 import { imageUrl } from "@/features/images/api";
 import { ItemImage } from "@/features/images/ItemImage";
+import { useActiveProfile } from "@/features/profiles/activeProfile";
+import { RecordScore } from "@/features/pron/RecordScore";
 import { warm } from "@/features/review/preload";
 import { cn } from "@/lib/utils";
 import { setAutoplay, useAutoplay } from "./autoplay";
@@ -43,6 +45,7 @@ function warmNeighbours(items: FocusItem[], index: number) {
 export function FocusView({ items, index, glossLang, onChange, onClose }: Props) {
   const { t } = useTranslation();
   const item = items[index]!;
+  const { profile } = useActiveProfile();
   const autoplay = useAutoplay();
   const repeat = useRepeat(item.audio_key);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
@@ -89,7 +92,7 @@ export function FocusView({ items, index, glossLang, onChange, onClose }: Props)
             </DialogPrimitive.Close>
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs text-muted-foreground">
-                {t(item.kind === "phrase" ? "focus.kindPhrase" : "focus.kindExample")} · {t("focus.position", { current: index + 1, total })}
+                {t(`focus.kind.${item.kind}`)} · {t("focus.position", { current: index + 1, total })}
               </span>
               <span className="flex gap-1.5" aria-hidden>
                 {items.map((i, n) => (
@@ -181,8 +184,10 @@ export function FocusView({ items, index, glossLang, onChange, onClose }: Props)
                 {autoplay ? t("focus.autoplayOn") : t("focus.autoplayOff")}
               </Button>
             </div>
-            {/* Room for "Record & score" (M3). Hidden until speaking practice exists. */}
-            <div data-slot="focus-record" hidden aria-label={t("focus.record")} />
+            {/* Record & score (M3.2). Kid profiles included: the server gives them a smaller quota. */}
+            <section data-slot="focus-record" aria-label={t("focus.record")}>
+              {profile && <RecordScore key={item.key} target={{ kind: item.kind, id: item.id }} lang={item.lang} text={item.text} profileId={profile.id} />}
+            </section>
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

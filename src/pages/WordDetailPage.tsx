@@ -7,7 +7,8 @@ import { LangText } from "@/components/LangText";
 import { LinkButton } from "@/components/LinkButton";
 import { Link } from "react-router";
 import { FocusLayer } from "@/features/focus/FocusLayer";
-import { itemsFromWord } from "@/features/focus/focusItems";
+import { focusKey, itemsFromWord } from "@/features/focus/focusItems";
+import { FocusTap } from "@/features/focus/FocusTap";
 import { useFocusRoute } from "@/features/focus/useFocusRoute";
 import { AddExampleButton, type ExampleOwner } from "@/features/examples/ExampleActions";
 import { WordAlbumsButton } from "@/features/albums/WordAlbumsDialog";
@@ -67,9 +68,12 @@ function Detail({ w }: { w: WordDetail }) {
       <div className="flex items-center gap-4">
         <div className="flex min-w-0 flex-col">
           <span className="flex items-center gap-1">
-            <LangText lang={w.lang} className="text-5xl font-bold">
-              {w.term}
-            </LangText>
+            {/* Tapping the word enlarges it, where it can also be recorded and scored (M3.2). */}
+            <FocusTap focusKey={focusKey("word", w.id)} text={w.term}>
+              <LangText lang={w.lang} className="text-5xl font-bold">
+                {w.term}
+              </LangText>
+            </FocusTap>
             <SpeakButton audioKey={w.audio_key} label={t("audio.play")} />
           </span>
           <span className="text-lg text-muted-foreground">

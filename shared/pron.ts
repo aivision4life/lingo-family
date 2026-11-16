@@ -16,6 +16,13 @@ export const PRON_DAILY_QUOTA_ADULT = 25;
 export const PRON_DAILY_QUOTA_KID = 15;
 export const PRON_FAMILY_DAILY_CAP = 60;
 export const pronDailyQuota = (isKid: boolean) => (isKid ? PRON_DAILY_QUOTA_KID : PRON_DAILY_QUOTA_ADULT);
+/**
+ * Colour thresholds for a score (SPEC F5): green at or above `PRON_SCORE_GOOD`, yellow down to
+ * `PRON_SCORE_FAIR`, red below it. Here only — never a number written into a component.
+ */
+export const PRON_SCORE_GOOD = 80;
+export const PRON_SCORE_FAIR = 60;
+
 /** Longest reference text sent to Azure: a word, a phrase or one example sentence. */
 export const PRON_REFERENCE_MAX = 200;
 
@@ -25,40 +32,22 @@ export const PRON_ERRORS = {
   quotaExceeded: "quota_exceeded",
   /** Azure Speech is not configured on this deployment. */
   unavailable: "pron_unavailable",
-  /** Azure was called and did not answer with a result; the quota unit was given back. */
+  /**
+   * Azure could not be reached, or answered a body we cannot read: nothing was processed for us, so
+   * the quota unit was given back.
+   */
   failed: "pron_failed",
   /**
    * Azure answered 200 but heard no speech (`NoMatch`, `InitialSilenceTimeout`): the microphone was
-   * muted, or the take is silence. No score exists, so the quota unit was given back too.
+   * muted, or the take is silence. No score exists, but Azure listened to those seconds, so the
+   * quota unit **stays spent** (M3.2) — refunding it would let repeated silence call Azure without
+   * any limit, and it is the only fence this uncacheable call has.
    */
   noResult: "pron_no_result",
 } as const;
 
 /**
- * M3.0 probe (`POST /api/pron/probe`, body = WAV). Scaffolding: it returns Azure's answer untouched,
- * because what `ko-KR` really returns (phonemes? names? syllables?) decides the shape of everything
- * built on top. `alphabet` and `miscue` exist only so the probe can try the request both ways.
- */
-export const pronProbeQuerySchema = z.object({
-  profile_id: z.string().min(1),
-  lang: learnLangSchema,
-  text: z.string().trim().min(1).max(PRON_REFERENCE_MAX),
-  miscue: z.enum(["0", "1"]).default("0"),
-  alphabet: z.enum(["none", "IPA", "SAPI"]).default("none"),
-});
-export type PronProbeQuery = z.infer<typeof pronProbeQuerySchema>;
-
-export const pronProbeResponseSchema = z.object({
-  /** Azure's JSON exactly as received. */
-  raw: z.unknown(),
-  /** Time the Worker waited for Azure. */
-  azure_ms: z.number(),
-  /** Length of the recording as the Worker measured it. */
-  audio_ms: z.number(),
-});
-
-/**
- * M3.1 scoring (`POST /api/pron/score`, body = WAV, parameters in the query like the probe).
+ * M3.1 scoring (`POST /api/pron/score`, body = WAV, the parameters in the query).
  * Exactly one of `word_id` / `phrase_id` / `example_id` says what is being practised — the same
  * three columns `pron_attempts` has, and the row is worthless without one of them (F5: practice
  * targets a word, a phrase or an example sentence).

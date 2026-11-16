@@ -5,7 +5,6 @@ import {
   PRON_ERRORS,
   PRON_FAMILY_DAILY_CAP,
   pronDailyQuota,
-  pronProbeQuerySchema,
   pronScoreQuerySchema,
   type PronScoreQuery,
   type PronScoreResponse,
@@ -38,8 +37,10 @@ export const pronRoutes = ({ makePron }: { makePron: MakePron }) =>
      *
      * The order is the whole design, and every step before the quota must be free: a bad upload, an
      * unknown profile or an item that no longer exists costs nothing. Only Azure answering with a
-     * score counts a unit; anything else gives it back (`refundQuota`), because the learner got no
-     * score — this is the one paid call in the app that cannot be cached, so the quota is the fence.
+     * unit is kept whenever Azure processed the audio — a score, or a 200 that heard no speech
+     * (422, M3.2: refunding silence would let a muted microphone call Azure without a limit). Only
+     * a transport failure and a body we cannot read give the unit back (`refundQuota`); this is the
+     * one paid call in the app that cannot be cached, so the quota is the fence.
      *
      * The audio only passes through the Worker's memory: never R2, never D1. What is stored is the
      * four scores plus `PronDetails` (normalized, versioned), never Azure's raw body.
@@ -79,8 +80,14 @@ export const pronRoutes = ({ makePron }: { makePron: MakePron }) =>
 
       const normalized = normalizePron(raw, SPEECH_LOCALES[q.lang]);
       if (!normalized.ok) {
-        await giveBack();
         console.warn("pron score not usable:", normalized.reason);
+        // A body we cannot read means nothing was processed for us, so the unit goes back. A 200
+        // that heard no speech is different: Azure listened to those seconds and they are billed,
+        // and giving the unit back would let a loop of silent takes call Azure without a limit.
+        if (normalized.kind === "bad_body") {
+          await giveBack();
+          return c.json(err(PRON_ERRORS.failed, normalized.reason), 502);
+        }
         return c.json(err(PRON_ERRORS.noResult, normalized.reason), 422);
       }
       const { details, ...scores } = normalized.scores;
@@ -103,42 +110,4 @@ export const pronRoutes = ({ makePron }: { makePron: MakePron }) =>
 
       const body: PronScoreResponse = { attempt_id: row.id, ...scores, duration_ms: wav.durationMs, details };
       return c.json(body);
-    })
-    /**
-     * M3.0 probe — scaffolding, not a feature, kept until M3.2 (the Practice screen) replaces the
-     * `/practice/probe` page that uses it. Scores one recording and returns Azure's JSON untouched.
-     * Kid profiles may use it too, on their own smaller allowance. Stores nothing but the quota
-     * unit, which a failed call gives back.
-     */
-    .post("/pron/probe", zv("query", pronProbeQuerySchema), async (c) => {
-      const q = c.req.valid("query");
-      const profile = await getDb(c.env).select({ is_kid: profiles.is_kid }).from(profiles).where(eq(profiles.id, q.profile_id)).get();
-      if (!profile) return c.json(err("not_found"), 404);
-
-      // Checked before the quota and before Azure: a bad upload must cost nothing.
-      const bytes = new Uint8Array(await c.req.arrayBuffer());
-      const wav = checkWav(bytes);
-      if (!wav.ok) return c.json(err(PRON_ERRORS.invalidAudio, wav.reason), 400);
-
-      const client = makePron(c.env);
-      if (!client) return c.json(err(PRON_ERRORS.unavailable), 503);
-
-      const now = new Date();
-      if (!(await consumeTieredQuota(c.env.DB, q.profile_id, "pron", pronDailyQuota(profile.is_kid), PRON_FAMILY_DAILY_CAP, now))) {
-        return c.json(err(PRON_ERRORS.quotaExceeded), 429);
-      }
-
-      const started = Date.now();
-      let raw: unknown;
-      try {
-        raw = await client.assess(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), q.lang, q.text, {
-          miscue: q.miscue === "1",
-          alphabet: q.alphabet === "none" ? undefined : q.alphabet,
-        });
-      } catch (e) {
-        await refundQuota(c.env.DB, q.profile_id, "pron", now);
-        console.error("pron probe failed", e);
-        return c.json(err(PRON_ERRORS.failed, e instanceof Error ? e.message : String(e)), 502);
-      }
-      return c.json({ raw, azure_ms: Date.now() - started, audio_ms: wav.durationMs });
     });
