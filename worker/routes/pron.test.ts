@@ -5,7 +5,9 @@ import {
   PRON_ERRORS,
   PRON_FAMILY_DAILY_CAP,
   pronProbeResponseSchema,
+  pronScoreResponseSchema,
 } from "../../shared/pron";
+import { AZURE_KO_SENTENCE, AZURE_KO_WORD, AZURE_KO_WRONG } from "../../shared/pronScore.fixtures";
 import { profileSchema, type ProfileCreate } from "../../shared/profile";
 import { encodeWav, PRON_MAX_SECONDS, PRON_SAMPLE_RATE } from "../../shared/wav";
 import { fakePron } from "../test/fakePron";
@@ -24,10 +26,12 @@ afterAll(async () => {
   await none.dispose();
 });
 beforeEach(async () => {
-  await t.env.DB.prepare("DELETE FROM profiles").run();
-  await t.env.DB.prepare("DELETE FROM usage_daily").run();
+  for (const table of ["pron_attempts", "examples", "words", "profiles", "usage_daily"]) {
+    await t.env.DB.prepare(`DELETE FROM ${table}`).run();
+  }
   pron.calls.length = 0;
   pron.state.fail = false;
+  pron.state.answer = AZURE_KO_WORD;
 });
 
 const adult: ProfileCreate = {
@@ -157,5 +161,162 @@ describe("POST /api/pron/probe (M3.0)", () => {
     const res = await probe(none, p.id);
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: PRON_ERRORS.unavailable });
+  });
+});
+
+/** A word to practise: `pron_attempts` rows are about an item, so every scoring test needs one. */
+const addWord = async (profileId: string) => {
+  const res = await t.api("POST", "/words", {
+    profile_id: profileId,
+    lang: "ko",
+    term: "사과",
+    reading: "sagwa",
+    pos: "noun",
+    gloss_vi: "quả táo",
+    gloss_en: "apple",
+    gloss_ko: "둥글고 빨간 과일",
+    hanja: null,
+    han_viet: null,
+    emoji: "🍎",
+    ai_generated: false,
+    examples: [],
+  });
+  expect(res.status).toBe(201);
+  return (res.body as { id: string }).id;
+};
+
+const score = (profileId: string, extra: string, body: BodyInit = ONE_SECOND) =>
+  t.send(`/api/pron/score?profile_id=${profileId}&lang=ko&reference_text=${encodeURIComponent("사과")}${extra}`, {
+    method: "POST",
+    headers: { "content-type": "audio/wav" },
+    body,
+  });
+
+const attempts = () =>
+  t.env.DB.prepare("SELECT * FROM pron_attempts").all<{
+    word_id: string | null;
+    phrase_id: string | null;
+    example_id: string | null;
+    reference_text: string;
+    lang: string;
+    pron_score: number;
+    accuracy: number;
+    fluency: number;
+    completeness: number;
+    duration_ms: number;
+    details_json: string;
+  }>();
+
+describe("POST /api/pron/score (M3.1)", () => {
+  it("scores a take, stores one attempt and answers with the normalized detail", async () => {
+    const p = await create(t, adult);
+    const wordId = await addWord(p.id);
+    const res = await score(p.id, `&word_id=${wordId}`);
+    expect(res.status).toBe(200);
+    const body = pronScoreResponseSchema.parse(await res.json());
+    expect(body).toMatchObject({ pron_score: 99.4, accuracy: 99, fluency: 100, completeness: 100, duration_ms: 1000 });
+    expect(body.details.locale).toBe("ko-KR");
+    expect(body.details.words[0]?.syllables?.map((s) => s.score)).toEqual([99, 99]);
+
+    const rows = (await attempts()).results;
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row).toMatchObject({ word_id: wordId, phrase_id: null, example_id: null, lang: "ko", reference_text: "사과", duration_ms: 1000 });
+    expect(row.pron_score).toBe(99.4);
+    // Azure's own body is never stored: only the versioned, normalized detail.
+    expect(JSON.parse(row.details_json)).toEqual(body.details);
+    expect(row.details_json).not.toContain("RecognitionStatus");
+    expect(await used(p.id)).toBe(1);
+  });
+
+  it("stores a wrong take's low score instead of hiding it", async () => {
+    const p = await create(t, adult);
+    const wordId = await addWord(p.id);
+    pron.state.answer = AZURE_KO_WRONG;
+    const body = pronScoreResponseSchema.parse(await (await score(p.id, `&word_id=${wordId}`)).json());
+    expect(body.pron_score).toBe(6);
+    expect(body.details.words[0]).toMatchObject({ error: "Mispronunciation" });
+    expect(body.details.words[0]?.syllables?.map((s) => s.score)).toEqual([32, 13]);
+  });
+
+  it("asks Azure to mark omissions for a sentence, but not for a single word", async () => {
+    const p = await create(t, adult);
+    const wordId = await addWord(p.id);
+    pron.state.answer = AZURE_KO_SENTENCE;
+    const sentence = encodeURIComponent("저는 매일 아침에 사과를 먹어요");
+    await t.send(`/api/pron/score?profile_id=${p.id}&lang=ko&reference_text=${sentence}&word_id=${wordId}`, {
+      method: "POST",
+      headers: { "content-type": "audio/wav" },
+      body: ONE_SECOND,
+    });
+    await score(p.id, `&word_id=${wordId}`);
+    expect(pron.calls.map((call) => call.options?.miscue)).toEqual([true, false]);
+  });
+
+  it("needs exactly one item: none and two are both refused before anything is paid for", async () => {
+    const p = await create(t, adult);
+    const wordId = await addWord(p.id);
+    expect((await score(p.id, "")).status).toBe(400);
+    expect((await score(p.id, `&word_id=${wordId}&phrase_id=${wordId}`)).status).toBe(400);
+    expect(pron.calls).toHaveLength(0);
+    expect(await used(p.id)).toBe(0);
+  });
+
+  it("refuses an item that does not exist, at no cost", async () => {
+    const p = await create(t, adult);
+    const res = await score(p.id, "&word_id=nope");
+    expect(res.status).toBe(404);
+    expect(pron.calls).toHaveLength(0);
+    expect(await used(p.id)).toBe(0);
+    expect((await attempts()).results).toHaveLength(0);
+  });
+
+  it("writes nothing and gives the quota unit back when Azure fails", async () => {
+    const p = await create(t, adult);
+    const wordId = await addWord(p.id);
+    pron.state.fail = true;
+    const res = await score(p.id, `&word_id=${wordId}`);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ error: PRON_ERRORS.failed });
+    expect((await attempts()).results).toHaveLength(0);
+    expect(await used(p.id)).toBe(0);
+  });
+
+  it("gives the quota unit back when Azure answers 200 but heard no speech", async () => {
+    const p = await create(t, adult);
+    const wordId = await addWord(p.id);
+    pron.state.answer = { RecognitionStatus: "NoMatch" };
+    const res = await score(p.id, `&word_id=${wordId}`);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ error: PRON_ERRORS.noResult });
+    expect((await attempts()).results).toHaveLength(0);
+    expect(await used(p.id)).toBe(0);
+  });
+
+  it("refuses a bad recording, and stops at the quota, before calling Azure", async () => {
+    const p = await create(t, adult);
+    const wordId = await addWord(p.id);
+    const bad = await score(p.id, `&word_id=${wordId}`, encodeWav(new Int16Array(48_000), 48_000));
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({ error: PRON_ERRORS.invalidAudio });
+
+    await spend(p.id, PRON_DAILY_QUOTA_ADULT);
+    const full = await score(p.id, `&word_id=${wordId}`);
+    expect(full.status).toBe(429);
+    expect(await full.json()).toMatchObject({ error: PRON_ERRORS.quotaExceeded });
+    expect(pron.calls).toHaveLength(0);
+  });
+
+  it("lets a kid profile be scored too, on the kid allowance", async () => {
+    const grownUp = await create(t, adult);
+    const kid = await create(t, { ...adult, name: "Bé", is_kid: true });
+    const wordId = await addWord(grownUp.id);
+    expect((await score(kid.id, `&word_id=${wordId}`)).status).toBe(200);
+
+    // The same number of takes stops the kid and not the adult.
+    await t.env.DB.prepare("UPDATE usage_daily SET count = ?1 WHERE profile_id = ?2").bind(PRON_DAILY_QUOTA_KID, kid.id).run();
+    expect((await score(kid.id, `&word_id=${wordId}`)).status).toBe(429);
+    await spend(grownUp.id, PRON_DAILY_QUOTA_KID);
+    expect((await score(grownUp.id, `&word_id=${wordId}`)).status).toBe(200);
   });
 });

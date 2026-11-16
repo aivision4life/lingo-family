@@ -3,6 +3,7 @@
 // Conventions: ids are UUID text (generated client-side for offline sync),
 // timestamps are integer epoch milliseconds, booleans are 0/1 integers.
 import { sql } from "drizzle-orm";
+import type { PronDetails } from "../shared/pronScore";
 import {
   index,
   integer,
@@ -341,7 +342,10 @@ export const pron_attempts = sqliteTable(
     accuracy: real("accuracy").notNull(),
     fluency: real("fluency").notNull(),
     completeness: real("completeness").notNull(),
-    details_json: text("details_json", { mode: "json" }).$type<unknown>(),
+    /** Length of the recording (M3.1). Nullable: rows written before the column existed have none. */
+    duration_ms: integer("duration_ms"),
+    /** `PronDetails` (shared/pronScore.ts), never Azure's raw body. Carries its own `v`. */
+    details_json: text("details_json", { mode: "json" }).$type<PronDetails>(),
     created_at: createdAt(),
   },
   (t) => [

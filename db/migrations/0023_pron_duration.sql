@@ -1,0 +1,1 @@
+ALTER TABLE `pron_attempts` ADD `duration_ms` integer;

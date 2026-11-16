@@ -27,6 +27,11 @@ export const PRON_ERRORS = {
   unavailable: "pron_unavailable",
   /** Azure was called and did not answer with a result; the quota unit was given back. */
   failed: "pron_failed",
+  /**
+   * Azure answered 200 but heard no speech (`NoMatch`, `InitialSilenceTimeout`): the microphone was
+   * muted, or the take is silence. No score exists, so the quota unit was given back too.
+   */
+  noResult: "pron_no_result",
 } as const;
 
 /**
@@ -51,3 +56,51 @@ export const pronProbeResponseSchema = z.object({
   /** Length of the recording as the Worker measured it. */
   audio_ms: z.number(),
 });
+
+/**
+ * M3.1 scoring (`POST /api/pron/score`, body = WAV, parameters in the query like the probe).
+ * Exactly one of `word_id` / `phrase_id` / `example_id` says what is being practised — the same
+ * three columns `pron_attempts` has, and the row is worthless without one of them (F5: practice
+ * targets a word, a phrase or an example sentence).
+ */
+export const pronScoreQuerySchema = z
+  .object({
+    profile_id: z.string().min(1),
+    lang: learnLangSchema,
+    reference_text: z.string().trim().min(1).max(PRON_REFERENCE_MAX),
+    word_id: z.string().min(1).optional(),
+    phrase_id: z.string().min(1).optional(),
+    example_id: z.string().min(1).optional(),
+  })
+  .refine((q) => [q.word_id, q.phrase_id, q.example_id].filter(Boolean).length === 1, {
+    message: "exactly one of word_id, phrase_id, example_id",
+  });
+export type PronScoreQuery = z.infer<typeof pronScoreQuerySchema>;
+
+const pronSyllableSchema = z.object({ text: z.string(), score: z.number().nullable() });
+const pronWordSchema = z.object({
+  text: z.string(),
+  score: z.number().nullable(),
+  error: z.string(),
+  syllables: z.array(pronSyllableSchema).optional(),
+});
+/** `pron_attempts.details_json`, as the app reads it back. Mirrors `PronDetails` (shared/pronScore.ts). */
+export const pronDetailsSchema = z.object({
+  v: z.literal(1),
+  locale: z.string(),
+  words: z.array(pronWordSchema),
+  snr: z.number().optional(),
+});
+
+export const pronScoreResponseSchema = z.object({
+  /** The `pron_attempts` row that was written; history (M3.2) is read back by it. */
+  attempt_id: z.string(),
+  pron_score: z.number(),
+  accuracy: z.number(),
+  fluency: z.number(),
+  completeness: z.number(),
+  /** Length of the take as the Worker measured it, also stored on the row. */
+  duration_ms: z.number(),
+  details: pronDetailsSchema,
+});
+export type PronScoreResponse = z.infer<typeof pronScoreResponseSchema>;
