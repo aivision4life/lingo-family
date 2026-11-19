@@ -18,6 +18,11 @@ export function HomePage() {
       <LinkButton to="/practice" variant="secondary" size="lg">
         {t("pages.home.practiceSpeaking")}
       </LinkButton>
+      {/* The podcast is a way to use hours that are already lost (SPEC F13), so it is offered
+          here beside the other ways in, not buried inside the TOPIK picker. */}
+      <LinkButton to="/topik/podcast" variant="secondary" size="lg">
+        {t("pages.home.podcast")}
+      </LinkButton>
       <LinkButton to="/stats" variant="outline">
         {t("pages.home.stats")}
       </LinkButton>

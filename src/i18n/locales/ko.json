@@ -99,7 +99,8 @@
       "title": "홈",
       "startReview": "복습 시작",
       "practiceSpeaking": "발음 연습",
-      "stats": "통계"
+      "stats": "통계",
+      "podcast": "TOPIK 팟캐스트 듣기"
     },
     "review": {
       "title": "복습",
@@ -919,6 +920,39 @@
       "rangeByExam": "회차별: {{list}}"
     },
     "blockSize": "{{total}}문항",
-    "blockAllKnown": "모두 암기"
+    "blockAllKnown": "모두 암기",
+    "podcast": {
+      "title": "TOPIK 듣기 팟캐스트",
+      "intro": "눈과 손이 바쁠 때 귀로만 공부합니다: 문항 번호, 질문, 시험 원본 음원, 선택지 네 개, 생각할 시간, 그리고 정답을 두 번 읽어 줍니다.",
+      "firstThree": "각 시험지의 1~3번은 선택지가 그림이라 팟캐스트에 없습니다.",
+      "paperTitle": "시험지 선택",
+      "allPapers": "모든 시험지",
+      "allPapersHint": "모든 시험지 범위에서는 아직 풀지 않은 문항을 모의시험용으로 남겨 둡니다. 새 문항까지 들으려면 시험지를 하나 고르세요.",
+      "rangeHint": "들을 문항 범위를 고르세요. 예: 21번부터 30번까지.",
+      "start": "팟캐스트 듣기",
+      "count": "이 팟캐스트에는 {{count}}문항이 있습니다.",
+      "widened": "같은 음원을 쓰는 묶음이 잘리지 않도록 {{from}}~{{to}}번으로 넓혔습니다.",
+      "skippedPictures": "선택지가 그림이라 읽을 수 없는 {{count}}문항을 제외했습니다.",
+      "skippedNoClip": "원본 음원이 없는 {{count}}문항을 제외했습니다.",
+      "skippedReserved": "모의시험용으로 남겨 둔 {{count}}문항을 제외했습니다. 들으려면 시험지를 하나 고르세요.",
+      "skippedNoTts": "음성이 아직 생성되지 않은 {{count}}문항을 제외했습니다 (npm run topik-podcast-tts -- --apply).",
+      "progress": "{{current}}/{{total}}문항",
+      "questionNumber": "{{n}}번",
+      "buffering": "다음 음원을 불러오는 중…",
+      "play": "재생",
+      "pause": "일시정지",
+      "resume": "계속 재생",
+      "next": "다음 문항",
+      "change": "다시 고르기",
+      "finished": "팟캐스트가 끝났습니다.",
+      "step": {
+        "number": "문항 번호를 읽는 중",
+        "question": "질문을 읽는 중",
+        "clip": "원본 음원 재생 중",
+        "options": "선택지 네 개를 읽는 중",
+        "gap": "생각할 시간",
+        "answer": "정답을 읽는 중"
+      }
+    }
   }
 }

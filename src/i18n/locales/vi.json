@@ -99,7 +99,8 @@
       "title": "Trang chủ",
       "startReview": "Bắt đầu ôn tập",
       "practiceSpeaking": "Luyện phát âm",
-      "stats": "Thống kê"
+      "stats": "Thống kê",
+      "podcast": "Nghe podcast TOPIK"
     },
     "review": {
       "title": "Ôn tập",
@@ -919,6 +920,39 @@
       "rangeByExam": "Theo đề: {{list}}"
     },
     "blockSize": "{{total}} câu",
-    "blockAllKnown": "đã thuộc hết"
+    "blockAllKnown": "đã thuộc hết",
+    "podcast": {
+      "title": "Podcast nghe TOPIK",
+      "intro": "Nghe bằng tai khi tay và mắt đang bận: số câu, dòng hỏi, băng gốc của đề, bốn đáp án, một khoảng nghỉ, rồi đáp án đúng đọc hai lần.",
+      "firstThree": "3 câu đầu mỗi đề là đáp án ảnh, không có trong podcast.",
+      "paperTitle": "Chọn đề",
+      "allPapers": "Tất cả các đề",
+      "allPapersHint": "Ở phạm vi mọi đề, câu chưa làm được để dành cho bài thi thử — chọn một đề cụ thể nếu muốn nghe cả câu mới.",
+      "rangeHint": "Chọn khoảng câu muốn nghe, ví dụ câu 21 đến 30.",
+      "start": "Nghe podcast",
+      "count": "Podcast này có {{count}} câu.",
+      "widened": "Đã nới thành câu {{from}}–{{to}} để không cắt đôi cụm dùng chung đoạn.",
+      "skippedPictures": "Bỏ {{count}} câu vì đáp án là ảnh, không đọc được.",
+      "skippedNoClip": "Bỏ {{count}} câu vì chưa có đoạn băng gốc.",
+      "skippedReserved": "Bỏ {{count}} câu đang dành cho thi thử — chọn đề cụ thể nếu muốn nghe.",
+      "skippedNoTts": "Bỏ {{count}} câu vì chưa sinh giọng đọc (chạy npm run topik-podcast-tts -- --apply).",
+      "progress": "Câu {{current}}/{{total}}",
+      "questionNumber": "Câu {{n}}",
+      "buffering": "Đang tải đoạn tiếp theo…",
+      "play": "Phát",
+      "pause": "Tạm dừng",
+      "resume": "Phát tiếp",
+      "next": "Câu tiếp",
+      "change": "Chọn lại",
+      "finished": "Hết podcast.",
+      "step": {
+        "number": "Đang đọc số câu",
+        "question": "Đang đọc dòng hỏi",
+        "clip": "Đang phát băng gốc",
+        "options": "Đang đọc bốn đáp án",
+        "gap": "Khoảng nghỉ để suy nghĩ",
+        "answer": "Đang đọc đáp án đúng"
+      }
+    }
   }
 }

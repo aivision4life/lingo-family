@@ -1,5 +1,6 @@
-// The tape for a mixed mock test (M6.5): clips from several different mp3s played one after
-// another as if they were one exam.
+// The tape: clips from several different mp3s played one after another as if they were one
+// recording (M6.5, the mixed mock test), and since M8.1 whole TTS files and silent gaps too, which
+// is what a TOPIK listening podcast is made of (SPEC F13).
 //
 // Written as a controller outside React, like `src/features/audio/player.ts`, rather than as a
 // hook holding elements in refs — two `<audio>` elements, their buffering and their handover are
@@ -15,9 +16,28 @@
 //  - **Both elements are unlocked inside the starting gesture.** A phone blocks `play()` on an
 //    element no person ever started, and the second element is exactly that. This is the one risk
 //    in the feature that no test can catch, so `start()` must be called straight from the tap.
+//
+// One tape, three kinds of track (M8.1). A podcast is the same two alternating elements with a
+// different playlist — F13 says so in as many words — so rather than a second player this one
+// learned two more kinds of track:
+//
+//  - `clip`: a slice of an exam's mp3, handed over at `end_ms`, exactly as before.
+//  - `file`: a whole TTS mp3 whose length nobody knows until it loads, so it hands over on the
+//    element's own `ended` event rather than at a timestamp.
+//  - `silence`: the thinking gap, kept by a timer and no file at all — a gap made of audio would
+//    have to be regenerated the day its length changes (M8.3 makes it adjustable).
 import type { TopikClip } from "@shared/topik";
 import { mediaUrl } from "@/features/audio/player";
 import { positionOnTimeline } from "./mixedTimeline";
+
+/** A piece of tape. The mixed sitting uses `clip` only; the podcast uses all three. */
+export type TapeTrack =
+  | ({ kind: "clip" } & TopikClip)
+  | { kind: "file"; audio_key: string }
+  | { kind: "silence"; ms: number };
+
+/** The sitting's own playlist: every clip of the paper, in order. */
+export const clipTracks = (clips: readonly TopikClip[]): TapeTrack[] => clips.map((c) => ({ kind: "clip", ...c }));
 
 export type TapeEvent =
   | { kind: "unlocked"; blocked: number }
@@ -31,7 +51,7 @@ export type TapeEvent =
 
 export type TapeState = {
   index: number;
-  /** Milliseconds into the current clip, counted from its own `start_ms`. */
+  /** Milliseconds into the current track, counted from its own start. */
   positionMs: number;
   playing: boolean;
   /** True while the tape is sitting in a clip's silence waiting for the next file. */
@@ -60,7 +80,7 @@ const LOAD_TIMEOUT_MS = 20_000;
 
 export type MixedTape = ReturnType<typeof createMixedTape>;
 
-export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeEvent) => void) {
+export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: TapeEvent) => void) {
   const els = [new Audio(), new Audio()];
   for (const el of els) el.preload = "auto";
   const prepared = new Map<number, Promise<void>>();
@@ -68,6 +88,8 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
   let state: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false };
   let pausedAt: number | null = null;
   let disposed = false;
+  /** The running gap's timer, so pausing or skipping inside a gap does not leave it ticking. */
+  let gapTimer: ReturnType<typeof setTimeout> | null = null;
 
   const set = (patch: Partial<TapeState>) => {
     state = { ...state, ...patch };
@@ -75,17 +97,25 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
   };
   const emit = (e: TapeEvent) => onEvent?.(e);
   const elementFor = (i: number) => els[i % 2]!;
+  /** A silent gap owns no element, so "is this track loaded" is only ever asked of the other two. */
+  const needsElement = (track: TapeTrack | undefined) => track !== undefined && track.kind !== "silence";
+  const label = (track: TapeTrack) => (track.kind === "silence" ? `gap ${track.ms}ms` : track.audio_key.slice(-12));
+  const clearGap = () => {
+    if (gapTimer === null) return;
+    clearTimeout(gapTimer);
+    gapTimer = null;
+  };
 
-  /** Loads clip `i` into the element it will play on, seeked to its start and left paused. */
+  /** Loads track `i` into the element it will play on, seeked to its start and left paused. */
   function prepare(i: number): Promise<void> {
-    const clip = clips[i];
-    if (!clip) return Promise.resolve();
+    const track = tracks[i];
+    if (!track || track.kind === "silence") return Promise.resolve();
     const existing = prepared.get(i);
     if (existing) return existing;
 
     const el = elementFor(i);
-    const url = mediaUrl(clip.audio_key);
-    emit({ kind: "preloading", index: i, src: clip.audio_key.slice(-12) });
+    const url = mediaUrl(track.audio_key);
+    emit({ kind: "preloading", index: i, src: label(track) });
     const promise = new Promise<void>((resolve) => {
       let done = false;
       const finish = (why: "ready" | "error" | "timeout") => {
@@ -108,7 +138,7 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
         else el.addEventListener("canplay", settle, { once: true });
       };
       const seek = () => {
-        el.currentTime = clip.start_ms / 1000;
+        el.currentTime = track.kind === "clip" ? track.start_ms / 1000 : 0;
         settle();
       };
       if (el.src.endsWith(url) && el.readyState > 0) seek();
@@ -125,29 +155,58 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
   /** `withinMs` > 0 only when a reopened sitting resumes part way into a clip (M7.13). */
   async function playFrom(i: number, withinMs = 0): Promise<void> {
     if (disposed) return;
-    const clip = clips[i];
-    if (!clip) {
+    const track = tracks[i];
+    if (!track) {
       emit({ kind: "finished" });
       set({ playing: false, finished: true });
       return;
     }
+
+    // A gap plays nothing: the tape simply stays quiet for as long as the gap says.
+    if (track.kind === "silence") {
+      set({ index: i, positionMs: 0, playing: true });
+      emit({ kind: "playing", index: i, src: label(track) });
+      void prepare(i + 1);
+      gapTimer = setTimeout(() => {
+        gapTimer = null;
+        void handOver(i);
+      }, track.ms);
+      return;
+    }
+
     await prepare(i);
     if (disposed) return;
 
     const el = elementFor(i);
-    const within = Math.max(0, Math.min(withinMs, clip.end_ms - clip.start_ms));
-    el.currentTime = (clip.start_ms + within) / 1000;
+    const startMs = track.kind === "clip" ? track.start_ms : 0;
+    const within = track.kind === "clip" ? Math.max(0, Math.min(withinMs, track.end_ms - track.start_ms)) : 0;
+    el.currentTime = (startMs + within) / 1000;
     set({ index: i, positionMs: within, playing: true });
-    emit({ kind: "playing", index: i, src: clip.audio_key.slice(-12) });
+    emit({ kind: "playing", index: i, src: label(track) });
     void el.play().catch((e: Error) => emit({ kind: "error", message: e.message }));
 
-    // The next clip loads while this one plays, on the other element: by the time it is needed the
+    // The next track loads while this one plays, on the other element: by the time it is needed the
     // file is in the browser's cache (and the service worker's) and the seek costs nothing.
     void prepare(i + 1);
 
+    // A clip hands over at the paper's own boundary; a whole file has no boundary to watch, so it
+    // hands over when the browser says it ended.
+    if (track.kind === "file") {
+      const tick = () => set({ positionMs: el.currentTime * 1000 });
+      const onEnded = () => {
+        el.removeEventListener("ended", onEnded);
+        el.removeEventListener("timeupdate", tick);
+        void handOver(i);
+      };
+      el.addEventListener("ended", onEnded);
+      el.addEventListener("timeupdate", tick);
+      return;
+    }
+
+    const clipEnd = track.end_ms;
     const watch = () => {
-      set({ positionMs: el.currentTime * 1000 - clip.start_ms });
-      if (el.currentTime * 1000 < clip.end_ms) return;
+      set({ positionMs: el.currentTime * 1000 - startMs });
+      if (el.currentTime * 1000 < clipEnd) return;
       el.removeEventListener("timeupdate", watch);
       el.pause();
       void handOver(i);
@@ -155,11 +214,11 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
     el.addEventListener("timeupdate", watch);
   }
 
-  /** At the end of one clip's silence: start the next, or wait in that silence until it loads. */
+  /** At the end of one track: start the next, or wait in that silence until it loads. */
   async function handOver(from: number): Promise<void> {
     if (disposed) return;
     const next = from + 1;
-    if (next >= clips.length) {
+    if (next >= tracks.length) {
       emit({ kind: "finished" });
       set({ playing: false, finished: true });
       return;
@@ -167,7 +226,7 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
     const since = performance.now();
     const pending = prepare(next);
     let waited = 0;
-    if (elementFor(next).readyState < READY_ENOUGH) {
+    if (needsElement(tracks[next]) && elementFor(next).readyState < READY_ENOUGH) {
       set({ waiting: true });
       emit({ kind: "waiting", index: next });
       await pending;
@@ -208,8 +267,10 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
       for (const el of els) el.muted = false;
       emit({ kind: "unlocked", blocked: results.filter((ok) => !ok).length });
       // Reopening a sitting resumes where the exam clock says the tape is, not at the beginning:
-      // the minutes that passed while the paper was closed have gone, recording and all.
-      const at = positionOnTimeline(clips, fromMs);
+      // the minutes that passed while the paper was closed have gone, recording and all. Only a
+      // sitting ever does this, and a sitting is clips all the way through — a podcast starts at 0.
+      const clips = tracks.every((t) => t.kind === "clip") ? (tracks as readonly TopikClip[]) : null;
+      const at = clips && fromMs > 0 ? positionOnTimeline(clips, fromMs) : { index: 0, withinMs: 0, past: false };
       if (at.past) {
         emit({ kind: "finished" });
         set({ playing: false, finished: true });
@@ -219,6 +280,26 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
     },
 
     toggle(): void {
+      const track = tracks[state.index];
+      // Pausing inside a gap is pausing: its timer stops with it and starts again in full when
+      // play resumes — a few seconds either way, and never a tape that moves on while paused.
+      if (track?.kind === "silence") {
+        if (gapTimer !== null) {
+          clearGap();
+          pausedAt = Date.now();
+          set({ pauseCount: state.pauseCount + 1, playing: false });
+        } else {
+          if (pausedAt !== null) set({ pausedMs: state.pausedMs + (Date.now() - pausedAt) });
+          pausedAt = null;
+          const index = state.index;
+          gapTimer = setTimeout(() => {
+            gapTimer = null;
+            void handOver(index);
+          }, track.ms);
+          set({ playing: true });
+        }
+        return;
+      }
       const el = elementFor(state.index);
       if (el.paused) {
         if (pausedAt !== null) set({ pausedMs: state.pausedMs + (Date.now() - pausedAt) });
@@ -232,13 +313,23 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
       }
     },
 
+    /** Podcast only (F13): start again at track `index` — how "next question" is done. */
+    async jumpTo(index: number): Promise<void> {
+      if (disposed || index < 0 || index >= tracks.length) return;
+      clearGap();
+      for (const el of els) el.pause();
+      await playFrom(index);
+    },
+
     stop(): void {
+      clearGap();
       for (const el of els) el.pause();
       set({ playing: false });
     },
 
     dispose(): void {
       disposed = true;
+      clearGap();
       for (const el of els) {
         el.pause();
         el.removeAttribute("src");
@@ -251,8 +342,8 @@ export function createMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeE
 
 // --- the one tape ------------------------------------------------------------------------------
 //
-// Exactly one mixed tape can be playing, so it lives here rather than inside a component. Owning
-// it per component meant React's StrictMode double-mount disposed the very tape it had just built
+// Exactly one tape can be playing, so it lives here rather than inside a component. Owning it per
+// component meant React's StrictMode double-mount disposed the very tape it had just built
 // (mount → effect → cleanup → effect, with the same object), and the sitting started silent with
 // no events at all. A module-level holder has no mount lifecycle to get wrong.
 
@@ -261,9 +352,9 @@ const holders = new Set<() => void>();
 const notifyHolders = () => holders.forEach((l) => l());
 
 /** Replaces whatever was playing and starts the new tape. Call it straight from the tap. */
-export async function startMixedTape(clips: readonly TopikClip[], onEvent?: (e: TapeEvent) => void, fromMs = 0): Promise<void> {
+export async function startMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: TapeEvent) => void, fromMs = 0): Promise<void> {
   current?.dispose();
-  current = createMixedTape(clips, onEvent);
+  current = createMixedTape(tracks, onEvent);
   // The new tape broadcasts through the module, not to whoever happened to be listening when it
   // was made: a screen subscribes on mount, long before the tape exists, so wiring it the other
   // way round left every later state change unheard and the clock frozen at zero.
@@ -283,6 +374,9 @@ export function disposeMixedTape(): void {
 }
 
 export const toggleMixedTape = () => current?.toggle();
+
+/** Jumps the one tape to a track (the podcast's "next question"). */
+export const jumpMixedTape = (index: number) => void current?.jumpTo(index);
 
 /** Subscribes to every change: the tape's own state, and the tape being replaced. */
 export function subscribeMixedTape(listener: () => void): () => void {

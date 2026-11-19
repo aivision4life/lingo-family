@@ -74,7 +74,7 @@ const likePattern = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
  * One definition for the three reads that have to agree about it: the session, the range preview
  * and the "kept for a mock test" count. `exam` narrows to one paper, absent means every paper.
  */
-const practisable = (section: TopikSection, exam?: string) =>
+export const practisable = (section: TopikSection, exam?: string) =>
   and(
     eq(topik_questions.section, section),
     eq(topik_questions.verified, true),
@@ -90,7 +90,7 @@ const practisable = (section: TopikSection, exam?: string) =>
  * Clips for a set of questions, in one query. Only the review screen and a practice session ever
  * need them, and both already have the rows in hand.
  */
-async function clipsBySegment(db: ReturnType<typeof getDb>, segmentIds: readonly string[]): Promise<Map<string, TopikClip>> {
+export async function clipsBySegment(db: ReturnType<typeof getDb>, segmentIds: readonly string[]): Promise<Map<string, TopikClip>> {
   const ids = [...new Set(segmentIds)];
   if (ids.length === 0) return new Map();
   const rows = await db

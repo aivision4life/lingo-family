@@ -1,13 +1,14 @@
 import { useEffect, useSyncExternalStore } from "react";
-import type { TopikClip } from "@shared/topik";
 import {
   disposeMixedTape,
+  jumpMixedTape,
   mixedTapeState,
   startMixedTape,
   stopMixedTape,
   subscribeMixedTape,
   toggleMixedTape,
   type TapeEvent,
+  type TapeTrack,
 } from "./mixedTape";
 
 /**
@@ -24,8 +25,10 @@ export function useMixedTape() {
     /** Must be called straight from the tap, so both `<audio>` elements unlock while it is live.
      * `fromMs` is where the exam clock says the tape should be — 0 at the start of a sitting, and
      * the time already gone when a reopened one is resumed (M7.13). */
-    start: (clips: readonly TopikClip[], onEvent?: (e: TapeEvent) => void, fromMs = 0) => startMixedTape(clips, onEvent, fromMs),
+    start: (tracks: readonly TapeTrack[], onEvent?: (e: TapeEvent) => void, fromMs = 0) => startMixedTape(tracks, onEvent, fromMs),
     toggle: toggleMixedTape,
+    /** Podcast only: start again at a given track, which is how "next question" works (F13). */
+    jumpTo: jumpMixedTape,
     stop: stopMixedTape,
   };
 }

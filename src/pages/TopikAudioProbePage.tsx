@@ -4,7 +4,7 @@ import { z } from "zod";
 import { topikClipSchema } from "@shared/topik";
 import { Button } from "@/components/ui/button";
 import { useActiveProfile } from "@/features/profiles/activeProfile";
-import type { TapeEvent } from "@/features/topik/mixedTape";
+import { clipTracks, type TapeEvent } from "@/features/topik/mixedTape";
 import { tapeLogLine } from "@/features/topik/tapeLog";
 import { useMixedTape } from "@/features/topik/useMixedTape";
 import { api } from "@/lib/api";
@@ -68,7 +68,7 @@ function TapeRunner({ clips }: { clips: ProbeClip[] }) {
 
       <div className="flex flex-wrap items-center gap-2">
         {/* Straight from the tap: both elements are unlocked while the gesture is still live. */}
-        <Button type="button" onClick={() => void tape.start(clips, note)}>
+        <Button type="button" onClick={() => void tape.start(clipTracks(clips), note)}>
           Bắt đầu
         </Button>
         <Button type="button" variant="outline" onClick={tape.toggle}>

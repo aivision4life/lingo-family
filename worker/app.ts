@@ -13,6 +13,7 @@ import { profileRoutes } from "./routes/profiles";
 import { pronRoutes, type MakePron } from "./routes/pron";
 import { reviewRoutes } from "./routes/review";
 import { topikRoutes } from "./routes/topik";
+import { topikPodcastRoutes } from "./routes/topikPodcast";
 import { topikTestRoutes } from "./routes/topikTests";
 import { defaultImageAi, wordRoutes, type MakeImageAi, type MakeLlm, type MakeTts } from "./routes/words";
 import { createLlmClient } from "./services/llm";
@@ -87,6 +88,7 @@ export function createApp({
   app.route("/", exampleRoutes(deps));
   app.route("/", topikRoutes(deps));
   app.route("/", topikTestRoutes());
+  app.route("/", topikPodcastRoutes());
   app.route("/", pronRoutes({ makePron }));
 
   app.notFound((c) => c.json({ error: "not_found" }, 404));

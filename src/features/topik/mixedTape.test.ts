@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TopikClip } from "@shared/topik";
-import { createMixedTape, type TapeEvent } from "./mixedTape";
+import { createMixedTape, type TapeEvent, type TapeTrack } from "./mixedTape";
 
 /**
  * A stand-in for `<audio>` that only does what the tape actually depends on: a source, a
@@ -58,7 +57,8 @@ class FakeAudio {
   }
 }
 
-const clip = (audio_key: string, lengthMs: number, silenceMs = 5_000): TopikClip => ({
+const clip = (audio_key: string, lengthMs: number, silenceMs = 5_000): TapeTrack => ({
+  kind: "clip",
   audio_key,
   start_ms: 0,
   speech_end_ms: lengthMs - silenceMs,
@@ -213,5 +213,105 @@ describe("mixed tape", () => {
     elements[1]!.arrive();
     await settle();
     expect(kinds(events)).not.toContain("switched");
+  });
+});
+
+/**
+ * The podcast's two new kinds of track (M8.1): a whole TTS file, whose length nobody knows until
+ * it loads, and the thinking gap, which is a timer and no audio at all.
+ */
+describe("podcast tracks", () => {
+  const file = (audio_key: string): TapeTrack => ({ kind: "file", audio_key });
+
+  async function tapeOn(tracks: TapeTrack[]) {
+    const events: TapeEvent[] = [];
+    const tape = createMixedTape(tracks, (e) => events.push(e));
+    const started = tape.start();
+    await settle();
+    elements[0]!.arrive();
+    await started;
+    await settle();
+    return { tape, events };
+  }
+
+  it("hands over at the end of a whole file, not at a timestamp", async () => {
+    const { tape, events } = await tapeOn([file("q4-line.mp3"), file("q4-options.mp3")]);
+    elements[1]!.arrive();
+    await settle();
+    // Half way through says nothing: the file decides when it is over.
+    elements[0]!.currentTime = 3;
+    elements[0]!.fire("timeupdate");
+    await settle();
+    expect(kinds(events)).not.toContain("switched");
+
+    elements[0]!.fire("ended");
+    await settle();
+    expect(tape.getState().index).toBe(1);
+  });
+
+  it("keeps the thinking gap itself, with no file to play", async () => {
+    vi.useFakeTimers();
+    try {
+      const tape = createMixedTape([file("options.mp3"), { kind: "silence", ms: 5_000 }, file("answer.mp3")]);
+      const started = tape.start();
+      await vi.advanceTimersByTimeAsync(0);
+      elements[0]!.arrive();
+      await started;
+
+      elements[0]!.fire("ended");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(tape.getState().index).toBe(1);
+      expect(tape.getState().playing).toBe(true);
+      // The answer is loading during the gap, on the element the options have finished with.
+      elements[0]!.arrive();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Four seconds in, the gap is still a gap.
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(tape.getState().index).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(tape.getState().index).toBe(2);
+      // The gap plays on neither element: still just the two.
+      expect(elements).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the gap when the tape is paused, instead of moving on while silent", async () => {
+    vi.useFakeTimers();
+    try {
+      const tape = createMixedTape([file("options.mp3"), { kind: "silence", ms: 5_000 }, file("answer.mp3")]);
+      const started = tape.start();
+      await vi.advanceTimersByTimeAsync(0);
+      elements[0]!.arrive();
+      await started;
+      elements[0]!.fire("ended");
+      await vi.advanceTimersByTimeAsync(0);
+      elements[0]!.arrive();
+
+      tape.toggle();
+      expect(tape.getState().playing).toBe(false);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(tape.getState().index).toBe(1);
+
+      tape.toggle();
+      await vi.advanceTimersByTimeAsync(5_100);
+      expect(tape.getState().index).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("jumps to a later track, which is how the next question is reached", async () => {
+    const { tape } = await tapeOn([file("a.mp3"), { kind: "silence", ms: 5_000 }, file("b.mp3"), file("c.mp3")]);
+    const jumped = tape.jumpTo(2);
+    await settle();
+    elements[0]!.arrive();
+    await jumped;
+    await settle();
+    expect(tape.getState().index).toBe(2);
+    expect(tape.getState().playing).toBe(true);
   });
 });

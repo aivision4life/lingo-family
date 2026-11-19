@@ -28,6 +28,7 @@
     "topik-groups": "node benchmarks/run.mjs scripts/topikGroups/run.ts",
     "topik-words": "node benchmarks/run.mjs scripts/topikWords/run.ts",
     "topik-explain": "node benchmarks/run.mjs scripts/topikExplain/run.ts",
+    "topik-podcast-tts": "node benchmarks/run.mjs scripts/topikPodcast/run.ts",
     "pron-probe": "node benchmarks/run.mjs scripts/pronProbe/run.ts"
   },
   "dependencies": {

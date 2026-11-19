@@ -484,6 +484,39 @@ Stitching clips from several files into one continuous tape is **the mixed mock 
 
 About **210 characters of TTS per question** (question line + four options + the announcement), × ~400 questions ≈ **84,000 characters, once**. Azure's F0 tier allows 500,000 characters a month, so the whole bank fits inside one month's free allowance with room to spare, and nothing is regenerated afterwards: audio is stored in R2 under a content key, exactly like the word/phrase TTS (§7).
 
+#### Quyết định bổ sung khi làm M8.1
+
+- **Câu chưa làm vẫn để dành cho thi thử (M7.27).** Podcast **đọc to đáp án**, nên luật đó ở đây
+  còn nặng hơn ở ôn tập: chọn "tất cả các đề" (và mọi khoảng câu trong phạm vi đó) **bỏ** câu hồ sơ
+  này chưa làm, dùng đúng `answeredQuestionIds` + `splitReservedForTests`, không có định nghĩa thứ
+  hai; màn chọn ghi rõ "bỏ N câu đang dành cho thi thử". Chọn **một đề cụ thể** vẫn có đủ câu, y
+  như ở ôn tập.
+- **Một cuốn băng, ba loại đoạn.** `src/features/topik/mixedTape.ts` (player hai `<audio>` luân
+  phiên của M6.5) nay nhận `TapeTrack`: `clip` (chuyển đoạn tại `end_ms`, như cũ), `file` (một file
+  TTS trọn vẹn — không ai biết dài bao nhiêu trước khi tải, nên chuyển tại sự kiện `ended`) và
+  `silence` (khoảng nghỉ, chỉ là một hẹn giờ). Không có player thứ hai. Khoảng nghỉ **không** phải
+  audio: nếu nó là file thì ngày M8.3 cho đổi 3/5/8 giây sẽ phải sinh lại toàn bộ.
+- **Bốn file TTS mỗi câu, và chúng dùng chung được.** Số câu ("4번."), dòng hỏi (bỏ "[4~8]" và
+  "(각 2점)" — thứ chỉ in cho mắt đọc), bốn đáp án trong một file, và "정답은 N번" + đáp án đúng đọc
+  hai lần. Khoá R2 là hash của chính câu chữ (`audioKey`, như TTS từ vựng), nên số câu và dòng hỏi
+  được mọi đề dùng lại: kho thật là **850 file / 61.748 ký tự** cho 376 câu, thay vì 75.500 nếu gộp
+  số câu vào dòng hỏi. Không bao giờ sinh lại.
+- **Sinh trước bằng script, không sinh lúc phát** (`npm run topik-podcast-tts`, dry run mặc định,
+  `--apply`). Trong lúc phát không được chờ Azure, và hạn mức 200 TTS/ngày của `usage_daily` là để
+  chặn *hành động học*, không phải việc dựng nội dung — script chạy ngoài Worker nên không đụng tới
+  nó, như mọi script nội dung khác. Script **không ghi D1**: khoá là hash, không có gì để lưu, không
+  migration.
+- **Manifest thay cho việc hỏi R2 từng khoá.** Script ghi `podcast/tts-manifest.json` (danh sách
+  khoá đã có); server đọc **một** object đó để biết câu nào phát được. Hỏi `head` từng khoá là ~110
+  subrequest cho một đề 50 câu, trong khi gói free chỉ cho 50 subrequest mỗi request. Câu thiếu file
+  bị bỏ và nói rõ, không bao giờ phát nửa câu.
+- **Chưa có bảng `topik_podcast_plays`.** M8.1 chọn theo đề hoặc theo khoảng câu, cả hai không cần
+  biết đã nghe gì; dấu "đã nghe" để cùng M8.3 (chọn theo thời lượng / câu hay sai), nơi nó mới có
+  tác dụng. Không bảng mới, không migration.
+- **Lối vào ở Trang chủ** (`/topik/podcast`), cạnh các lối vào học khác: podcast là cách dùng những
+  giờ vốn đã mất, không phải một nhánh của màn chọn đề TOPIK. Hồ sơ trẻ em bị chặn như mọi màn
+  TOPIK II khác.
+
 #### Phases
 
 - **M8.1 — core, online, fixed gap.** The sequence above, selection by range and by paper, a plain screen with play/pause/next. Proves the shape; no Media Session, no offline, no explanation.
@@ -704,7 +737,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M7.30 | Chỉ báo "câu mới / đã làm" trong thi thử | "Câu mới" hoặc "2/4" cho mỗi câu, một định nghĩa "đã làm" dùng chung (M7.27 mở rộng), đóng băng tại lúc bắt đầu lượt thi; màn kết quả thêm dòng tổng câu mới / câu đã làm; server tính, không migration | [x] |
 | M7.29 | Lịch sử thi thử | `/topik/tests/history`: mọi lượt đã nộp của hồ sơ, mới nhất trên cùng, lọc theo Nghe/Đọc, bấm một dòng mở lại màn kết quả; biểu đồ % theo thời gian cho từng phần, đề gốc và đề trộn hai màu, vẽ bằng SVG tay (không thêm thư viện); không bảng mới, không migration | [x] |
 | M7.19 | A practice session survives being interrupted | Place, answers and marked words kept on the device; restored only onto the same block within 3 hours, and a finished session with words still waiting reopens its results screen | [x] |
-| M8.1 | TOPIK listening podcast: core | F13 — question number → question line → clip → options → gap → answer in Korean, spoken twice; selection by range/paper; online, fixed gap | [ ] |
+| M8.1 | TOPIK listening podcast: core | F13 — question number → question line → clip → options → gap → answer in Korean, spoken twice; selection by range/paper; online, fixed gap 5 s; câu chưa làm vẫn để dành cho thi thử (M7.27); TTS sinh trước bằng `npm run topik-podcast-tts` | [x] |
 | M8.2 | TOPIK listening podcast: hands-free | Media Session (lock screen + car Bluetooth), audio focus, Previous = replay this question, offline download | [ ] |
 | M8.3 | TOPIK listening podcast: smart selection | By duration (30/60 min), "câu tôi hay sai" from `topik_attempts`, Vietnamese explanation, longer gap for questions 21-50 | [ ] |
 

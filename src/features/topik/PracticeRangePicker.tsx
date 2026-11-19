@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TopikSection } from "@shared/enums";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useTopikPracticeRange } from "./api";
+import { RangeInputs } from "./RangeInputs";
 
 /**
  * Practising a range of question numbers the learner typed, rather than a listed block (M7.24).
@@ -34,13 +34,10 @@ export function PracticeRangePicker({
   onStart: (range: { from: number; to: number }) => void;
 }) {
   const { t } = useTranslation();
-  // Kept as text so a half-typed number does not jump about under the thumb (same as the sitting
-  // picker, same reason).
-  const [fromText, setFromText] = useState("1");
-  const [toText, setToText] = useState(String(Math.max(1, maxNumber)));
-  const from = Number(fromText);
-  const to = Number(toText);
-  const valid = Number.isInteger(from) && Number.isInteger(to) && from >= 1 && to >= from;
+  // The boxes themselves are the shared ones (M8.1 gave the podcast the same picker); what the
+  // range *means* stays here, because it means something else on every screen that asks for one.
+  const [range_, setRange] = useState({ from: 1, to: Math.max(1, maxNumber), valid: true });
+  const { from, to, valid } = range_;
   const preview = useTopikPracticeRange(profileId, section, exam, from, to, valid);
   const range = preview.data ?? null;
   const empty = range !== null && range.question_count === 0;
@@ -56,30 +53,7 @@ export function PracticeRangePicker({
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-sm">
-          {t("topik.picker.rangeFrom")}
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={maxNumber}
-            value={fromText}
-            onChange={(e) => setFromText(e.target.value)}
-            className="w-24"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          {t("topik.picker.rangeTo")}
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={maxNumber}
-            value={toText}
-            onChange={(e) => setToText(e.target.value)}
-            className="w-24"
-          />
-        </label>
+        <RangeInputs maxNumber={maxNumber} value={range_} onChange={setRange} />
         <Button
           type="button"
           disabled={!valid || empty || reservedOnly || range === null}

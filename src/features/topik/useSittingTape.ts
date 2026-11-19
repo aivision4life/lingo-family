@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { TopikTestRun } from "@shared/topik";
 import { mixedTimeline, stitchedPosition } from "./mixedTimeline";
-import type { TapeEvent } from "./mixedTape";
+import { clipTracks, type TapeEvent } from "./mixedTape";
 import { tapeLogLine } from "./tapeLog";
 import { isFinished, type TestPosition } from "./testClock";
 import { useMixedTape } from "./useMixedTape";
@@ -77,7 +77,7 @@ export function useSittingTape(test: TopikTestRun, clock: SittingClock): Sitting
   const playTape = (fromMs: number) => {
     setRolling(true);
     if (reading) return;
-    if (mixed) void multi.start(timeline.clips, note, fromMs);
+    if (mixed) void multi.start(clipTracks(timeline.clips), note, fromMs);
     else single.playFrom(fromMs);
   };
 

@@ -58,6 +58,12 @@ export const router = createBrowserRouter([
           // installed PWA from the previous deploy asks for a chunk name that no longer exists.
           { path: "topik/manage", lazy: () => importChunk(async () => ({ Component: (await import("@/pages/TopikManagePage")).TopikManagePage })) },
           { path: "topik/tests", element: <TopikTestPickerPage /> },
+          // Loaded on demand like the other screens opened now and then: the entry chunk is near
+          // its ceiling (`scripts/viteGuards/buildIntegrity.ts`).
+          {
+            path: "topik/podcast",
+            lazy: () => importChunk(async () => ({ Component: (await import("@/pages/TopikPodcastPage")).TopikPodcastPage })),
+          },
           // Static, so it is ranked above "topik/tests/:id" and never read as a test id.
           // Loaded on demand: it is opened now and then, and the entry chunk is near its ceiling
           // (`scripts/viteGuards/buildIntegrity.ts`).

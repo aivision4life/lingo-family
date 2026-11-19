@@ -99,7 +99,8 @@
       "title": "Home",
       "startReview": "Start review",
       "practiceSpeaking": "Practice speaking",
-      "stats": "Stats"
+      "stats": "Stats",
+      "podcast": "TOPIK listening podcast"
     },
     "review": {
       "title": "Review",
@@ -919,6 +920,39 @@
       "rangeByExam": "By paper: {{list}}"
     },
     "blockSize": "{{total}} questions",
-    "blockAllKnown": "all known"
+    "blockAllKnown": "all known",
+    "podcast": {
+      "title": "TOPIK listening podcast",
+      "intro": "Study with your ears while your hands and eyes are busy: the question number, the question line, the exam's own recording, the four options, a gap to think, then the answer read twice.",
+      "firstThree": "Questions 1-3 of every paper answer with pictures, so they are not in the podcast.",
+      "paperTitle": "Choose a paper",
+      "allPapers": "Every paper",
+      "allPapersHint": "Across every paper, questions you have never answered are kept for a mock test — choose one paper to hear new questions too.",
+      "rangeHint": "Pick the question numbers to listen to, for example 21 to 30.",
+      "start": "Play podcast",
+      "count": "This podcast has {{count}} question(s).",
+      "widened": "Widened to questions {{from}}-{{to}} so a group sharing one recording is not cut in half.",
+      "skippedPictures": "{{count}} question(s) left out: their options are pictures and cannot be read.",
+      "skippedNoClip": "{{count}} question(s) left out: no original clip.",
+      "skippedReserved": "{{count}} question(s) left out, kept for a mock test — choose one paper to hear them.",
+      "skippedNoTts": "{{count}} question(s) left out: their speech has not been generated yet (npm run topik-podcast-tts -- --apply).",
+      "progress": "Question {{current}}/{{total}}",
+      "questionNumber": "Question {{n}}",
+      "buffering": "Loading the next piece…",
+      "play": "Play",
+      "pause": "Pause",
+      "resume": "Resume",
+      "next": "Next question",
+      "change": "Change selection",
+      "finished": "End of the podcast.",
+      "step": {
+        "number": "Reading the question number",
+        "question": "Reading the question line",
+        "clip": "Playing the original recording",
+        "options": "Reading the four options",
+        "gap": "A gap to think",
+        "answer": "Reading the correct answer"
+      }
+    }
   }
 }
