@@ -43,8 +43,8 @@ beforeEach(async () => {
 });
 
 describe("enrich with retries and the fallback model", () => {
-  it("busy primary → fallback answers: one quota unit, cache records the fallback model", async () => {
-    status = { main: 503, backup: 200 };
+  it("busy primary (500) → retries, then the fallback answers: one quota unit, cache records the fallback model", async () => {
+    status = { main: 500, backup: 200 };
     const res = await enrich("학생");
     expect(res.status).toBe(200);
     expect(calls).toEqual(["main", "main", "main", "main", "backup"]);
@@ -57,11 +57,11 @@ describe("enrich with retries and the fallback model", () => {
     expect(calls).toHaveLength(5);
   });
 
-  // Out of quota is not "busy": no retry of the primary, straight to the fallback, and the next
-  // request does not even ask the primary (2026-11-15; this test used to be part of the one below,
-  // which retried a 429 like any other transient error).
-  it("primary out of quota (429) → the fallback answers at once, and the primary is skipped next time", async () => {
-    status = { main: 429, backup: 200 };
+  // 429 (out of quota) and 503 (out of capacity) are not "busy": no retry of the primary, straight
+  // to the fallback, and the next request does not even ask the primary (2026-11-15 for 429;
+  // 2026-11-19 for 503, which until then was retried like any other transient error).
+  it.each([429, 503])("primary answers %i → the fallback answers at once, and the primary is skipped next time", async (code) => {
+    status = { main: code, backup: 200 };
     expect((await enrich("학년")).status).toBe(200);
     expect(calls).toEqual(["main", "backup"]);
     expect(await one<{ count: number }>("SELECT count FROM usage_daily WHERE service = 'llm'")).toEqual({ count: 1 });
@@ -73,7 +73,7 @@ describe("enrich with retries and the fallback model", () => {
 
   it("primary recovers after a retry: the primary model is recorded", async () => {
     let n = 0;
-    status = new Proxy({} as Record<string, number>, { get: (_, m) => (m === "main" ? (n++ === 0 ? 503 : 200) : 404) });
+    status = new Proxy({} as Record<string, number>, { get: (_, m) => (m === "main" ? (n++ === 0 ? 500 : 200) : 404) });
     expect((await enrich("학교")).status).toBe(200);
     expect(await one<{ model: string }>("SELECT model FROM ai_cache")).toEqual({ model: "main" });
     expect(await one<{ count: number }>("SELECT count FROM usage_daily WHERE service = 'llm'")).toEqual({ count: 1 });

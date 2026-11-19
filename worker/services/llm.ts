@@ -3,7 +3,10 @@
 import { z } from "zod";
 import { AttemptError, RETRYABLE_STATUS, retryAfterMs, runWithRetry, type RetryOptions } from "./llmRetry";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+// M7.x (2026-11-19): was gemini-3.8-flash, which answered 429 and then 503 for days on end and
+// produced 1 of the 256 cached results between 2026-11-15 and 2026-11-19. The former fallback is
+// now the primary; gemini-3.5-flash is the one that still answers when it is busy.
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 /**
  * unavailable = busy/overloaded after all retries (try again later);

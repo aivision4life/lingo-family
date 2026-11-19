@@ -65,8 +65,8 @@ describe("createLlmClient", () => {
     expect(createLlmClient({ LLM_API_KEY: "k", LLM_PROVIDER: "other" })).toBeNull();
   });
 
-  it("defaults to Gemini and gemini-3.8-flash", () => {
-    expect(createLlmClient({ LLM_API_KEY: "k" })?.model).toBe("gemini-3.8-flash");
+  it("defaults to Gemini and gemini-3.5-flash-lite", () => {
+    expect(createLlmClient({ LLM_API_KEY: "k" })?.model).toBe("gemini-3.5-flash-lite");
     expect(createLlmClient({ LLM_API_KEY: "k", LLM_MODEL: "gemini-x" })?.model).toBe("gemini-x");
   });
 
@@ -143,7 +143,7 @@ describe("Gemini HTTP errors", () => {
 
     const err = await client.generate({ system: "s", user: "u", jsonSchema: {} }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LlmError);
-    expect((err as LlmError).message).toBe("Gemini HTTP 400 (gemini-3.8-flash): INVALID_ARGUMENT: bad request");
+    expect((err as LlmError).message).toBe("Gemini HTTP 400 (gemini-3.5-flash-lite): INVALID_ARGUMENT: bad request");
     expect(seen[0]!.key).toBe("SECRET-KEY-123");
     expect(seen[0]!.url).not.toContain("SECRET-KEY-123");
     expect(seen[0]!.url).not.toContain("key=");

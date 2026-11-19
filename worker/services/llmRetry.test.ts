@@ -46,23 +46,23 @@ function client(steps: Record<string, Step[]>, fallback?: string, random = 0.5) 
 const fail = (p: Promise<unknown>) => p.then(() => { throw new Error("expected failure"); }, (e: unknown) => e as LlmError);
 
 describe("LLM retry", () => {
-  it("retries 503 / 500 with exponential backoff (1s, 3s, 9s) and returns the answer", async () => {
-    const { llm, calls, sleeps } = client({ main: [503, 500, 503, 200] });
+  it("retries 500 with exponential backoff (1s, 3s, 9s) and returns the answer", async () => {
+    const { llm, calls, sleeps } = client({ main: [500, 500, 500, 200] });
     expect(await llm.generate(req)).toEqual({ text: "ok from main", model: "main" });
     expect(calls).toEqual(["main", "main", "main", "main"]);
     expect(sleeps).toEqual([1000, 3000, 9000]);
   });
 
   it("adds ±25 % jitter to each wait", async () => {
-    const low = client({ main: [503, 200] }, undefined, 0);
+    const low = client({ main: [500, 200] }, undefined, 0);
     await low.llm.generate(req);
-    const high = client({ main: [503, 200] }, undefined, 1);
+    const high = client({ main: [500, 200] }, undefined, 1);
     await high.llm.generate(req);
     expect([low.sleeps[0], high.sleeps[0]]).toEqual([750, 1250]);
   });
 
   it("retries network errors and honours Retry-After when it is longer", async () => {
-    const { llm, sleeps } = client({ main: ["network", { status: 503, retryAfter: "5" }, 200] });
+    const { llm, sleeps } = client({ main: ["network", { status: 500, retryAfter: "5" }, 200] });
     expect((await llm.generate(req)).model).toBe("main");
     expect(sleeps).toEqual([1000, 5000]);
   });
@@ -77,7 +77,7 @@ describe("LLM retry", () => {
   });
 
   it("gives up after 3 retries without a fallback model: unavailable", async () => {
-    const { llm, calls } = client({ main: [503] });
+    const { llm, calls } = client({ main: [500] });
     const err = await fail(llm.generate(req));
     expect(err.code).toBe("unavailable");
     expect(calls).toHaveLength(4);
@@ -87,13 +87,13 @@ describe("LLM retry", () => {
 
 describe("LLM fallback model", () => {
   it("tries the fallback once after the retries and reports which model answered", async () => {
-    const { llm, calls } = client({ main: [503], backup: [200] }, "backup");
+    const { llm, calls } = client({ main: [500], backup: [200] }, "backup");
     expect(await llm.generate(req)).toEqual({ text: "ok from backup", model: "backup" });
     expect(calls).toEqual(["main", "main", "main", "main", "backup"]);
   });
 
   it("fails as unavailable when the fallback is busy too (one fallback attempt only)", async () => {
-    const { llm, calls } = client({ main: [503], backup: [503] }, "backup");
+    const { llm, calls } = client({ main: [500], backup: [500] }, "backup");
     expect((await fail(llm.generate(req))).code).toBe("unavailable");
     expect(calls.filter((m) => m === "backup")).toHaveLength(1);
   });
@@ -105,31 +105,33 @@ describe("LLM fallback model", () => {
   });
 
   it("ignores a fallback equal to the primary model", async () => {
-    const { llm, calls } = client({ main: [503] }, "main");
+    const { llm, calls } = client({ main: [500] }, "main");
     await fail(llm.generate(req));
     expect(calls).toHaveLength(4);
   });
 });
 
-// 429 = out of quota. Asking the same model again a few seconds later cannot help; production paid
-// four calls and ~13 s for every result that way (2026-11-15: 31 calls, 31 answers of 429).
-describe("out of quota (429)", () => {
+// 429 = out of quota, 503 = out of capacity ("this model is currently experiencing high demand").
+// Asking the same model again a few seconds later cannot help either way; production paid four
+// calls and ~13 s for every result that way (2026-11-15: 31 calls, 31 answers of 429; 2026-11-19:
+// the primary answers 503 instead, and had produced 1 of 256 cached results since 2026-11-15).
+describe.each([429, 503])("the primary has nothing for us (HTTP %i)", (status) => {
   it("goes straight to the fallback: no retry of the primary, no wait", async () => {
-    const { llm, calls, sleeps } = client({ main: [429], backup: [200] }, "backup");
+    const { llm, calls, sleeps } = client({ main: [status], backup: [200] }, "backup");
     expect(await llm.generate(req)).toEqual({ text: "ok from backup", model: "backup" });
     expect(calls).toEqual(["main", "backup"]);
     expect(sleeps).toEqual([]);
   });
 
-  it("stops retrying as soon as a retry is answered with 429", async () => {
-    const { llm, calls, sleeps } = client({ main: [503, 429], backup: [200] }, "backup");
+  it("stops retrying as soon as a retry is answered that way", async () => {
+    const { llm, calls, sleeps } = client({ main: [500, status], backup: [200] }, "backup");
     expect((await llm.generate(req)).model).toBe("backup");
     expect(calls).toEqual(["main", "main", "backup"]);
     expect(sleeps).toEqual([1000]);
   });
 
   it("leaves the primary alone for 10 minutes, then asks it again", async () => {
-    const { llm, calls, clock } = client({ main: [429, 200], backup: [200] }, "backup");
+    const { llm, calls, clock } = client({ main: [status, 200], backup: [200] }, "backup");
     await llm.generate(req);
     expect(calls).toEqual(["main", "backup"]);
 
@@ -143,7 +145,7 @@ describe("out of quota (429)", () => {
   });
 
   it("reports the fallback's own failure while the primary is being skipped", async () => {
-    const { llm, calls } = client({ main: [429], backup: [200, 503] }, "backup");
+    const { llm, calls } = client({ main: [status], backup: [200, 500] }, "backup");
     await llm.generate(req);
     const err = await fail(llm.generate(req));
     expect(err.code).toBe("unavailable");
@@ -152,7 +154,7 @@ describe("out of quota (429)", () => {
   });
 
   it("without a fallback it fails at once as unavailable, and the primary is still asked next time", async () => {
-    const { llm, calls, sleeps } = client({ main: [429] });
+    const { llm, calls, sleeps } = client({ main: [status] });
     expect((await fail(llm.generate(req))).code).toBe("unavailable");
     expect(calls).toEqual(["main"]);
     expect(sleeps).toEqual([]);
@@ -161,7 +163,7 @@ describe("out of quota (429)", () => {
   });
 
   it("the flag can be cleared (tests), and belongs to one model", async () => {
-    const first = client({ main: [429, 200], backup: [200] }, "backup");
+    const first = client({ main: [status, 200], backup: [200] }, "backup");
     await first.llm.generate(req);
     resetModelExhausted();
     expect((await first.llm.generate(req)).model).toBe("main");

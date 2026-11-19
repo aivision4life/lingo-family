@@ -169,7 +169,7 @@ describe("GET /api/usage", () => {
     const llmLast = async () => usageSchema.parse((await t.api("GET", `/usage?profile_id=${adult}`)).body).llm_last;
     const put = (key: string, model: string, at: number) =>
       t.env.DB.prepare("INSERT INTO ai_cache (key, response_json, model, created_at) VALUES (?, '{}', ?, ?)").bind(key, model, at).run();
-    const primary = t.env.LLM_MODEL?.trim() || "gemini-3.8-flash";
+    const primary = t.env.LLM_MODEL?.trim() || "gemini-3.5-flash-lite";
     await t.env.DB.prepare("DELETE FROM ai_cache").run();
 
     expect(await llmLast()).toBeNull();

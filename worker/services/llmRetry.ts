@@ -1,7 +1,8 @@
 // Retry + fallback around single LLM attempts (provider-independent, unit-tested with a mock fetch).
-// Transient failures (500/503, network errors, timeouts) are retried with exponential backoff and
-// jitter; then the fallback model gets one attempt. Out of quota (429) is never retried: it goes
-// straight to the fallback and the primary is left alone for a while. Other HTTP errors fail at once.
+// Transient failures (500, network errors, timeouts) are retried with exponential backoff and
+// jitter; then the fallback model gets one attempt. Out of quota (429) and out of capacity (503)
+// are never retried: they go straight to the fallback and the primary is left alone for a while.
+// Other HTTP errors fail at once.
 
 /** One failed attempt. `retryable` = worth waiting and trying again. */
 export class AttemptError extends Error {
@@ -20,7 +21,8 @@ export class AttemptError extends Error {
 export const RETRYABLE_STATUS = new Set([429, 500, 503]);
 
 /**
- * Out of quota (Google: RESOURCE_EXHAUSTED). Still "retryable" in the sense that the caller is told
+ * Out of quota (Google: RESOURCE_EXHAUSTED) or out of capacity (Google: UNAVAILABLE, "this model is
+ * currently experiencing high demand"). Still "retryable" in the sense that the caller is told
  * "busy, try later" rather than "your request is wrong" — but waiting a few seconds and asking the
  * same model again cannot help, and that is what the retries used to do.
  *
@@ -30,11 +32,17 @@ export const RETRYABLE_STATUS = new Set([429, 500, 503]);
  * vocabulary and then its explanation took 27-33 s, and the Worker cancels background work at 30.
  * Since 2026-11-01 the fallback had answered 326 of 330 cached results, and only 21 % of the
  * explanation attempts made in a session produced one.
+ *
+ * Measured again on production, 2026-11-19: the primary model had produced 1 of the 256 cached
+ * results since 2026-11-15, and a single hand-made call to it answered 503 UNAVAILABLE, not 429.
+ * 503 was still "retry three times" here, so every generation paid ~13 s of backoff before the
+ * fallback was asked — and the Worker cancels background work at 30 s. Both statuses now mean the
+ * same thing: this model has nothing for us right now, go elsewhere and leave it alone for a while.
  */
-export const QUOTA_STATUS = 429;
+export const EXHAUSTED_STATUS = new Set([429, 503]);
 
 /**
- * After a 429 the primary model is not asked again for this long (same idea as M2.9's
+ * After a 429 or a 503 the primary model is not asked again for this long (same idea as M2.9's
  * `isProviderExhausted` for Workers AI). Per isolate and not durable, which is enough: the
  * provider's own answer stays the source of truth, this only stops paying for the same "no".
  * Only applies when there is a fallback to go to; without one the primary is always asked.
@@ -91,14 +99,16 @@ export async function runWithRetry(primary: string, fallback: string | null, att
     }
   };
 
-  const outOfQuota = (r: RetryOutcome) => !r.ok && r.error.status === QUOTA_STATUS;
+  // 429 / 503: no point retrying the same model. Other retryable failures (500, network, timeout)
+  // are transient in a way a short wait can fix, so they keep their retries.
+  const isExhausted = (r: RetryOutcome) => !r.ok && r.error.status !== null && EXHAUSTED_STATUS.has(r.error.status);
 
-  // null = the primary was not asked at all: it said "out of quota" a moment ago.
+  // null = the primary was not asked at all: it said "no" (429/503) a moment ago.
   let result: RetryOutcome | null = null;
   if (!(fallback && isModelExhausted(primary, now()))) {
     result = await once(primary);
     for (const base of delays) {
-      if (result.ok || !result.error.retryable || outOfQuota(result)) break;
+      if (result.ok || !result.error.retryable || isExhausted(result)) break;
       const jittered = base * (0.75 + 0.5 * random());
       const hinted = Math.min(result.error.retryAfterMs ?? 0, MAX_RETRY_AFTER_MS);
       const wait = Math.round(Math.max(jittered, hinted));
@@ -107,10 +117,10 @@ export async function runWithRetry(primary: string, fallback: string | null, att
       result = await once(primary);
     }
     if (result.ok) return result;
-    if (outOfQuota(result)) markModelExhausted(primary, now());
+    if (isExhausted(result)) markModelExhausted(primary, now());
   }
 
-  // The fallback gets one try when the primary is overloaded, out of quota or skipped (or the
+  // The fallback gets one try when the primary is overloaded, out of quota/capacity or skipped (or the
   // model id is unknown).
   if (fallback && (result === null || result.error.retryable || result.error.status === 404) && deadline - now() > 0) {
     const second = await once(fallback);

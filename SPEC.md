@@ -309,7 +309,7 @@ Decisions (M3.1, 2026-11-16):
 - [~] All AI output is cached in the database. The same request is never paid for twice. (M1.2: enrichment cached; "Explain" comes with P1.)
 
 Decisions (M1.2):
-- Provider: **Gemini** (`LLM_PROVIDER=gemini`), default model **`gemini-3.8-flash`** (override with `LLM_MODEL`). The LLM client is behind an interface so Claude can be added later.
+- Provider: **Gemini** (`LLM_PROVIDER=gemini`), default model **`gemini-3.5-flash-lite`** (override with `LLM_MODEL`), fallback `gemini-3.5-flash` (`LLM_FALLBACK_MODEL`). The LLM client is behind an interface so Claude can be added later.
 - Example level is chosen on the Add word screen: kid / beginner / intermediate (workplace/IT allowed). Default: kid for kid profiles, beginner for adults. The level is part of the cache key.
 - Cache key = hash of task + prompt version + model + language + term + level. Only valid (schema-checked) output is cached. The prompt version is bumped when phrases and image prompts are added, so old cache entries are not reused.
 - Daily quota: **50 LLM calls per profile per day** (`usage_daily`, service `llm`). Cache hits do not count.
@@ -703,7 +703,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 
 ## 10. Open questions
 
-- ~~Which LLM provider to use as default (Gemini free tier vs Claude)?~~ **Decided (M1.2):** Gemini, model `gemini-3.8-flash` by default; switchable by `LLM_PROVIDER` / `LLM_MODEL`.
+- ~~Which LLM provider to use as default (Gemini free tier vs Claude)?~~ **Decided (M1.2):** Gemini, model `gemini-3.8-flash` by default; switchable by `LLM_PROVIDER` / `LLM_MODEL`. **Revised 2026-11-19:** `gemini-3.8-flash` has no free-tier capacity left (429, then 503), so `gemini-3.5-flash-lite` is the primary and `gemini-3.5-flash` the fallback.
 - Is the Hán-Việt quality from the LLM good enough, or should we import an open Hán-Việt dictionary dataset?
 - Should kids' profiles get an English or a Korean UI by default?
 - **Backlog:** a reading for example sentences (romanization for Korean, IPA for English) shown in the Focus view. Needs the enrichment prompt / schema to return it (bump the prompt version) and a way to fill sentences saved before.
