@@ -7,11 +7,17 @@ export const AVATARS = [
   "🦁", "🐧", "🐳", "🦄", "🐙", "🐝", "🌻", "🚀",
 ] as const;
 
-/** The review card types a profile can switch off (M6.6); `speaking` is not a review type yet (M3). */
-export const REVIEW_CARD_TYPES = ["recognition", "picture", "listening"] as const satisfies readonly CardType[];
+/** The review card types a profile can switch off (M6.6); `speaking` joined them in M3.3. */
+export const REVIEW_CARD_TYPES = ["recognition", "picture", "listening", "speaking"] as const satisfies readonly CardType[];
 export type ReviewCardType = (typeof REVIEW_CARD_TYPES)[number];
-/** What every profile did before the setting existed, and what a new one starts with. */
-export const DEFAULT_CARD_TYPES: ReviewCardType[] = [...REVIEW_CARD_TYPES];
+/**
+ * What every profile did before the setting existed, and what a new one starts with.
+ *
+ * `speaking` is deliberately **not** in it (M3.3): every speaking review is one uncacheable paid
+ * Azure call, so it is switched on per profile, by hand. Profiles that already exist keep the
+ * three types stored on them and are not touched either — nothing here rewrites a stored value.
+ */
+export const DEFAULT_CARD_TYPES: ReviewCardType[] = ["recognition", "picture", "listening"];
 
 export const PIN_LENGTH = 4;
 export const DAILY_NEW_LIMIT_MAX = 100;

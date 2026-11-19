@@ -63,9 +63,13 @@ beforeEach(async () => {
 });
 
 describe("cards and queue", () => {
-  it("creates recognition + listening cards for studied languages only", async () => {
-    expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 2, by_type: { recognition: 2, picture: 0, listening: 0 }, albums: [] }]);
-    expect(await cardCount(bo)).toBe(6); // 3 Korean words × 2 types, no English cards
+  it("creates recognition + listening + speaking cards for studied languages only", async () => {
+    expect(await summary(bo)).toEqual([
+      { lang: "ko", due: 0, new: 2, by_type: { recognition: 2, picture: 0, listening: 0, speaking: 0 }, albums: [] },
+    ]);
+    // Speaking cards exist for everyone from M3.3 and are simply not offered: the type is off by
+    // default, so the counts above are unchanged.
+    expect(await cardCount(bo)).toBe(9); // 3 Korean words × 3 types, no English cards
   });
 
   it("queue = new recognition cards up to the daily limit; listening waits", async () => {
@@ -90,7 +94,9 @@ describe("cards and queue", () => {
     const kinds = items.map((i) => `${i.word.term}/${i.card.card_type}`);
     // Learning card due in 10 min (learn-ahead), listening of 학생 unlocked, 1 new recognition left today.
     expect(kinds).toEqual(["학생/recognition", "학생/listening", "학교/recognition"]);
-    expect(await summary(bo)).toEqual([{ lang: "ko", due: 1, new: 2, by_type: { recognition: 2, picture: 0, listening: 1 }, albums: [] }]);
+    expect(await summary(bo)).toEqual([
+      { lang: "ko", due: 1, new: 2, by_type: { recognition: 2, picture: 0, listening: 1, speaking: 0 }, albums: [] },
+    ]);
   });
 
   it("daily_new_limit applies per language", async () => {
@@ -104,7 +110,7 @@ describe("cards and queue", () => {
     await answer(bo, first!.card.id, 3);
     await t.api("PATCH", `/profiles/${bo}`, { study_langs: ["en"] });
     expect(await queue(bo, "ko")).toEqual([]);
-    expect(await cardCount(bo)).toBe(8); // ko cards kept + new en cards
+    expect(await cardCount(bo)).toBe(12); // ko cards kept + new en cards (3 types each)
 
     await t.api("PATCH", `/profiles/${bo}`, { study_langs: ["ko"] });
     expect((await queue(bo))[0]!.card).toMatchObject({ id: first!.card.id, reps: 1 });

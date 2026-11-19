@@ -162,8 +162,9 @@ describe("editing and deleting", () => {
     const pid = (await detail(id)).phrases[0]!.id;
     expect((await t.api("DELETE", `/phrases/${pid}`, { profile_id: adult })).status).toBe(204);
     expect(await one("SELECT count(*) AS n FROM cards WHERE phrase_id IS NOT NULL")).toBe(0);
-    // Cards are created lazily per profile: only the adult (who opened the queue) has word cards.
-    expect((await detail(id)).card_count).toBe(2);
+    // Cards are created lazily per profile: only the adult (who opened the queue) has word cards
+    // — recognition, listening and (since M3.3) speaking.
+    expect((await detail(id)).card_count).toBe(3);
 
     expect((await t.api("DELETE", `/words/${id}`, { profile_id: adult })).status).toBe(204);
     expect(await one("SELECT count(*) AS n FROM cards")).toBe(0);

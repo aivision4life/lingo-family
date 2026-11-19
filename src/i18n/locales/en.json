@@ -72,7 +72,8 @@
       "saved": "Saved.",
       "sessionSize": "Questions per TOPIK session",
       "sessionSizeHint": "How many questions one TOPIK practice session asks. Word review does not use this — it asks everything due plus up to the daily new-word limit below.",
-      "sessionSizeN": "{{count}}"
+      "sessionSizeN": "{{count}}",
+      "cardTypesSpeakingHint": "Speaking cards are scored online and each take uses one scoring call, so they are off by default."
     },
     "errors": {
       "name": "Name must be 1 to 30 characters.",
@@ -275,7 +276,8 @@
     "typeShort": {
       "recognition": "Words",
       "picture": "Pictures",
-      "listening": "Listening"
+      "listening": "Listening",
+      "speaking": "Speak"
     },
     "cardType": {
       "recognition": "Recognition",
@@ -297,6 +299,13 @@
       "plus1": "+1 day",
       "plus7": "+7 days",
       "reset": "Back to today"
+    },
+    "speaking": {
+      "hint": "Read the word above out loud; your pronunciation will be scored.",
+      "continue": "Continue · {{score}} points",
+      "skip": "Skip (this card won't count)",
+      "notCounted": "No take could be scored, so this card does not count toward your schedule.",
+      "offline": "You are offline, so nothing can be scored. Skip this card; its schedule stays as it is."
     }
   },
   "phrases": {
@@ -517,7 +526,9 @@
       "badAudio": "That recording cannot be used. Please record again.",
       "unavailable": "Pronunciation scoring is not enabled on this build.",
       "network": "Scoring failed. Check your connection and try again."
-    }
+    },
+    "takesLeft": "{{count}} takes left",
+    "noTakesLeft": "No takes left on this card"
   },
   "examples": {
     "assist": {

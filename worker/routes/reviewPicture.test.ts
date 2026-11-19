@@ -69,7 +69,7 @@ describe("picture cards", () => {
   it("1. item with a ready image: recognition → picture → listening, not limited by daily_new_limit", async () => {
     await setReady("words");
     expect((await queue(bo)).map(label)).toEqual(["word:학생/recognition"]); // limit 1; phrase has no image
-    expect(await types(bo, "word")).toEqual(["listening", "picture", "recognition"]);
+    expect(await types(bo, "word")).toEqual(["listening", "picture", "recognition", "speaking"]);
 
     await answerType(bo, "recognition");
     const afterRecognition = (await queue(bo)).map(label);
@@ -86,7 +86,7 @@ describe("picture cards", () => {
       await t.env.DB.prepare("UPDATE words SET image_status = ?, image_key = NULL").bind(status).run();
       await t.env.DB.prepare("DELETE FROM cards").run();
       expect((await queue(bo)).map(label)).toEqual(["word:학생/recognition"]);
-      expect(await types(bo, "word")).toEqual(["listening", "recognition"]);
+      expect(await types(bo, "word")).toEqual(["listening", "recognition", "speaking"]);
       await answerType(bo, "recognition");
       expect((await queue(bo)).map(label)).toContain("word:학생/listening");
     }
@@ -100,7 +100,7 @@ describe("picture cards", () => {
 
     await setReady("words");
     await queue(bo); // sync
-    expect(await types(bo, "word")).toEqual(["listening", "picture", "recognition"]);
+    expect(await types(bo, "word")).toEqual(["listening", "picture", "recognition", "speaking"]);
     const after = await t.env.DB.prepare("SELECT id, reps, state FROM cards WHERE card_type = 'listening' AND phrase_id IS NULL").first();
     expect(after).toEqual(before);
     expect((await queue(bo)).map(label)).toContain("word:학생/picture");
@@ -110,18 +110,18 @@ describe("picture cards", () => {
     await setReady("words");
     await setReady("phrases");
     await queue(bo);
-    expect(await types(bo, "phrase")).toEqual(["listening", "picture", "recognition"]);
+    expect(await types(bo, "phrase")).toEqual(["listening", "picture", "recognition", "speaking"]);
 
     const kid = await createProfile({ name: "Bé", is_kid: true });
     await queue(kid);
-    expect(await types(kid, "word")).toEqual(["listening", "picture", "recognition"]);
+    expect(await types(kid, "word")).toEqual(["listening", "picture", "recognition", "speaking"]);
     expect(await types(kid, "phrase")).toEqual([]);
   });
 
   it("summary counts due + new cards by type; queue items carry the example sentences", async () => {
     await setReady("words");
     await answerType(bo, "recognition");
-    expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 1, by_type: { recognition: 0, picture: 1, listening: 0 }, albums: [] }]);
+    expect(await summary(bo)).toEqual([{ lang: "ko", due: 0, new: 1, by_type: { recognition: 0, picture: 1, listening: 0, speaking: 0 }, albums: [] }]);
 
     const item = (await queue(bo)).find((i) => i.card.card_type === "picture")!;
     expect(item.examples.map((e) => e.sentence)).toEqual(["학생 예문"]);
@@ -142,7 +142,7 @@ describe("card type setting", () => {
     expect(labels).toContain("word:학생/listening"); // gated on recognition now that picture is off
     expect(labels).not.toContain("word:학생/picture");
     // The picture card itself still exists and keeps its row.
-    expect(await types(bo, "word")).toEqual(["listening", "picture", "recognition"]);
+    expect(await types(bo, "word")).toEqual(["listening", "picture", "recognition", "speaking"]);
 
     const [{ by_type }] = await summary(bo);
     expect(by_type.picture).toBe(0);

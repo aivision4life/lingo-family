@@ -50,6 +50,6 @@ describe("syncProfileCards with leftover unsupported data", () => {
     const zhCards = await DB.prepare("SELECT count(*) AS n FROM cards WHERE word_id = 'w-zh'").first<{ n: number }>();
     expect(zhCards?.n).toBe(0);
     const cards = await DB.prepare("SELECT count(*) AS n FROM cards WHERE profile_id = 'p1'").first<{ n: number }>();
-    expect(cards?.n).toBe(4); // 2 words (ko, en) × 2 card types
+    expect(cards?.n).toBe(6); // 2 words (ko, en) × 3 card types (recognition, listening, speaking)
   });
 });

@@ -6,6 +6,8 @@ import type { CardDto, QueueItem, TypeCounts } from "../../shared/review";
 import { buildQueue, emptyCardFields, enabledChain, type QueueCandidate } from "../../shared/scheduling";
 import { cards, examples, phrases, profile_decks, profiles, review_logs, words } from "../../db/schema";
 import type { getDb } from "../env";
+import { PRON_FAMILY_DAILY_CAP, pronDailyQuota } from "../../shared/pron";
+import { tieredQuotaLeft } from "../lib/quota";
 import { toExample } from "./phrases";
 
 type Db = ReturnType<typeof getDb>;
@@ -27,7 +29,10 @@ const SUPPORTED_LANGS_SQL = `(${LEARN_LANGS.map((l) => `'${l}'`).join(",")})`;
 const CARD_VALUES = `?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11`;
 /** Item (alias `w`) with a drawn or uploaded image. */
 const READY_IMAGE_SQL = `w.image_status = 'ready' AND w.image_key IS NOT NULL`;
-const CARD_TYPES_SQL = `(SELECT 'recognition' AS card_type UNION ALL SELECT 'listening')`;
+// Speaking cards are created for everyone (M3.3) even though the type is off by default: M6.6's
+// rule is that a switch hides cards, never creates or deletes them, so turning speaking on months
+// from now finds the cards already there instead of introducing the whole library at once.
+const CARD_TYPES_SQL = `(SELECT 'recognition' AS card_type UNION ALL SELECT 'listening' UNION ALL SELECT 'speaking')`;
 
 /**
  * Idempotent: creates the default decks, puts every word in the deck of its language,
@@ -324,7 +329,7 @@ export function queueFrom({ rows: all, introducedToday }: QueueInputs, a: QueueA
     cardTypes: a.cardTypes,
   });
 
-  const byType: TypeCounts = { recognition: 0, picture: 0, listening: 0 };
+  const byType: TypeCounts = { recognition: 0, picture: 0, listening: 0, speaking: 0 };
   for (const c of [...queue.due, ...queue.newCards]) if (c.card_type in byType) byType[c.card_type as keyof TypeCounts]++;
   return { rows, queue, due: queue.due.length, new: queue.newCards.length, byType };
 }
@@ -353,4 +358,21 @@ export async function queueSummary(db: Db, a: QueueArgs, albums: AlbumScope[]) {
       return { id: al.id, name: al.name, due: q.due, new: q.new };
     }),
   };
+}
+
+/**
+ * The card types a review queue really offers right now (M3.3). Speaking is dropped — for today
+ * only — when this profile has no pronunciation scoring left (its own tier, or the family cap),
+ * because every speaking review is one paid Azure call: the cards wait for tomorrow with their
+ * schedule untouched, and nothing is ever rated Again for running out of quota.
+ */
+export async function speakingCardTypes(
+  DB: D1Database,
+  profile: { id: string; is_kid: boolean; card_types: CardType[] },
+  now: Date,
+): Promise<{ cardTypes: CardType[]; speakingBlocked: "quota" | null }> {
+  if (!profile.card_types.includes("speaking")) return { cardTypes: profile.card_types, speakingBlocked: null };
+  const left = await tieredQuotaLeft(DB, profile.id, "pron", pronDailyQuota(profile.is_kid), PRON_FAMILY_DAILY_CAP, now);
+  if (left > 0) return { cardTypes: profile.card_types, speakingBlocked: null };
+  return { cardTypes: profile.card_types.filter((t) => t !== "speaking"), speakingBlocked: "quota" };
 }

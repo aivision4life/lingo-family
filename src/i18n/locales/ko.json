@@ -72,7 +72,8 @@
       "saved": "저장되었습니다.",
       "sessionSize": "TOPIK 연습 한 회 문항 수",
       "sessionSizeHint": "TOPIK 연습 한 회에 몇 문항을 풀지 정합니다. 단어 복습은 이 값을 쓰지 않습니다 — 기한이 된 카드 전부와 아래의 \"하루 새 단어\" 수만큼을 복습합니다.",
-      "sessionSizeN": "{{count}}문항"
+      "sessionSizeN": "{{count}}문항",
+      "cardTypesSpeakingHint": "말하기 카드는 온라인 채점을 사용하고 녹음 한 번마다 채점 횟수를 쓰기 때문에 기본적으로 꺼져 있습니다."
     },
     "errors": {
       "name": "이름은 1~30자여야 합니다.",
@@ -275,7 +276,8 @@
     "typeShort": {
       "recognition": "글자",
       "picture": "그림",
-      "listening": "듣기"
+      "listening": "듣기",
+      "speaking": "말하기"
     },
     "cardType": {
       "recognition": "인식",
@@ -297,6 +299,13 @@
       "plus1": "+1일",
       "plus7": "+7일",
       "reset": "오늘로"
+    },
+    "speaking": {
+      "hint": "위의 단어를 소리 내어 읽으면 발음을 채점합니다.",
+      "continue": "계속 · {{score}}점",
+      "skip": "건너뛰기 (이 카드는 반영되지 않음)",
+      "notCounted": "채점된 녹음이 없어 이 카드는 복습 일정에 반영되지 않습니다.",
+      "offline": "오프라인이라 채점할 수 없습니다. 이 카드는 건너뛰고 일정은 그대로 둡니다."
     }
   },
   "phrases": {
@@ -517,7 +526,9 @@
       "badAudio": "이 녹음은 사용할 수 없습니다. 다시 녹음하세요.",
       "unavailable": "이 빌드에서는 발음 채점이 켜져 있지 않습니다.",
       "network": "채점하지 못했습니다. 연결을 확인하고 다시 시도하세요."
-    }
+    },
+    "takesLeft": "남은 녹음 {{count}}회",
+    "noTakesLeft": "이 카드의 녹음 횟수를 다 썼습니다"
   },
   "examples": {
     "assist": {

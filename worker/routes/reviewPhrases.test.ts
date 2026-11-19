@@ -49,10 +49,10 @@ beforeEach(async () => {
 });
 
 describe("phrase cards", () => {
-  it("adults get recognition + listening phrase cards; the queue shows the root word", async () => {
+  it("adults get recognition + listening + speaking phrase cards; the queue shows the root word", async () => {
     const items = await queue(bo);
     expect(items.map(label).sort()).toEqual(["phrase:대학생/recognition", "word:학생/recognition"]);
-    expect(await phraseCards(bo)).toBe(2);
+    expect(await phraseCards(bo)).toBe(3); // recognition + listening + speaking (M3.3)
     const p = items.find((i) => i.word.kind === "phrase")!;
     expect(p.word).toMatchObject({ root_term: "학생", gloss_vi: "vi 대학생" });
   });

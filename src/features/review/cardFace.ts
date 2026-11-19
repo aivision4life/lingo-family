@@ -19,10 +19,18 @@ export function cardFace(type: CardType, flipped: boolean): CardFace {
       return { image: true, term: back, bigSpeaker: false, meaning: back };
     case "listening":
       return { image: back, term: back, bigSpeaker: !back, meaning: back };
+    // Speaking (M3.3): the text to read is on the front with its image — it is the reference the
+    // score is measured against, so hiding it would make the exercise impossible, not harder.
+    case "speaking":
+      return { image: true, term: true, bigSpeaker: false, meaning: back };
     default:
       return { image: back, term: true, bigSpeaker: false, meaning: back };
   }
 }
 
-/** Whether audio plays automatically when the card appears (picture waits for the flip: it would spoil the word). */
-export const autoPlaysOnFront = (type: CardType) => type !== "picture";
+/**
+ * Whether audio plays automatically when the card appears. Picture waits for the flip (the sound
+ * would spoil the word); speaking never plays by itself, so the microphone does not record the
+ * app's own voice — the learner taps the speaker when they want to hear it first.
+ */
+export const autoPlaysOnFront = (type: CardType) => type !== "picture" && type !== "speaking";

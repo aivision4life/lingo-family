@@ -72,7 +72,8 @@
       "saved": "Đã lưu.",
       "sessionSize": "Số câu mỗi phiên luyện TOPIK",
       "sessionSizeHint": "Một phiên luyện TOPIK hỏi bao nhiêu câu. Ôn từ vựng không theo số này — nó ôn hết số câu đến hạn, cộng thêm tối đa \"từ mới mỗi ngày\" ở dưới.",
-      "sessionSizeN": "{{count}} câu"
+      "sessionSizeN": "{{count}} câu",
+      "cardTypesSpeakingHint": "Thẻ Nói chấm phát âm qua mạng và mỗi lượt tốn một lần chấm, nên mặc định tắt."
     },
     "errors": {
       "name": "Tên cần từ 1 đến 30 ký tự.",
@@ -275,7 +276,8 @@
     "typeShort": {
       "recognition": "Chữ",
       "picture": "Ảnh",
-      "listening": "Nghe"
+      "listening": "Nghe",
+      "speaking": "Nói"
     },
     "cardType": {
       "recognition": "Nhận diện",
@@ -297,6 +299,13 @@
       "plus1": "+1 ngày",
       "plus7": "+7 ngày",
       "reset": "Về hôm nay"
+    },
+    "speaking": {
+      "hint": "Đọc to từ ở trên, máy sẽ chấm điểm phát âm.",
+      "continue": "Tiếp tục · {{score}} điểm",
+      "skip": "Bỏ qua (lượt này không tính)",
+      "notCounted": "Chưa có lượt nào chấm được, nên thẻ này không tính vào lịch ôn.",
+      "offline": "Đang ngoại tuyến nên chưa chấm được phát âm. Bỏ qua thẻ này, lịch ôn giữ nguyên."
     }
   },
   "phrases": {
@@ -517,7 +526,9 @@
       "badAudio": "Bản thu không dùng được. Hãy thu lại.",
       "unavailable": "Bản này chưa bật chấm phát âm.",
       "network": "Không chấm được. Kiểm tra mạng rồi thử lại."
-    }
+    },
+    "takesLeft": "Còn {{count}} lượt thu",
+    "noTakesLeft": "Hết lượt thu cho thẻ này"
   },
   "examples": {
     "assist": {

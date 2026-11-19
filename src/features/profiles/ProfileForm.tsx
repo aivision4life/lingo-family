@@ -111,6 +111,8 @@ export function ProfileForm(props: Props) {
         error={errorText("card_types")}
       >
         <CardTypesPicker id="pf-card-types" value={values.card_types} onChange={(types) => set("card_types", types)} />
+        {/* Speaking costs a paid call per review, so it says so where it is switched on (M3.3). */}
+        <p className="text-xs text-muted-foreground">{t("profiles.form.cardTypesSpeakingHint")}</p>
       </FormField>
 
       <FormField id="pf-session-size" label={t("profiles.form.sessionSize")} hint={t("profiles.form.sessionSizeHint")}>

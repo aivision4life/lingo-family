@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { LEARN_LANGS } from "../../shared/enums";
-import { answerRequestSchema, queueQuerySchema, summaryQuerySchema, type ReviewSummary } from "../../shared/review";
+import { answerRequestSchema, queueQuerySchema, summaryQuerySchema, type ReviewSummary, type SpeakingBlocked } from "../../shared/review";
 import { applyReview, localDayStart, type CardFields } from "../../shared/scheduling";
 import { cards, review_logs, words } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
@@ -9,7 +9,8 @@ import { DEV_NOW_HEADER, resolveNow } from "../lib/devNow";
 import { zv } from "../lib/validate";
 import { ALBUM_ERRORS } from "../../shared/album";
 import { albumScopes, albumWordIds, loadAlbum } from "../services/albums";
-import { queueSummary, syncProfileCards, toCardDto, todaysQueue } from "../services/review";
+import { queueSummary, speakingCardTypes, syncProfileCards, toCardDto, todaysQueue } from "../services/review";
+import { speakingRatingForCard } from "../services/speakingRating";
 
 export const reviewRoutes = new Hono<AppEnv>()
   /** Due + new counts for each language the profile studies (Home screen). */
@@ -22,12 +23,15 @@ export const reviewRoutes = new Hono<AppEnv>()
     if (!profile) return c.json({ error: "not_found" }, 404);
 
     const dayStart = localDayStart(now, tz);
+    // Out of scoring for today = no speaking cards offered (M3.3): the Home counts say the same
+    // thing the queue will, instead of promising cards that cannot be practised.
+    const { cardTypes } = await speakingCardTypes(c.env.DB, profile, now);
     const langs = LEARN_LANGS.filter((l) => profile.study_langs.includes(l));
     const summary: ReviewSummary = await Promise.all(
       langs.map(async (lang) => {
         const q = await queueSummary(
           db,
-          { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart, isKid: profile.is_kid, cardTypes: profile.card_types, ownWordsOnly: profile.own_words_only },
+          { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart, isKid: profile.is_kid, cardTypes, ownWordsOnly: profile.own_words_only },
           await albumScopes(db, lang),
         );
         return { lang, due: q.due, new: q.new, by_type: q.byType, albums: q.albums };
@@ -44,7 +48,9 @@ export const reviewRoutes = new Hono<AppEnv>()
 
     const profile = await syncProfileCards(db, c.env.DB, profile_id, now);
     if (!profile) return c.json({ error: "not_found" }, 404);
-    if (!profile.study_langs.includes(lang)) return c.json({ items: [], now: now.getTime() });
+    const { cardTypes, speakingBlocked } = await speakingCardTypes(c.env.DB, profile, now);
+    const blocked: SpeakingBlocked = speakingBlocked;
+    if (!profile.study_langs.includes(lang)) return c.json({ items: [], now: now.getTime(), speaking_blocked: blocked });
 
     // An album filters the queue; it must be an album of the language being studied.
     let wordIds: ReadonlySet<string> | null = null;
@@ -56,16 +62,16 @@ export const reviewRoutes = new Hono<AppEnv>()
 
     const q = await todaysQueue(
       db,
-      { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart: localDayStart(now, tz), isKid: profile.is_kid, cardTypes: profile.card_types, ownWordsOnly: profile.own_words_only },
+      { profileId: profile_id, lang, newLimit: profile.daily_new_limit, now, dayStart: localDayStart(now, tz), isKid: profile.is_kid, cardTypes, ownWordsOnly: profile.own_words_only },
       wordIds,
     );
-    return c.json({ items: q.items, now: now.getTime() });
+    return c.json({ items: q.items, now: now.getTime(), speaking_blocked: blocked });
   })
 
   /** Rates one card: the server schedules it (FSRS) and appends a review log. */
   .post("/answer", zv("json", answerRequestSchema), async (c) => {
     const db = getDb(c.env);
-    const { profile_id, card_id, rating, duration_ms } = c.req.valid("json");
+    const { profile_id, card_id, rating, attempt_ids, duration_ms } = c.req.valid("json");
     const now = resolveNow(c.env, c.req.header(DEV_NOW_HEADER), c.req.url);
 
     // The language comes from the (root) word; it is stored on the log so stats survive card deletion.
@@ -77,13 +83,19 @@ export const reviewRoutes = new Hono<AppEnv>()
       .get();
     if (!row) return c.json({ error: "not_found" }, 404);
 
+    // A rating sent by hand always wins. Without one the card is a speaking card the server is
+    // asked to grade from the takes it stored itself (M3.3, the M7.24 rule); when none of them
+    // could be scored the card is left exactly as it is — no log, no FSRS change, no Again.
+    const grade = rating ?? (await speakingRatingForCard(db, row.card, attempt_ids ?? [], now));
+    if (grade === null) return c.json({ card: toCardDto(row.card), counted: false, rating: null });
+
     const before: CardFields = { ...row.card, last_review: row.card.last_review };
-    const { card: next, log } = applyReview(before, rating, now);
+    const { card: next, log } = applyReview(before, grade, now);
 
     // Card update + append-only log in one atomic batch.
     const [updated] = await db.batch([
       db.update(cards).set({ ...next, updated_at: now }).where(eq(cards.id, card_id)).returning(),
       db.insert(review_logs).values({ ...log, card_id, profile_id, duration_ms, lang: row.lang }),
     ]);
-    return c.json({ card: toCardDto(updated[0]!) });
+    return c.json({ card: toCardDto(updated[0]!), counted: true, rating: grade });
   });

@@ -1,11 +1,11 @@
-import { CircleCheck, Headphones, Image, Type } from "lucide-react";
+import { CircleCheck, Headphones, Image, Mic, Type } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LinkButton } from "@/components/LinkButton";
 import { NativeSelect } from "@/components/NativeSelect";
 import { useReviewSummary } from "./api";
 
-const TYPE_ICONS = { recognition: Type, picture: Image, listening: Headphones } as const;
+const TYPE_ICONS = { recognition: Type, picture: Image, listening: Headphones, speaking: Mic } as const;
 /** `<select>` value for "all words" (no album filter). */
 const ALL = "";
 

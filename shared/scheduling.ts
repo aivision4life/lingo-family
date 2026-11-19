@@ -103,8 +103,8 @@ export type QueueOptions = {
   cardTypes: readonly CardType[];
 };
 
-/** The unlock chain's fixed order; `speaking` is not a review type yet (M3). */
-export const CHAIN_ORDER = ["recognition", "picture", "listening"] as const satisfies readonly CardType[];
+/** The unlock chain's fixed order; `speaking` was added at the end in M3.3 (SPEC F4). */
+export const CHAIN_ORDER = ["recognition", "picture", "listening", "speaking"] as const satisfies readonly CardType[];
 
 /**
  * The enabled types in chain order. The first one is the *entry* type: it has no predecessor to

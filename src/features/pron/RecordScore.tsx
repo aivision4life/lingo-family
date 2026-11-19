@@ -13,7 +13,16 @@ import { ScoreDetail } from "./ScoreDetail";
 /** What is being practised: the word, the phrase or the example sentence (one `pron_attempts` column each). */
 export type PronTarget = { kind: "word" | "phrase" | "example"; id: string };
 
-type Props = { target: PronTarget; lang: LearnLang; text: string; profileId: string };
+type Props = {
+  target: PronTarget;
+  lang: LearnLang;
+  text: string;
+  profileId: string;
+  /** Takes allowed here (speaking cards: SPEAKING_MAX_TAKES). Unlimited in the Focus view. */
+  maxTakes?: number;
+  /** Called with every scored take, so a speaking card can collect the ids the server will grade. */
+  onScored?: (result: PronScoreResponse) => void;
+};
 type Phase = "idle" | "recording" | "scoring";
 
 const targetParam = (target: PronTarget) => `${target.kind}_id` as "word_id" | "phrase_id" | "example_id";
@@ -27,9 +36,10 @@ const targetParam = (target: PronTarget) => `${target.kind}_id` as "word_id" | "
  * has been scored (playback and "Compare" come with the next step), so nothing leaves the device
  * but the scores — F5's privacy rule.
  */
-export function RecordScore({ target, lang, text, profileId }: Props) {
+export function RecordScore({ target, lang, text, profileId, maxTakes, onScored }: Props) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>("idle");
+  const [takes, setTakes] = useState(0);
   const [result, setResult] = useState<PronScoreResponse | null>(null);
   const [failure, setFailure] = useState<PronFailure | null>(null);
   const active = useRef<ActiveRecording | null>(null);
@@ -53,7 +63,10 @@ export function RecordScore({ target, lang, text, profileId }: Props) {
     try {
       const take = await recording.stop();
       const query = new URLSearchParams({ profile_id: profileId, lang, reference_text: text, [targetParam(target)]: target.id });
-      setResult(await apiUpload(`/pron/score?${query.toString()}`, take.wav, pronScoreResponseSchema));
+      const scored = await apiUpload(`/pron/score?${query.toString()}`, take.wav, pronScoreResponseSchema);
+      setResult(scored);
+      setTakes((n) => n + 1);
+      onScored?.(scored);
     } catch (e) {
       setFailure(pronFailure(e));
     } finally {
@@ -78,6 +91,10 @@ export function RecordScore({ target, lang, text, profileId }: Props) {
     );
   };
 
+  // A take that failed is not counted against `maxTakes`: only a scored one costs a quota unit.
+  const takesLeft = maxTakes === undefined ? null : maxTakes - takes;
+  const outOfTakes = takesLeft !== null && takesLeft <= 0;
+
   return (
     <div className="flex flex-col items-center gap-2">
       {result && <ScoreDetail result={result} lang={lang} />}
@@ -86,6 +103,7 @@ export function RecordScore({ target, lang, text, profileId }: Props) {
           {t(`pron.failure.${failure}`)}
         </p>
       )}
+      {takesLeft !== null && !outOfTakes && <p className="text-xs text-muted-foreground">{t("pron.takesLeft", { count: takesLeft })}</p>}
       {phase === "recording" ? (
         <Button type="button" variant="destructive" size="lg" className="min-h-14 w-full max-w-md text-lg" onClick={() => void stop()}>
           <Square className="size-5" aria-hidden />
@@ -97,11 +115,17 @@ export function RecordScore({ target, lang, text, profileId }: Props) {
           variant="outline"
           size="lg"
           className="min-h-14 w-full max-w-md text-lg"
-          disabled={phase === "scoring"}
+          disabled={phase === "scoring" || outOfTakes}
           onClick={start}
         >
           <Mic className="size-5" aria-hidden />
-          {phase === "scoring" ? t("pron.scoring") : result || failure ? t("pron.again") : t("pron.record")}
+          {phase === "scoring"
+            ? t("pron.scoring")
+            : outOfTakes
+              ? t("pron.noTakesLeft")
+              : result || failure
+                ? t("pron.again")
+                : t("pron.record")}
         </Button>
       )}
       {phase === "recording" && (

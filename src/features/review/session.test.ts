@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CardDto, QueueItem } from "@shared/review";
 import { applyReview, emptyCardFields, type CardFields } from "@shared/scheduling";
 import { intervalLabel } from "./formatInterval";
-import { afterAnswer, currentItem, flip, isFinished, startSession } from "./session";
+import { afterAnswer, currentItem, flip, isFinished, skipCard, startSession } from "./session";
 
 const now = new Date("2026-10-08T03:00:00Z");
 
@@ -77,5 +77,19 @@ describe("intervalLabel", () => {
     [730 * 86_400_000, "years", 2],
   ] as const)("%d ms → %s %d", (ms, key, count) => {
     expect(intervalLabel(ms)).toEqual({ key, count });
+  });
+});
+
+describe("skipCard", () => {
+  it("moves on without counting the card and without putting it back in the queue", () => {
+    const s = startSession([item("a"), item("b")]);
+    const skipped = skipCard(flip(s));
+    expect(skipped).toMatchObject({ pos: 1, flipped: false, answered: 0 });
+    expect(skipped.queue).toHaveLength(2);
+  });
+
+  it("does nothing once the session is over", () => {
+    const done = { ...startSession([item("a")]), pos: 1 };
+    expect(skipCard(done)).toBe(done);
   });
 });

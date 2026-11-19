@@ -20,6 +20,13 @@ export const isFinished = (s: Session) => s.pos >= s.queue.length;
 
 export const flip = (s: Session): Session => (isFinished(s) ? s : { ...s, flipped: true });
 
+/**
+ * Moves past a card that was **not** reviewed (M3.3): a speaking card with no take the server
+ * could score, or one skipped while offline. Nothing was answered, so it is not counted and not
+ * put back in the queue — its schedule is exactly what it was.
+ */
+export const skipCard = (s: Session): Session => (isFinished(s) ? s : { ...s, pos: s.pos + 1, flipped: false });
+
 /** Moves on after the server returned the updated card; learning cards come back at the end. */
 export function afterAnswer(s: Session, updated: CardDto, now: Date): Session {
   const item = currentItem(s);

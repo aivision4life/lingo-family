@@ -77,7 +77,7 @@ export function CardTypesPicker({ id, value, onChange }: CardTypesPickerProps) {
     onChange(value.includes(type) ? value.filter((x) => x !== type) : [...value, type]);
 
   return (
-    <div id={id} role="group" className="grid grid-cols-3 gap-2">
+    <div id={id} role="group" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {REVIEW_CARD_TYPES.map((type) => (
         <button
           key={type}

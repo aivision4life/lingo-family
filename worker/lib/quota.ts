@@ -110,3 +110,27 @@ export async function refundQuota(DB: D1Database, profileId: string, service: Us
 }
 
 export const refundImageQuota = (DB: D1Database, profileId: string, now = new Date()) => refundQuota(DB, profileId, "image", now);
+
+/**
+ * How many uses of `service` are left for this profile today, under both tiers — without taking
+ * one. Read-only, so it may be racy by the time a call is made; it answers the "can this profile
+ * still practise speaking today?" question the review queue asks (M3.3), never the one
+ * `consumeTieredQuota` answers at the moment of a paid call.
+ */
+export async function tieredQuotaLeft(
+  DB: D1Database,
+  profileId: string,
+  service: UsageService,
+  perProfile: number,
+  familyCap: number,
+  now = new Date(),
+): Promise<number> {
+  const row = await DB.prepare(
+    `SELECT coalesce(sum(count), 0) AS family,
+            coalesce(sum(CASE WHEN profile_id = ?2 THEN count END), 0) AS mine
+       FROM usage_daily WHERE date = ?1 AND service = ?3`,
+  )
+    .bind(usageDate(now), profileId, service)
+    .first<{ family: number; mine: number }>();
+  return Math.max(0, Math.min(perProfile - (row?.mine ?? 0), familyCap - (row?.family ?? 0)));
+}

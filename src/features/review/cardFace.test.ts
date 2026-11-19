@@ -14,8 +14,13 @@ describe("cardFace", () => {
     expect(cardFace("listening", false)).toEqual({ image: false, term: false, bigSpeaker: true, meaning: false });
     expect(cardFace("listening", true)).toEqual({ image: true, term: true, bigSpeaker: false, meaning: true });
   });
-  it("picture cards do not auto-play before the flip", () => {
+  it("speaking: image + the text to read on the front, meaning on the back", () => {
+    expect(cardFace("speaking", false)).toEqual({ image: true, term: true, bigSpeaker: false, meaning: false });
+    expect(cardFace("speaking", true)).toEqual({ image: true, term: true, bigSpeaker: false, meaning: true });
+  });
+  it("picture and speaking cards do not auto-play on the front", () => {
     expect(autoPlaysOnFront("picture")).toBe(false);
+    expect(autoPlaysOnFront("speaking")).toBe(false);
     expect(autoPlaysOnFront("recognition")).toBe(true);
   });
 });
