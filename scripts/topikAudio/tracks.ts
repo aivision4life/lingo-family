@@ -74,6 +74,63 @@ export function trackNumberFromName(fileName: string): { ok: true; number: numbe
 }
 
 /**
+ * Numbers a whole folder of track files, because one name alone does not always say what it is.
+ *
+ * Two naming schemes are known, and a folder must match one of them exactly:
+ *  - the publisher's own ("01 트랙 1.mp3" → 1): the leading number IS the track number, and
+ *    across the folder those numbers must run 1..N without a hole or a duplicate;
+ *  - section-prefixed ("2-00.mp3" → 1): every name is `<section>-<index>`, one single section for
+ *    the folder, and the indexes run 00..N-1 (0-based, the introduction is 00) or 01..N (1-based).
+ *
+ * Anything else is an error, never a guessed position: a track silently shifted by one plays
+ * normally and puts every later question on the wrong clip.
+ */
+export function numberTracks(
+  fileNames: readonly string[],
+): { ok: true; scheme: string; numbers: Map<string, number> } | { ok: false; reasons: string[] } {
+  if (fileNames.length === 0) return { ok: false, reasons: ["no .mp3 files in the folder"] };
+
+  const runsFrom = (values: readonly number[], first: number) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted.every((v, i) => v === first + i);
+  };
+
+  // 1. The leading number, as the publisher names its own tracks.
+  const leading = fileNames.map((f) => ({ file: f, n: trackNumberFromName(f) }));
+  if (leading.every((l) => l.n.ok)) {
+    const numbers = leading.map((l) => (l.n as { ok: true; number: number }).number);
+    if (runsFrom(numbers, 1))
+      return { ok: true, scheme: "leading number", numbers: new Map(leading.map((l, i) => [l.file, numbers[i]!])) };
+  }
+
+  // 2. `<section>-<index>`, where the leading number is the section and says nothing about position.
+  const dashed = fileNames.map((f) => /^(\d+)[-_](\d+)\s*\.mp3$/i.exec(f));
+  if (dashed.every((m) => m !== null)) {
+    const sections = new Set(dashed.map((m) => Number(m![1])));
+    const indexes = dashed.map((m) => Number(m![2]));
+    if (sections.size === 1 && new Set(indexes).size === indexes.length) {
+      for (const first of [0, 1] as const)
+        if (runsFrom(indexes, first))
+          return {
+            ok: true,
+            scheme: `section ${[...sections][0]}, ${first}-based index`,
+            numbers: new Map(fileNames.map((f, i) => [f, indexes[i]! + (1 - first)])),
+          };
+    }
+  }
+
+  return {
+    ok: false,
+    reasons: [
+      `cannot read a track number per file from these ${fileNames.length} name(s): ${fileNames.slice(0, 4).join(", ")}` +
+        `${fileNames.length > 4 ? ", …" : ""}`,
+      `a folder must either carry the track number first ("01 트랙 1.mp3") and run 1..${fileNames.length},` +
+        ` or be named <section>-<index> ("2-00.mp3") with one section and the indexes running from 00 or 01.`,
+    ],
+  };
+}
+
+/**
  * Matches the track files against the questions of one exam and lays them out on one tape.
  *
  * Track 1 is the spoken introduction and belongs to no question; track `n + 1` is question `n`.
@@ -205,6 +262,29 @@ export function planTracks(args: {
 }
 
 /** A pause inside the first question's file that a human might choose as the end of the introduction. */
+/**
+ * Pulls the last clip's end back to the end of the tape that was really written.
+ *
+ * The joins are placed by frame count, which is what the tape itself is made of, but the duration
+ * ffprobe reports for the finished file can land a millisecond or two short of that sum (96회:
+ * -2 ms over 62 minutes). The tape is the truth, so the last clip may not end past it; a gap
+ * bigger than `maxMs` is a real mismatch and the caller must stop instead of trimming it away.
+ */
+export function clampLastSegmentToTape(
+  segments: readonly Segment[],
+  tapeMs: number,
+  maxMs: number = TRACK_DRIFT_MAX_MS,
+): { ok: true; segments: Segment[]; trimmedMs: number } | { ok: false; overshootMs: number } {
+  const out = segments.map((s) => ({ ...s }));
+  const last = out.at(-1);
+  if (!last || last.end_ms <= tapeMs) return { ok: true, segments: out, trimmedMs: 0 };
+  const overshootMs = last.end_ms - tapeMs;
+  if (overshootMs > maxMs) return { ok: false, overshootMs };
+  last.end_ms = tapeMs;
+  if (last.speech_end_ms > tapeMs) last.speech_end_ms = tapeMs;
+  return { ok: true, segments: out, trimmedMs: overshootMs };
+}
+
 export type IntroCandidate = { markMs: number; pauseMs: number };
 
 /**

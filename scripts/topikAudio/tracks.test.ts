@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { audioNameFromExam, examFromAudioName } from "./plan";
-import { introCandidates, planTracks, samplesPerFrame, trackNumberFromName, verifyTrackBoundaries, type TrackProbe } from "./tracks";
+import { clampLastSegmentToTape, introCandidates, numberTracks, planTracks, samplesPerFrame, trackNumberFromName, verifyTrackBoundaries, type TrackProbe } from "./tracks";
 
 /** The shape 83회 really has: a long file per question 1-20, then (dialogue, announcement) pairs. */
 function track(number: number, durationS: number, speechEndS: number | null): TrackProbe {
@@ -44,6 +44,79 @@ describe("trackNumberFromName", () => {
   // every question after it onto the wrong clip while the audio still plays normally.
   it("refuses a name with no leading number", () => {
     expect(trackNumberFromName("트랙 22.mp3").ok).toBe(false);
+  });
+});
+
+describe("numberTracks", () => {
+  const names = (n: number, make: (i: number) => string) => Array.from({ length: n }, (_, i) => make(i));
+
+  it("uses the leading number when the folder runs 1..N (83회, 91회)", () => {
+    const r = numberTracks(names(51, (i) => `${String(i + 1).padStart(2, "0")} 트랙 ${i + 1}.mp3`));
+    expect(r.ok && r.numbers.get("01 트랙 1.mp3")).toBe(1);
+    expect(r.ok && r.numbers.get("51 트랙 51.mp3")).toBe(51);
+  });
+
+  // 96회 ships "2-00.mp3".."2-50.mp3": the 2 is the section, and 2-00 is the introduction.
+  it("reads <section>-<index> as a 0-based index, so 2-00 is track 1", () => {
+    const r = numberTracks(names(51, (i) => `2-${String(i).padStart(2, "0")}.mp3`));
+    expect(r.ok && r.scheme).toContain("0-based");
+    expect(r.ok && r.numbers.get("2-00.mp3")).toBe(1);
+    expect(r.ok && r.numbers.get("2-21.mp3")).toBe(22);
+    expect(r.ok && r.numbers.get("2-50.mp3")).toBe(51);
+  });
+
+  it("reads a 1-based <section>-<index> folder as it is", () => {
+    const r = numberTracks(names(51, (i) => `2-${String(i + 1).padStart(2, "0")}.mp3`));
+    expect(r.ok && r.scheme).toContain("1-based");
+    expect(r.ok && r.numbers.get("2-01.mp3")).toBe(1);
+    expect(r.ok && r.numbers.get("2-51.mp3")).toBe(51);
+  });
+
+  // A guessed position plays normally and puts every later question on the wrong clip.
+  it("refuses a hole, two sections, a duplicate and an unreadable name", () => {
+    expect(numberTracks(["01 a.mp3", "03 a.mp3"]).ok).toBe(false);
+    expect(numberTracks(["2-00.mp3", "3-01.mp3"]).ok).toBe(false);
+    expect(numberTracks(["2-00.mp3", "2-00.mp3"]).ok).toBe(false);
+    expect(numberTracks(["트랙 1.mp3", "트랙 2.mp3"]).ok).toBe(false);
+    expect(numberTracks([]).ok).toBe(false);
+  });
+});
+
+describe("clampLastSegmentToTape", () => {
+  const segs = (lastEndMs: number, lastSpeechEndMs: number) => [
+    { idx: 1, start_ms: 0, speech_end_ms: 1_000, end_ms: 2_000 },
+    { idx: 2, start_ms: 2_000, speech_end_ms: lastSpeechEndMs, end_ms: lastEndMs },
+  ];
+
+  it("leaves a plan that fits inside the tape alone", () => {
+    const r = clampLastSegmentToTape(segs(10_000, 9_000), 10_000);
+    expect(r.ok && r.trimmedMs).toBe(0);
+    expect(r.ok && r.segments.at(-1)!.end_ms).toBe(10_000);
+  });
+
+  // 96회: the frame-count sum predicted 62:07.623, the written tape measured 62:07.621.
+  it("pulls a last clip that ends a hair past the tape back to its end", () => {
+    const r = clampLastSegmentToTape(segs(3_727_623, 3_672_854), 3_727_621);
+    expect(r.ok && r.trimmedMs).toBe(2);
+    expect(r.ok && r.segments.at(-1)!.end_ms).toBe(3_727_621);
+    expect(r.ok && r.segments.at(-1)!.speech_end_ms).toBe(3_672_854);
+  });
+
+  it("pulls a speech end past the tape back too", () => {
+    const r = clampLastSegmentToTape(segs(10_050, 10_020), 10_000);
+    expect(r.ok && r.segments.at(-1)!.speech_end_ms).toBe(10_000);
+  });
+
+  // A gap that big is not rounding: something about the join is wrong and the caller must stop.
+  it("refuses an overshoot past the drift budget instead of trimming it away", () => {
+    const r = clampLastSegmentToTape(segs(11_000, 9_000), 10_000);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.overshootMs).toBe(1_000);
+  });
+
+  it("does not touch the earlier clips", () => {
+    const r = clampLastSegmentToTape(segs(10_002, 9_000), 10_000);
+    expect(r.ok && r.segments[0]).toEqual({ idx: 1, start_ms: 0, speech_end_ms: 1_000, end_ms: 2_000 });
   });
 });
 

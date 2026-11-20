@@ -75,7 +75,7 @@ import {
   type Segment,
   type Silence,
 } from "./plan";
-import { introCandidates, planTracks, trackNumberFromName, samplesPerFrame, verifyTrackBoundaries, TRACK_DRIFT_MAX_MS, type TrackProbe } from "./tracks";
+import { introCandidates, planTracks, numberTracks, clampLastSegmentToTape, samplesPerFrame, verifyTrackBoundaries, TRACK_DRIFT_MAX_MS, type TrackProbe } from "./tracks";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
 type D1Like = { prepare(sql: string): Stmt; batch(statements: Stmt[]): Promise<unknown> };
@@ -626,16 +626,21 @@ async function runTracks(dir: string): Promise<ExamPlan | null> {
   }
 
   const fileNames = (await readdir(dir)).filter((f) => f.toLowerCase().endsWith(".mp3"));
-  const numbered: { number: number; file: string }[] = [];
-  const nameProblems: string[] = [];
-  for (const f of fileNames) {
-    const n = trackNumberFromName(f);
-    if (!n.ok) nameProblems.push(n.reason);
-    else numbered.push({ number: n.number, file: path.join(dir, f) });
+  // One name alone does not always say which track it is ("2-00.mp3" is the introduction, not
+  // track 2), so the whole folder is numbered at once and an unreadable folder stops the run.
+  const numbering = numberTracks(fileNames);
+  if (!numbering.ok) {
+    console.log(`\n=== ${onlyExam} — ${fileNames.length} track file(s) in ${dir} ===`);
+    for (const r of numbering.reasons) console.log(`  PROBLEM: ${r}`);
+    console.error(`\nStopped: the track file names cannot be numbered. Nothing was joined and nothing was written.`);
+    process.exit(1);
   }
-  numbered.sort((a, b) => a.number - b.number);
-  console.log(`\n=== ${onlyExam} — ${numbered.length} track file(s) in ${dir} ===`);
-  for (const p of nameProblems) console.log(`  PROBLEM: ${p}`);
+  const numbered = [...numbering.numbers.entries()]
+    .map(([f, number]) => ({ number, file: path.join(dir, f) }))
+    .sort((a, b) => a.number - b.number);
+  console.log(
+    `\n=== ${onlyExam} — ${numbered.length} track file(s) in ${dir} (đánh số theo: ${numbering.scheme}) ===`,
+  );
 
   const tracks: TrackProbe[] = numbered.map((t) => {
     const s = probeStream(t.file);
@@ -661,7 +666,7 @@ async function runTracks(dir: string): Promise<ExamPlan | null> {
 
   const questions = await listeningQuestions(onlyExam);
   const plan = planTracks({ tracks, questions, introInTrackMs: introInTrackMs ?? 0 });
-  if (!plan.ok || nameProblems.length > 0) {
+  if (!plan.ok) {
     for (const r of plan.ok ? [] : plan.reasons) console.log(`  PROBLEM: ${r}`);
     console.error(`\nStopped: the track files and the Word file do not agree. Nothing was joined and nothing was written.`);
     process.exit(1);
@@ -683,16 +688,31 @@ async function runTracks(dir: string): Promise<ExamPlan | null> {
   console.log(`\n  Đã ghép (không mã hoá lại) → ${out}  ${(statSync(out).size / 1024 / 1024).toFixed(1)} MB, ${formatMs(joinedMs)}`);
   const lengthDrift = joinedMs - plan.totalMs;
   console.log(`  Dự tính ${formatMs(plan.totalMs)}, lệch ${lengthDrift >= 0 ? "+" : ""}${lengthDrift} ms`);
+
+  // The tape that was written is the truth, not the frame-count sum it was predicted from: when it
+  // comes out a millisecond short, the last clip would end past the end of the file.
+  const clamped = clampLastSegmentToTape(plan.segments, joinedMs);
+  if (!clamped.ok) {
+    console.error(
+      `
+Đoạn cuối kết thúc ${clamped.overshootMs} ms sau khi băng đã hết, quá ngƯỡng ${TRACK_DRIFT_MAX_MS} ms.` +
+        ` The tape was written to ${out} so it can be listened to, but nothing will be stored.`,
+    );
+    process.exit(1);
+  }
+  if (clamped.trimmedMs > 0)
+    console.log(`  Đoạn cuối: kéo kết thúc về cuối băng thực (${clamped.trimmedMs} ms)`);
+  const segments = clamped.segments;
   console.log(
     `  Lời dẫn mở đầu: 00:00.000 → ${formatMs(plan.introEndMs)} (cả track ${tracks[0]!.number}` +
       `${introInTrackMs > 0 ? ` + ${(introInTrackMs / 1000).toFixed(3)}s đầu track ${tracks[1]!.number}` : ""}; bỏ, không thuộc câu nào)`,
   );
 
   const joinedSilences = parseSilenceLog(ffmpegSilenceLog(out), joinedMs);
-  const checks = verifyTrackBoundaries({ segments: plan.segments, silences: joinedSilences, minSilenceMs: silenceMs });
+  const checks = verifyTrackBoundaries({ segments, silences: joinedSilences, minSilenceMs: silenceMs });
   const byIdx = new Map(checks.map((c) => [c.idx, c]));
   // The same rule the single-tape path uses to say which clip a question belongs to.
-  const audioPlan = planAudio(plan.segments, questions, joinedMs);
+  const audioPlan = planAudio(segments, questions, joinedMs);
   const questionsOf = (idx: number) =>
     [...audioPlan.assignment.entries()]
       .filter(([, s]) => s === idx)
@@ -700,7 +720,7 @@ async function runTracks(dir: string): Promise<ExamPlan | null> {
       .sort((a, b) => a - b);
 
   console.log(`\n   Đoạn  Track      Câu        Bắt đầu        Hết tiếng      Kết thúc       Dài     Lệch`);
-  for (const s of plan.segments) {
+  for (const s of segments) {
     const qs = questionsOf(s.idx);
     const check = byIdx.get(s.idx)!;
     const trackList = [...new Set(qs.flatMap((n) => plan.tracksOf.get(n) ?? []))].sort((a, b) => a - b);
