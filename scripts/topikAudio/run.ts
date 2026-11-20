@@ -15,6 +15,23 @@
 // mark at second 6) into data/topik-audio/_check/ and printed the silences around it. Listen,
 // then run it again with `--intro`. Nothing is read from D1 and nothing is written on that first
 // run.
+//   npm run topik-audio -- --exam ... --tracks <dir> --intro-in-track <s>   a paper shipped as
+//                                                   one mp3 per question
+//
+// `--tracks` (M7.33) is for a paper that arrives already split: track 1 is the spoken
+// introduction, track n+1 is question n, and from question 21 a pair is two files (the dialogue
+// plus the answering gap, then ~2s announcing the second question plus its gap). The files are
+// joined into one tape without re-encoding and **every boundary is a file join** — no silence
+// threshold decides where a question ends, and `--intro` is refused because the end of the
+// introduction is simply the length of track 1 — plus, where the publisher put the paper's spoken
+// introduction at the head of question 1's own file (83회), `--intro-in-track <seconds>`, which is
+// REQUIRED and comes from a human: that mark is inside a file, so no join gives it, and nothing
+// `silencedetect` measures separates a pause inside an introduction from the pause before question
+// 1 (M7.20). Run it without the flag and it stops, having cut a 10-second sample at each of the
+// real pauses in that file; `--intro-in-track 0` says the file does start at question 1. Silence is
+// otherwise asked one thing only, inside a single file: where that file's own speech stops. The
+// plan is then measured against the tape that was written, and the run stops rather than store a
+// clip that drifted (see `tracks.ts`).
 //   npm run topik-audio -- --link-only              attach newly imported questions to clips that
 //                                                   already exist; no mp3, no re-cutting, no
 //                                                   approval lost (see `planLinks`)
@@ -40,6 +57,7 @@ import JSZip from "jszip";
 import { getPlatformProxy } from "wrangler";
 import { buildImportDraft } from "../../worker/services/topikImport";
 import {
+  audioNameFromExam,
   boundarySilences,
   buildSegments,
   examFromAudioName,
@@ -57,6 +75,7 @@ import {
   type Segment,
   type Silence,
 } from "./plan";
+import { introCandidates, planTracks, trackNumberFromName, samplesPerFrame, verifyTrackBoundaries, TRACK_DRIFT_MAX_MS, type TrackProbe } from "./tracks";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
 type D1Like = { prepare(sql: string): Stmt; batch(statements: Stmt[]): Promise<unknown> };
@@ -115,6 +134,15 @@ function parseTime(text: string): number {
   return Math.round((Number(m) * 60 + Number(sec)) * 1000);
 }
 const introOverride = flag("--intro") ? parseTime(flag("--intro")!) : undefined;
+/** A folder of one-mp3-per-question source files (M7.33); boundaries are the file joins. */
+const tracksDir = flag("--tracks");
+/**
+ * Where question 1 starts INSIDE the first question's file, for `--tracks`. Required, because on
+ * 83회 that file opens with the paper's spoken introduction and no file join marks the end of it;
+ * `--intro-in-track 0` is how a human says "I listened, this file starts at question 1".
+ */
+const introInTrack = flag("--intro-in-track");
+const introInTrackMs = introInTrack === undefined ? undefined : parseTime(introInTrack);
 const minSpeechMs = Math.round(Number(flag("--min-speech") ?? DEFAULT_MIN_SPEECH_S) * 1000);
 
 function ffprobeDurationMs(file: string): number {
@@ -485,7 +513,270 @@ function reportMissingIntro(exam: string, file: string, silences: readonly Silen
   console.log(`  Chạy lại: npm run topik-audio -- --exam ${exam} --intro ${(est.suggested_ms / 1000).toFixed(3)}${apply ? " --apply" : ""}`);
 }
 
+/** codec / rate / channels / duration / frame count of one mp3, in one ffprobe pass. */
+function probeStream(file: string): { codec: string; sampleRate: number; channels: number; durationMs: number; frames: number } {
+  const r = spawnSync(
+    "ffprobe",
+    // -count_frames decodes the whole file: the frame count is what places the joins (see tracks.ts).
+    ["-v", "error", "-count_frames", "-select_streams", "a:0", "-show_entries", "stream=codec_name,sample_rate,channels,nb_read_frames", "-show_entries", "format=duration", "-of", "default=nw=1", file],
+    { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+  );
+  if (r.status !== 0) throw new Error(`ffprobe failed for ${file}: ${r.stderr || r.error?.message}`);
+  const value = (key: string) => new RegExp(`^${key}=(.*)$`, "m").exec(r.stdout ?? "")?.[1]?.trim() ?? "";
+  return {
+    codec: value("codec_name"),
+    sampleRate: Number(value("sample_rate")),
+    channels: Number(value("channels")),
+    durationMs: Math.round(Number(value("duration")) * 1000),
+    frames: Number(value("nb_read_frames")),
+  };
+}
+
+/** Where a file's own speech stops: the start of its first pause long enough to be the answering gap. */
+const firstLongSilenceStart = (silences: readonly Silence[], minMs: number): number | null =>
+  silences.find((s) => s.end_ms - s.start_ms >= minMs)?.start_ms ?? null;
+
+/** Joins the tracks into one tape without re-encoding; the formats were checked to be identical. */
+function joinTracks(files: readonly string[], out: string) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "lingo-topik-tracks-"));
+  const list = path.join(dir, "concat.txt");
+  writeFileSync(list, files.map((f) => `file '${path.resolve(f).replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n") + "\n", "utf8");
+  mkdirSync(path.dirname(out), { recursive: true });
+  const r = spawnSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", out], {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  // The mp3 muxer complains about non-monotonic dts on every join (each input starts its own
+  // timeline); the frame count of the result is what decides whether the join is sound, so it is
+  // checked below rather than read out of the warnings.
+  if (!existsSync(out) || statSync(out).size === 0) throw new Error(`ffmpeg concat produced nothing: ${r.stderr || r.error?.message}`);
+}
+
+/** Ten seconds from the joined tape, so a human can hear which question a boundary opens. */
+function cutSample(file: string, fromMs: number, label: string): string | null {
+  mkdirSync(CHECK_DIR, { recursive: true });
+  const out = path.join(CHECK_DIR, `${label.replace(/[^\w가-힣-]/g, "_")}.mp3`);
+  const r = spawnSync(
+    "ffmpeg",
+    ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(Math.max(0, fromMs) / 1000), "-t", "10", "-i", file, "-c:a", "libmp3lame", "-q:a", "4", out],
+    { encoding: "utf8" },
+  );
+  if (r.status !== 0) {
+    console.log(`  (could not cut the sample: ${r.stderr?.trim() || r.error?.message})`);
+    return null;
+  }
+  return out;
+}
+
+/**
+ * What to print for a `--tracks` run with no `--intro-in-track` yet. Joins nothing, reads no D1.
+ *
+ * Candidates and samples go out together, never a single proposed number: the whole point of M7.20
+ * is that a pause inside an introduction and the pause before question 1 are indistinguishable to
+ * `silencedetect`, so a number on its own would only be something to believe.
+ */
+function reportMissingIntroInTrack(track: TrackProbe, questionNumber: number) {
+  console.log(
+    `\n  THIẾU --intro-in-track: không ghép gì cả. Track ${track.number} có thể mở bằng lời giới thiệu đề,` +
+      ` và mốc bắt đầu câu ${questionNumber} nằm BÊN TRONG file nên không mối nối nào cho ra nó.`,
+  );
+  const silences = parseSilenceLog(ffmpegSilenceLog(track.file), track.durationMs);
+  const candidates = introCandidates({ silences, speechEndMs: track.speechEndMs ?? track.durationMs });
+  if (candidates.length === 0) {
+    console.log(`  Track ${track.number} không có khoảng lặng nào ≥1s trước khoảng trả lời — nghe cả file rồi tự chọn mốc.`);
+    console.log(`  Nếu file này bắt đầu ngay ở câu ${questionNumber}: --intro-in-track 0`);
+    return;
+  }
+  console.log(`  Ứng viên (khoảng lặng dài nhất trong track ${track.number}), mỗi mẫu bắt đầu đúng tại mốc:`);
+  for (const [i, c] of candidates.entries()) {
+    const cut = cutSample(track.file, c.markMs, `${onlyExam}-track${track.number}-ungvien${i + 1}-${(c.markMs / 1000).toFixed(3)}s`);
+    console.log(
+      `    ${i + 1}. --intro-in-track ${(c.markMs / 1000).toFixed(3)}   (sau khoảng lặng ${(c.pauseMs / 1000).toFixed(2)}s)` +
+        `${cut ? `   ${cut}` : ""}`,
+    );
+  }
+  console.log(`  Nếu nghe thấy track ${track.number} bắt đầu ngay ở câu ${questionNumber}: --intro-in-track 0`);
+}
+
+/**
+ * `--tracks <dir>`: a paper that arrived already split into one mp3 per question.
+ *
+ * The clip boundaries are the file joins and nothing else — no silence threshold decides where a
+ * question ends, and `--intro` is not used because track 1 *is* the introduction. Silence is only
+ * asked where the speech inside one file stops. The plan is then checked against the tape that was
+ * actually written, and the run stops rather than write a clip whose boundary drifted.
+ */
+async function runTracks(dir: string): Promise<ExamPlan | null> {
+  if (!onlyExam) {
+    console.error(`--tracks needs --exam <label>: the folder name does not carry the exam, and a guessed label attaches questions to the wrong paper.`);
+    process.exit(1);
+  }
+  if (introOverride !== undefined) {
+    console.error(`--tracks and --intro cannot be combined: with one file per question the end of the introduction is the length of track 1.`);
+    process.exit(1);
+  }
+  const named = audioNameFromExam(onlyExam);
+  if (!named.ok) {
+    console.error(`--exam ${onlyExam}: ${named.reason}`);
+    process.exit(1);
+  }
+  if (!existsSync(dir)) {
+    console.error(`No such folder: ${dir}`);
+    process.exit(1);
+  }
+
+  const fileNames = (await readdir(dir)).filter((f) => f.toLowerCase().endsWith(".mp3"));
+  const numbered: { number: number; file: string }[] = [];
+  const nameProblems: string[] = [];
+  for (const f of fileNames) {
+    const n = trackNumberFromName(f);
+    if (!n.ok) nameProblems.push(n.reason);
+    else numbered.push({ number: n.number, file: path.join(dir, f) });
+  }
+  numbered.sort((a, b) => a.number - b.number);
+  console.log(`\n=== ${onlyExam} — ${numbered.length} track file(s) in ${dir} ===`);
+  for (const p of nameProblems) console.log(`  PROBLEM: ${p}`);
+
+  const tracks: TrackProbe[] = numbered.map((t) => {
+    const s = probeStream(t.file);
+    const perFrame = samplesPerFrame(s.sampleRate) ?? 1152;
+    const silences = parseSilenceLog(ffmpegSilenceLog(t.file), s.durationMs);
+    return {
+      number: t.number,
+      file: t.file,
+      durationMs: s.durationMs,
+      frameMs: Math.round((s.frames * perFrame * 1000) / s.sampleRate),
+      speechEndMs: firstLongSilenceStart(silences, silenceMs),
+      codec: s.codec,
+      sampleRate: s.sampleRate,
+      channels: s.channels,
+    };
+  });
+  for (const t of tracks) {
+    console.log(
+      `  ${String(t.number).padStart(3)}  ${t.codec} ${t.sampleRate}Hz ${t.channels}ch  ${(t.durationMs / 1000).toFixed(3)}s` +
+        `  (băng: ${(t.frameMs / 1000).toFixed(3)}s)  hết tiếng ${t.speechEndMs === null ? "KHÔNG ĐO ĐƯỢC" : `${(t.speechEndMs / 1000).toFixed(3)}s`}`,
+    );
+  }
+
+  const questions = await listeningQuestions(onlyExam);
+  const plan = planTracks({ tracks, questions, introInTrackMs: introInTrackMs ?? 0 });
+  if (!plan.ok || nameProblems.length > 0) {
+    for (const r of plan.ok ? [] : plan.reasons) console.log(`  PROBLEM: ${r}`);
+    console.error(`\nStopped: the track files and the Word file do not agree. Nothing was joined and nothing was written.`);
+    process.exit(1);
+  }
+  for (const w of plan.warnings) console.log(`  WARN: ${w}`);
+
+  // No guessing, not even a dry run: the mark inside the first question's file is a human's.
+  if (introInTrackMs === undefined) {
+    reportMissingIntroInTrack(tracks[1]!, questions[0]!.number);
+    process.exit(1);
+  }
+
+  const out = path.join(AUDIO_DIR, named.fileName);
+  joinTracks(
+    tracks.map((t) => t.file),
+    out,
+  );
+  const joinedMs = ffprobeDurationMs(out);
+  console.log(`\n  Đã ghép (không mã hoá lại) → ${out}  ${(statSync(out).size / 1024 / 1024).toFixed(1)} MB, ${formatMs(joinedMs)}`);
+  const lengthDrift = joinedMs - plan.totalMs;
+  console.log(`  Dự tính ${formatMs(plan.totalMs)}, lệch ${lengthDrift >= 0 ? "+" : ""}${lengthDrift} ms`);
+  console.log(
+    `  Lời dẫn mở đầu: 00:00.000 → ${formatMs(plan.introEndMs)} (cả track ${tracks[0]!.number}` +
+      `${introInTrackMs > 0 ? ` + ${(introInTrackMs / 1000).toFixed(3)}s đầu track ${tracks[1]!.number}` : ""}; bỏ, không thuộc câu nào)`,
+  );
+
+  const joinedSilences = parseSilenceLog(ffmpegSilenceLog(out), joinedMs);
+  const checks = verifyTrackBoundaries({ segments: plan.segments, silences: joinedSilences, minSilenceMs: silenceMs });
+  const byIdx = new Map(checks.map((c) => [c.idx, c]));
+  // The same rule the single-tape path uses to say which clip a question belongs to.
+  const audioPlan = planAudio(plan.segments, questions, joinedMs);
+  const questionsOf = (idx: number) =>
+    [...audioPlan.assignment.entries()]
+      .filter(([, s]) => s === idx)
+      .map(([n]) => n)
+      .sort((a, b) => a - b);
+
+  console.log(`\n   Đoạn  Track      Câu        Bắt đầu        Hết tiếng      Kết thúc       Dài     Lệch`);
+  for (const s of plan.segments) {
+    const qs = questionsOf(s.idx);
+    const check = byIdx.get(s.idx)!;
+    const trackList = [...new Set(qs.flatMap((n) => plan.tracksOf.get(n) ?? []))].sort((a, b) => a - b);
+    console.log(
+      `   ${String(s.idx).padStart(4)}  ${trackList.join("+").padEnd(9)}  ${qs.map((n) => `#${n}`).join(",").padEnd(9)}  ` +
+        `${formatMs(s.start_ms).padStart(11)}    ${formatMs(s.speech_end_ms).padStart(11)}    ${formatMs(s.end_ms).padStart(11)}  ` +
+        `${((s.end_ms - s.start_ms) / 1000).toFixed(1).padStart(6)}s  ${check.driftMs === null ? "   —" : `${check.driftMs >= 0 ? "+" : ""}${check.driftMs}ms`}` +
+        `${check.appliesToStart && !check.startInSilence ? "   CẢNH BÁO: mối nối không nằm trong khoảng lặng" : ""}`,
+    );
+  }
+
+  const bad = checks.filter((c) => c.driftMs === null || Math.abs(c.driftMs) > TRACK_DRIFT_MAX_MS || (c.appliesToStart && !c.startInSilence));
+  if (bad.length > 0) {
+    console.error(
+      `\n${bad.length} clip(s) landed more than ${TRACK_DRIFT_MAX_MS} ms from the tape's own silence (đoạn ${bad.map((c) => c.idx).join(", ")}).` +
+        ` The tape was written to ${out} so it can be listened to, but nothing will be stored.`,
+    );
+    process.exit(1);
+  }
+
+  // Samples for a human: the first single question, and both files of the first pair.
+  const firstPair = questions.sort((a, b) => a.number - b.number).findIndex((q, i) => i > 0 && q.same_segment);
+  const sampleAt = [
+    // Question 1's clip starts at the mark inside its own file, not at the file join.
+    { atMs: plan.introEndMs, label: `${onlyExam}-track${tracks[1]!.number}-cau${questions[0]!.number}` },
+    ...(firstPair > 0
+      ? [
+          { atMs: plan.offsetsMs[firstPair]!, label: `${onlyExam}-track${firstPair + 1}-cau${questions[firstPair - 1]!.number}` },
+          { atMs: plan.offsetsMs[firstPair + 1]!, label: `${onlyExam}-track${firstPair + 2}-cau${questions[firstPair]!.number}` },
+        ]
+      : []),
+  ];
+  console.log(`\n  Mẫu 10 giây để nghe xác nhận đúng số câu:`);
+  for (const s of sampleAt) {
+    const cut = cutSample(out, s.atMs, s.label);
+    if (cut) console.log(`    ${formatMs(s.atMs)}  ${cut}`);
+  }
+
+  for (const problem of audioPlan.problems) console.log(`  PROBLEM: ${problem}`);
+  if (audioPlan.problems.length > 0) {
+    console.error(`\nStopped: the segments do not match the questions. Nothing was written.`);
+    process.exit(1);
+  }
+  return {
+    exam: onlyExam,
+    file: out,
+    fileSize: statSync(out).size,
+    durationMs: joinedMs,
+    introEndMs: plan.introEndMs,
+    mergedShort: 0,
+    silences: joinedSilences,
+    plan: audioPlan,
+    questions,
+  };
+}
+
 async function main() {
+  if (tracksDir) {
+    console.log(apply ? `APPLY --tracks${force ? " --force" : ""}: will write to ${local ? "the LOCAL dev database" : "production"}` : "DRY RUN --tracks: nothing is written");
+    const p = await runTracks(tracksDir);
+    if (!p) return;
+    console.log(`\nTotal: 1 exam, ${p.plan.segments.length} clip(s), ${p.plan.assignment.size} question link(s).`);
+    console.log("Every exam is stored UNVERIFIED; approve it in Settings → TOPIK before practice uses it.");
+    if (!apply) {
+      console.log("\nDry run only. Listen to the samples, check the table, then run again with --apply.");
+      return;
+    }
+    if (!local) backupProduction();
+    const proxy = local ? await getPlatformProxy({ remoteBindings: false }) : await getPlatformProxy({ configPath: tempConfig(), remoteBindings: true });
+    try {
+      await writeExam(proxy.env.DB as unknown as D1Like, proxy.env.MEDIA as unknown as R2Like, p);
+    } finally {
+      await proxy.dispose();
+    }
+    return;
+  }
   if (linkOnly) {
     console.log(apply ? `APPLY --link-only: will write to ${local ? "the LOCAL dev database" : "production"}` : "DRY RUN --link-only: nothing is written");
     await runLinkOnly();

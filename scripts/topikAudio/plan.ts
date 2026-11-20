@@ -377,6 +377,24 @@ export function examFromAudioName(fileName: string): ExamNameResult {
   return { ok: true, exam: `${source}-${Number(round[1])}회` };
 }
 
+const EXAM_LABEL = /^(.+)-(\d+)회$/;
+
+/**
+ * The inverse of `examFromAudioName`, for `--tracks`: that path is handed an exam label and has to
+ * decide what to call the tape it joins, instead of being handed a file whose name carries the
+ * label. Going through the same two shapes in one place keeps the round trip honest — the joined
+ * tape is read back by `examFromAudioName` on every later run.
+ */
+export type AudioNameResult = { ok: true; fileName: string } | { ok: false; reason: string };
+
+export function audioNameFromExam(exam: string): AudioNameResult {
+  const m = EXAM_LABEL.exec(exam);
+  if (!m) return { ok: false, reason: `exam label "${exam}" is not "<source>-<N>회"` };
+  const [, source, round] = m;
+  if (source!.includes("_")) return { ok: false, reason: `exam label "${exam}" has an underscore in its source, which the file name uses as its separator` };
+  return { ok: true, fileName: `TOPIK_Listening_${source}_Test${Number(round)}.mp3` };
+}
+
 /** One question that `--link-only` would attach to a clip that already exists. */
 export type LinkTarget = { number: number; segmentIdx: number; shared: boolean };
 export type LinkPlan =
