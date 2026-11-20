@@ -29,15 +29,9 @@
 import type { TopikClip } from "@shared/topik";
 import { mediaUrl } from "@/features/audio/player";
 import { positionOnTimeline } from "./mixedTimeline";
+import { elementSlots, type TapeTrack } from "./tapeTracks";
 
-/** A piece of tape. The mixed sitting uses `clip` only; the podcast uses all three. */
-export type TapeTrack =
-  | ({ kind: "clip" } & TopikClip)
-  | { kind: "file"; audio_key: string }
-  | { kind: "silence"; ms: number };
-
-/** The sitting's own playlist: every clip of the paper, in order. */
-export const clipTracks = (clips: readonly TopikClip[]): TapeTrack[] => clips.map((c) => ({ kind: "clip", ...c }));
+export { clipTracks, elementSlots, type TapeTrack } from "./tapeTracks";
 
 export type TapeEvent =
   | { kind: "unlocked"; blocked: number }
@@ -90,13 +84,56 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
   let disposed = false;
   /** The running gap's timer, so pausing or skipping inside a gap does not leave it ticking. */
   let gapTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * How to take the current track's listeners back off its element, in the shape `player.ts` uses
+   * for the same reason (`detachClip`).
+   *
+   * Every listener here belongs to one track and must die with it. A `timeupdate` or an `ended`
+   * left on an element from an abandoned track fires again as soon as that element is reused, and
+   * hands the tape over from a track that is no longer playing — the failure the listening sitting
+   * hit on 14 November. There are two kinds: the watcher of the track being played, and the
+   * listeners of a load that has not settled yet, which still wants to seek the element back to
+   * its own start.
+   */
+  let detachWatch: (() => void) | null = null;
+  const loading = new Map<number, () => void>();
+  /**
+   * Bumped by every skip. A hand-over that was waiting for a load resumes after the skip has
+   * already started something else, and without this it would then start a second track on top.
+   */
+  let generation = 0;
+
+  /**
+   * Takes the playing track's watcher off. Safe to call when there is none, and called from more
+   * places than strictly need it — `handOver` and `playFrom` both drop the same watcher, and the
+   * watcher drops itself as it fires. That overlap is deliberate: a listener surviving its track
+   * is what broke the listening sitting on 14 November, and the cost of dropping twice is nothing.
+   * It does mean a mutation that removes any one of those three cannot be caught by a test; what
+   * the tests prove is the behaviour (a question plays through, Pause and Next inside the gap come
+   * back correctly), not which line did the dropping.
+   */
+  const dropWatch = () => {
+    detachWatch?.();
+    detachWatch = null;
+  };
+  /** Abandons loads in flight: their `loadedmetadata` would seek an element they no longer own. */
+  const dropLoads = () => {
+    for (const [i, detach] of loading) {
+      detach();
+      prepared.delete(i);
+    }
+    loading.clear();
+  };
 
   const set = (patch: Partial<TapeState>) => {
     state = { ...state, ...patch };
     listeners.forEach((l) => l());
   };
   const emit = (e: TapeEvent) => onEvent?.(e);
-  const elementFor = (i: number) => els[i % 2]!;
+  // Worked out once, over the tracks that have audio: see `elementSlots`. A gap's slot is `null`
+  // and every caller below has already ruled a gap out, so the fallback is never reached.
+  const slots = elementSlots(tracks);
+  const elementFor = (i: number) => els[slots[i] ?? 0]!;
   /** A silent gap owns no element, so "is this track loaded" is only ever asked of the other two. */
   const needsElement = (track: TapeTrack | undefined) => track !== undefined && track.kind !== "silence";
   const label = (track: TapeTrack) => (track.kind === "silence" ? `gap ${track.ms}ms` : track.audio_key.slice(-12));
@@ -122,7 +159,12 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
         if (done) return;
         done = true;
         clearTimeout(timer);
+        // All four of this load's listeners come off, not only the one that fired: `canplay` and
+        // `loadedmetadata` outlive a load that failed or timed out, and the element is reused.
         el.removeEventListener("error", onError);
+        el.removeEventListener("canplay", settle);
+        el.removeEventListener("loadedmetadata", seek);
+        loading.delete(i);
         if (why === "ready") emit({ kind: "ready", index: i });
         else emit({ kind: "error", message: `clip ${i + 1}: ${why === "error" ? "không tải được" : "quá hạn tải"}` });
         resolve();
@@ -141,6 +183,15 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
         el.currentTime = track.kind === "clip" ? track.start_ms / 1000 : 0;
         settle();
       };
+      loading.set(i, () => {
+        done = true;
+        clearTimeout(timer);
+        el.removeEventListener("error", onError);
+        el.removeEventListener("canplay", settle);
+        el.removeEventListener("loadedmetadata", seek);
+        // Resolved, not left pending: whoever is awaiting this load must not wait for ever.
+        resolve();
+      });
       if (el.src.endsWith(url) && el.readyState > 0) seek();
       else {
         el.src = url;
@@ -155,6 +206,12 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
   /** `withinMs` > 0 only when a reopened sitting resumes part way into a clip (M7.13). */
   async function playFrom(i: number, withinMs = 0): Promise<void> {
     if (disposed) return;
+    const gen = generation;
+    // A safety net on purpose, and the second of two: `handOver` has already dropped the watcher
+    // of the track that ended, but `playFrom` is also reached from `start`, and a track must never
+    // begin while anything is still listening for another one. Two places dropping the same
+    // watcher is the point — 14 November was one place not dropping it.
+    dropWatch();
     const track = tracks[i];
     if (!track) {
       emit({ kind: "finished" });
@@ -175,7 +232,8 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     }
 
     await prepare(i);
-    if (disposed) return;
+    // A skip while this track's file was loading has already started another one.
+    if (disposed || gen !== generation) return;
 
     const el = elementFor(i);
     const startMs = track.kind === "clip" ? track.start_ms : 0;
@@ -189,34 +247,64 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     // file is in the browser's cache (and the service worker's) and the seek costs nothing.
     void prepare(i + 1);
 
-    // A clip hands over at the paper's own boundary; a whole file has no boundary to watch, so it
-    // hands over when the browser says it ended.
+    attachWatch(i);
+  }
+
+  /**
+   * Watches track `i` for its end, and records how to stop watching it.
+   *
+   * Separate from `playFrom` because a pause takes the watcher off and resuming has to put it back:
+   * a paused track is still the current one, so it keeps its right to hand over — but it must not
+   * keep a listener on an element while something else could be made to play on it.
+   *
+   * A clip hands over at the paper's own boundary; a whole file has no boundary to watch, so it
+   * hands over when the browser says it ended.
+   */
+  function attachWatch(i: number): void {
+    const track = tracks[i];
+    if (!track || track.kind === "silence") return;
+    // Holds the invariant itself rather than trusting the caller: at most one watcher, ever.
+    dropWatch();
+    const el = elementFor(i);
+
     if (track.kind === "file") {
       const tick = () => set({ positionMs: el.currentTime * 1000 });
       const onEnded = () => {
-        el.removeEventListener("ended", onEnded);
-        el.removeEventListener("timeupdate", tick);
+        // Off as it fires, as well as in `handOver`: a second `ended` must not reach a track that
+        // is over, whatever happens to the hand-over after this.
+        dropWatch();
         void handOver(i);
       };
       el.addEventListener("ended", onEnded);
       el.addEventListener("timeupdate", tick);
+      detachWatch = () => {
+        el.removeEventListener("ended", onEnded);
+        el.removeEventListener("timeupdate", tick);
+      };
       return;
     }
 
+    const startMs = track.start_ms;
     const clipEnd = track.end_ms;
     const watch = () => {
       set({ positionMs: el.currentTime * 1000 - startMs });
       if (el.currentTime * 1000 < clipEnd) return;
-      el.removeEventListener("timeupdate", watch);
+      dropWatch();
       el.pause();
       void handOver(i);
     };
     el.addEventListener("timeupdate", watch);
+    detachWatch = () => el.removeEventListener("timeupdate", watch);
   }
 
   /** At the end of one track: start the next, or wait in that silence until it loads. */
   async function handOver(from: number): Promise<void> {
     if (disposed) return;
+    const gen = generation;
+    // The track that is over stops being watched here, and nowhere else: a `timeupdate` or an
+    // `ended` left on its element fires again the moment another track is given that element, and
+    // hands the tape over from a track that stopped playing long ago (the 14 November fault).
+    dropWatch();
     const next = from + 1;
     if (next >= tracks.length) {
       emit({ kind: "finished" });
@@ -230,6 +318,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       set({ waiting: true });
       emit({ kind: "waiting", index: next });
       await pending;
+      if (disposed || gen !== generation) return;
       waited = Math.round(performance.now() - since);
       set({ waiting: false });
     }
@@ -305,9 +394,14 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
         if (pausedAt !== null) set({ pausedMs: state.pausedMs + (Date.now() - pausedAt) });
         pausedAt = null;
         void el.play().catch(() => undefined);
+        // The track gets its watcher back, so it still hands over when it ends.
+        attachWatch(state.index);
         set({ playing: true });
       } else {
         el.pause();
+        // Nothing is playing, so nothing may be listening: a paused track's `ended` or
+        // `timeupdate` must not be left on an element that a skip could hand to another track.
+        dropWatch();
         pausedAt = Date.now();
         set({ pauseCount: state.pauseCount + 1, playing: false });
       }
@@ -317,12 +411,19 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     async jumpTo(index: number): Promise<void> {
       if (disposed || index < 0 || index >= tracks.length) return;
       clearGap();
+      generation += 1;
+      // Everything the tape was in the middle of is abandoned here: the watcher of the track being
+      // left, and any load still in flight, whose `loadedmetadata` would otherwise seek the
+      // element back to the start of a track nobody is going to hear.
+      dropWatch();
+      dropLoads();
       for (const el of els) el.pause();
       await playFrom(index);
     },
 
     stop(): void {
       clearGap();
+      dropWatch();
       for (const el of els) el.pause();
       set({ playing: false });
     },
@@ -330,6 +431,8 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     dispose(): void {
       disposed = true;
       clearGap();
+      dropWatch();
+      dropLoads();
       for (const el of els) {
         el.pause();
         el.removeAttribute("src");

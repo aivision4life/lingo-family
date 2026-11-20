@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMixedTape, type TapeEvent, type TapeTrack } from "./mixedTape";
+import { createMixedTape, elementSlots, type TapeEvent, type TapeTrack } from "./mixedTape";
 
 /**
  * A stand-in for `<audio>` that only does what the tape actually depends on: a source, a
@@ -18,23 +18,29 @@ class FakeAudio {
   currentTime = 0;
   readyState = 0;
   playCalls = 0;
-  private listeners = new Map<string, Set<() => void>>();
+  // Keyed by the function the caller passed, so `removeEventListener(type, fn)` takes a `once`
+  // listener off by that same reference — which is what a real element does, and what the tape
+  // relies on to abandon a load.
+  private listeners = new Map<string, Map<() => void, () => void>>();
 
   addEventListener(type: string, fn: () => void, opts?: { once?: boolean }) {
     const wrapped = opts?.once
       ? () => {
-          this.removeEventListener(type, wrapped);
+          this.removeEventListener(type, fn);
           fn();
         }
       : fn;
-    // `once` wrappers are keyed by the original so a test can still remove either.
-    (this.listeners.get(type) ?? this.listeners.set(type, new Set()).get(type)!).add(wrapped);
+    (this.listeners.get(type) ?? this.listeners.set(type, new Map()).get(type)!).set(fn, wrapped);
   }
   removeEventListener(type: string, fn: () => void) {
     this.listeners.get(type)?.delete(fn);
   }
   fire(type: string) {
-    for (const fn of [...(this.listeners.get(type) ?? [])]) fn();
+    for (const fn of [...(this.listeners.get(type) ?? []).values()]) fn();
+  }
+  /** How many listeners of `type` are still attached: a leak is a listener nobody took off. */
+  listenerCount(type: string) {
+    return this.listeners.get(type)?.size ?? 0;
   }
   load() {}
   removeAttribute() {
@@ -262,8 +268,9 @@ describe("podcast tracks", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(tape.getState().index).toBe(1);
       expect(tape.getState().playing).toBe(true);
-      // The answer is loading during the gap, on the element the options have finished with.
-      elements[0]!.arrive();
+      // The answer loads during the gap on the OTHER element: the gap takes no slot of its own,
+      // so the options and the answer no longer meet on one `<audio>` (see `elementSlots`).
+      elements[1]!.arrive();
       await vi.advanceTimersByTimeAsync(0);
 
       // Four seconds in, the gap is still a gap.
@@ -289,7 +296,7 @@ describe("podcast tracks", () => {
       await started;
       elements[0]!.fire("ended");
       await vi.advanceTimersByTimeAsync(0);
-      elements[0]!.arrive();
+      elements[1]!.arrive();
 
       tape.toggle();
       expect(tape.getState().playing).toBe(false);
@@ -308,10 +315,286 @@ describe("podcast tracks", () => {
     const { tape } = await tapeOn([file("a.mp3"), { kind: "silence", ms: 5_000 }, file("b.mp3"), file("c.mp3")]);
     const jumped = tape.jumpTo(2);
     await settle();
-    elements[0]!.arrive();
+    elements[1]!.arrive();
     await jumped;
     await settle();
     expect(tape.getState().index).toBe(2);
     expect(tape.getState().playing).toBe(true);
+  });
+});
+
+/**
+ * A whole podcast question, all six tracks of it (M8.1): the shape the real thing plays, which is
+ * where both of the faults below could be heard — one of them as "after the clip only one option
+ * is read, then it stops".
+ */
+describe("a whole podcast question", () => {
+  const question = (n: number): TapeTrack[] => [
+    { kind: "file", audio_key: `q${n}-number.mp3` },
+    { kind: "file", audio_key: `q${n}-line.mp3` },
+    { kind: "clip", audio_key: `q${n}-exam.mp3`, start_ms: 0, speech_end_ms: 20_000, end_ms: 25_000 },
+    { kind: "file", audio_key: `q${n}-options.mp3` },
+    { kind: "silence", ms: 5_000 },
+    { kind: "file", audio_key: `q${n}-answer.mp3` },
+  ];
+
+  /** Lets the tape's promise chain run to a standstill while the clock is held still. */
+  async function flush() {
+    for (let i = 0; i < 8; i += 1) await vi.advanceTimersByTimeAsync(0);
+  }
+
+  /** Plays track `index` to its end, the way the browser would: load, then end or reach `end_ms`. */
+  async function playOut(tracks: readonly TapeTrack[], index: number) {
+    const slot = elementSlots(tracks)[index];
+    if (slot === null || slot === undefined) {
+      await vi.advanceTimersByTimeAsync(5_000); // a gap ends by itself
+      return;
+    }
+    const el = elements[slot]!;
+    el.arrive();
+    await flush();
+    const track = tracks[index]!;
+    if (track.kind === "clip") {
+      el.currentTime = track.end_ms / 1000;
+      el.fire("timeupdate");
+    } else el.fire("ended");
+    await flush();
+  }
+
+  async function startOn(tracks: readonly TapeTrack[]) {
+    const events: TapeEvent[] = [];
+    const tape = createMixedTape(tracks, (e) => events.push(e));
+    const started = tape.start();
+    await vi.advanceTimersByTimeAsync(0);
+    elements[0]!.arrive();
+    await started;
+    await vi.advanceTimersByTimeAsync(0);
+    const played = () => events.filter((e) => e.kind === "playing").map((e) => (e.kind === "playing" ? e.index : -1));
+    return { tape, events, played };
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("plays all six tracks in order, skipping none and cutting none short", async () => {
+    const tracks = question(1);
+    const { tape, events, played } = await startOn(tracks);
+    for (let i = 0; i < tracks.length; i += 1) await playOut(tracks, i);
+
+    // Every track, once, in order — in particular the options (3) and then the answer (5), which
+    // is what the shared element used to put at risk.
+    expect(played()).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(kinds(events)).not.toContain("error");
+    expect(tape.getState()).toMatchObject({ finished: true, playing: false });
+  });
+
+  it("leaves no listener behind on either element", async () => {
+    const tracks = question(1);
+    const { tape } = await startOn(tracks);
+    for (let i = 0; i < tracks.length; i += 1) await playOut(tracks, i);
+    // A surviving `ended` or `timeupdate` fires again the moment the element is reused and hands
+    // the tape over from a track that stopped playing long ago (the 14 November fault).
+    for (const el of elements) {
+      expect(el.listenerCount("ended")).toBe(0);
+      expect(el.listenerCount("timeupdate")).toBe(0);
+      expect(el.listenerCount("loadedmetadata")).toBe(0);
+      expect(el.listenerCount("canplay")).toBe(0);
+    }
+    expect(tape.getState().finished).toBe(true);
+  });
+
+  it("goes to the next question when Next is pressed inside the gap", async () => {
+    const tracks = [...question(1), ...question(2)];
+    const { tape, played } = await startOn(tracks);
+    for (let i = 0; i < 5; i += 1) await playOut(tracks, i); // up to and into the gap
+    expect(tape.getState().index).toBe(4);
+
+    const jumped = tape.jumpTo(6);
+    await vi.advanceTimersByTimeAsync(0);
+    elements[elementSlots(tracks)[6]!]!.arrive();
+    await jumped;
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(tape.getState()).toMatchObject({ index: 6, playing: true });
+    // The answer of the question that was skipped is never heard, and the gap's timer is dead: it
+    // must not hand over on top of the question that is now playing.
+    expect(played()).not.toContain(5);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(tape.getState().index).toBe(6);
+  });
+
+  it("holds the gap while paused, then finishes the question", async () => {
+    const tracks = question(1);
+    const { tape, played } = await startOn(tracks);
+    for (let i = 0; i < 4; i += 1) await playOut(tracks, i);
+    expect(tape.getState().index).toBe(4);
+
+    tape.toggle();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(tape.getState()).toMatchObject({ index: 4, playing: false });
+
+    tape.toggle();
+    await playOut(tracks, 4);
+    await playOut(tracks, 5);
+    expect(played()).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(tape.getState().finished).toBe(true);
+  });
+
+  it("carries on after a pause in the middle of a file, and still hands over at its end", async () => {
+    const tracks = question(1);
+    const { tape, played } = await startOn(tracks);
+    // Paused on the way into the question line: its watcher comes off, and resuming must put one
+    // back or the file would play to its end and the tape would sit there for ever.
+    await playOut(tracks, 0);
+    tape.toggle();
+    expect(tape.getState().playing).toBe(false);
+    tape.toggle();
+    expect(tape.getState().playing).toBe(true);
+    for (const i of [1, 2, 3]) await playOut(tracks, i);
+    // Nothing was lost to the pause: the line, the clip and the options all played, and the tape
+    // is sitting in the gap where it should be.
+    expect(played()).toEqual([0, 1, 2, 3, 4]);
+    expect(tape.getState().index).toBe(4);
+  });
+
+  it("does not start two tracks when Next lands while a file is still loading", async () => {
+    const tracks = [...question(1), ...question(2)];
+    const { tape, played } = await startOn(tracks);
+    // The question line has not loaded, so the hand-over is waiting on it.
+    elements[0]!.fire("ended");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tape.getState().waiting).toBe(true);
+
+    const jumped = tape.jumpTo(6);
+    await vi.advanceTimersByTimeAsync(0);
+    elements[elementSlots(tracks)[6]!]!.arrive();
+    await jumped;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tape.getState().index).toBe(6);
+
+    // The abandoned load arriving late must not now start the track nobody is waiting for.
+    elements[elementSlots(tracks)[1]!]!.arrive();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tape.getState().index).toBe(6);
+    expect(played().filter((i) => i === 1)).toHaveLength(0);
+  });
+});
+
+/**
+ * Every listener belongs to one track and must die with it. These are the assertions that fail
+ * when any single piece of that is taken away — a leak is not visible in what you hear until an
+ * element is reused, which is exactly how the listening sitting broke on 14 November.
+ */
+describe("a track's listeners die with the track", () => {
+  const file = (audio_key: string): TapeTrack => ({ kind: "file", audio_key });
+  const watchers = (el: (typeof elements)[number]) => el.listenerCount("ended") + el.listenerCount("timeupdate");
+
+  async function started(tracks: readonly TapeTrack[]) {
+    const events: TapeEvent[] = [];
+    const tape = createMixedTape(tracks, (e) => events.push(e));
+    const run = tape.start();
+    await settle();
+    elements[0]!.arrive();
+    await run;
+    await settle();
+    const played = () => events.filter((e) => e.kind === "playing").map((e) => (e.kind === "playing" ? e.index : -1));
+    return { tape, events, played };
+  }
+
+  it("watches exactly one track at a time, and nothing once the tape is over", async () => {
+    const { tape } = await started([file("a.mp3"), file("b.mp3")]);
+    expect(watchers(elements[0]!)).toBe(2); // `ended` and `timeupdate`, for track 0 only
+    expect(watchers(elements[1]!)).toBe(0);
+
+    elements[1]!.arrive();
+    await settle();
+    elements[0]!.fire("ended");
+    await settle();
+    expect(watchers(elements[0]!)).toBe(0);
+    expect(watchers(elements[1]!)).toBe(2);
+
+    elements[1]!.fire("ended");
+    await settle();
+    expect(tape.getState().finished).toBe(true);
+    for (const el of elements) expect(watchers(el)).toBe(0);
+  });
+
+  it("does not hand over twice when the same track reports its end again", async () => {
+    const { tape, played } = await started([file("a.mp3"), file("b.mp3"), file("c.mp3")]);
+    elements[1]!.arrive();
+    await settle();
+    elements[0]!.fire("ended");
+    await settle();
+    expect(tape.getState().index).toBe(1);
+
+    // The element that played track 0 says "ended" once more. Nothing is listening any more, so
+    // the tape stays where it is instead of starting track 1 a second time.
+    elements[0]!.fire("ended");
+    await settle();
+    expect(tape.getState().index).toBe(1);
+    expect(played()).toEqual([0, 1]);
+  });
+
+  it("stops watching while paused, and watches again when play resumes", async () => {
+    const { tape } = await started([file("a.mp3"), file("b.mp3")]);
+    tape.toggle();
+    // Paused: nothing is playing, so nothing may be listening on an element that a skip could
+    // hand to another track.
+    expect(watchers(elements[0]!)).toBe(0);
+
+    tape.toggle();
+    expect(watchers(elements[0]!)).toBe(2);
+    // And the track still hands over at its end, which is what the watcher is for.
+    elements[1]!.arrive();
+    await settle();
+    elements[0]!.fire("ended");
+    await settle();
+    expect(tape.getState().index).toBe(1);
+  });
+
+  it("stops watching when the tape is stopped", async () => {
+    const { tape } = await started([file("a.mp3"), file("b.mp3")]);
+    tape.stop();
+    expect(watchers(elements[0]!)).toBe(0);
+  });
+
+  it("stops watching when the tape is disposed", async () => {
+    const { tape } = await started([file("a.mp3"), file("b.mp3")]);
+    tape.dispose();
+    for (const el of elements) expect(watchers(el)).toBe(0);
+  });
+
+  it("leaves nothing of the track it was told to skip", async () => {
+    const { tape, played } = await started([file("a.mp3"), file("b.mp3"), file("c.mp3")]);
+    const jumped = tape.jumpTo(2);
+    await settle();
+    elements[0]!.arrive(); // track 2 plays on element 0 again
+    await jumped;
+    await settle();
+    expect(tape.getState().index).toBe(2);
+
+    // Track 0's own element is the one track 2 is using now. Its old `ended` must be gone, or the
+    // skipped track hands the tape over on top of the one the listener asked for.
+    expect(watchers(elements[0]!)).toBe(2);
+    elements[0]!.fire("ended");
+    await settle();
+    expect(played()).toEqual([0, 2]);
+    expect(tape.getState().finished).toBe(true);
+
+    // And the load the skip abandoned keeps nothing on its element either: its `loadedmetadata`
+    // would seek that element back to the start of a track nobody is going to hear.
+    expect(elements[1]!.listenerCount("loadedmetadata")).toBe(0);
+    expect(elements[1]!.listenerCount("canplay")).toBe(0);
+  });
+
+  it("leaves nothing of a load that failed", async () => {
+    await started([file("a.mp3"), file("b.mp3")]);
+    // Track 1's load is in flight on the other element; it errors instead of arriving.
+    expect(elements[1]!.listenerCount("loadedmetadata")).toBe(1);
+    elements[1]!.fire("error");
+    await settle();
+    expect(elements[1]!.listenerCount("loadedmetadata")).toBe(0);
+    expect(elements[1]!.listenerCount("canplay")).toBe(0);
+    expect(elements[1]!.listenerCount("error")).toBe(0);
   });
 });

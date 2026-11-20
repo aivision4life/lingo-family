@@ -496,6 +496,15 @@ About **210 characters of TTS per question** (question line + four options + the
   TTS trọn vẹn — không ai biết dài bao nhiêu trước khi tải, nên chuyển tại sự kiện `ended`) và
   `silence` (khoảng nghỉ, chỉ là một hẹn giờ). Không có player thứ hai. Khoảng nghỉ **không** phải
   audio: nếu nó là file thì ngày M8.3 cho đổi 3/5/8 giây sẽ phải sinh lại toàn bộ.
+- **Hai thẻ `<audio>` luân phiên theo các đoạn CÓ tiếng, không theo chỉ số đoạn.** Một câu podcast
+  là sáu đoạn, trong đó đoạn nghỉ không sở hữu thẻ nào; đếm bằng `i % 2` làm đoạn nghỉ chiếm một
+  chỗ, nên bốn đáp án (đoạn 3) và công bố đáp án (đoạn 5) rơi vào **cùng một thẻ** và việc nạp
+  trước đáp án ghi `src` mới lên đúng thẻ đang phát đáp án. `elementSlots` (`tapeTracks.ts`) tính
+  sẵn chỗ cho cả danh sách và chỉ đếm đoạn có tiếng: hai đoạn nghe liền nhau không bao giờ dùng
+  chung một thẻ. Mọi listener (`ended`, `timeupdate`, `canplay`, `loadedmetadata`) thuộc về một
+  đoạn và bị gỡ khi chuyển đoạn, khi bấm Tiếp, khi Tạm dừng và khi Dừng — theo đúng cách
+  `detachClip` làm trong `player.ts`; một bộ đếm `generation` chặn lượt chuyển đoạn đang chờ tải
+  xong khởi động đoạn thứ hai đè lên đoạn mà cú bấm Tiếp vừa mở.
 - **Bốn file TTS mỗi câu, và chúng dùng chung được.** Số câu ("4번."), dòng hỏi (bỏ "[4~8]" và
   "(각 2점)" — thứ chỉ in cho mắt đọc), bốn đáp án trong một file, và "정답은 N번" + đáp án đúng đọc
   hai lần. Khoá R2 là hash của chính câu chữ (`audioKey`, như TTS từ vựng), nên số câu và dòng hỏi
