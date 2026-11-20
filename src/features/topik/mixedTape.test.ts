@@ -411,6 +411,46 @@ describe("podcast tracks", () => {
     expect(tape.getState()).toMatchObject({ playing: true, interrupted: false });
   });
 
+  it("does not let two pauses in a row swallow the interruption that follows", async () => {
+    const { tape } = await tapeOn([file("options.mp3"), file("answer.mp3")]);
+    // Two pauses by the tape, one after the other. The second is on an element that is already
+    // paused, and a real element raises no `pause` event for that one — so it must not be owed
+    // an event either, or the debt is still outstanding when the browser interrupts for real.
+    tape.toggle();
+    tape.stop();
+    elements[0]!.fire("pause");
+    await settle();
+    expect(tape.getState()).toMatchObject({ playing: false, interrupted: false });
+
+    tape.toggle();
+    await settle();
+    expect(tape.getState().playing).toBe(true);
+
+    // The phone call, now: this must be noticed, not eaten by a pause from a minute ago.
+    elements[0]!.paused = true;
+    elements[0]!.fire("pause");
+    await settle();
+    expect(tape.getState()).toMatchObject({ playing: false, interrupted: true, index: 0 });
+  });
+
+  it("counts its own pauses per element, so one element cannot swallow the other's interruption", async () => {
+    const { tape } = await tapeOn([file("options.mp3"), file("answer.mp3")]);
+    // Next question: the tape pauses element 0 itself, and track 1 starts on element 1.
+    const jumped = tape.jumpTo(1);
+    await settle();
+    elements[1]!.arrive();
+    await jumped;
+    await settle();
+    expect(tape.getState()).toMatchObject({ index: 1, playing: true });
+
+    // A call interrupts element 1 before element 0's own pause event has been delivered. With one
+    // counter for the whole tape, element 0's debt would be spent here and the call lost.
+    elements[1]!.paused = true;
+    elements[1]!.fire("pause");
+    await settle();
+    expect(tape.getState()).toMatchObject({ playing: false, interrupted: true, index: 1 });
+  });
+
   it("jumps to a later track, which is how the next question is reached", async () => {
     const { tape } = await tapeOn([file("a.mp3"), { kind: "silence", ms: 5_000 }, file("b.mp3"), file("c.mp3")]);
     const jumped = tape.jumpTo(2);

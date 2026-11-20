@@ -127,9 +127,15 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
    *
    * The event is the only sign a browser gives that it has taken the audio away, and the tape's
    * own pauses raise exactly the same one. So every pause made here is counted first and the
-   * counter swallows that event; anything left over is an interruption.
+   * count swallows that event; anything left over is an interruption.
+   *
+   * Counted **per element**, not once for the tape: with one shared counter, a pause the tape made
+   * on one element would swallow the interruption that arrived on the other, and the two take
+   * turns all the way through a question. And counted only when the element was actually playing —
+   * `pause()` on an element already paused raises no event at all, so counting that one would
+   * leave a debt that eats the next real interruption.
    */
-  let quietPauses = 0;
+  const quietPauses = new WeakMap<HTMLAudioElement, number>();
   let pausedAt: number | null = null;
   let disposed = false;
   /** The running gap's timer, so pausing or skipping inside a gap does not leave it ticking. */
@@ -198,8 +204,9 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
   };
   for (const el of els) {
     el.addEventListener("pause", () => {
-      if (quietPauses > 0) {
-        quietPauses -= 1;
+      const owed = quietPauses.get(el) ?? 0;
+      if (owed > 0) {
+        quietPauses.set(el, owed - 1);
         return;
       }
       // Not playing: nothing was taken away, so there is nothing to notice.
@@ -215,7 +222,8 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
   const emit = (e: TapeEvent) => onEvent?.(e);
   /** Pauses an element without that pause being read as the browser interrupting us. */
   const pauseQuietly = (el: HTMLAudioElement) => {
-    if (!el.paused) quietPauses += 1;
+    // Only a playing element will raise the event there is a debt for.
+    if (!el.paused) quietPauses.set(el, (quietPauses.get(el) ?? 0) + 1);
     el.pause();
   };
   // Worked out once, over the tracks that have audio: see `elementSlots`. A gap's slot is `null`
