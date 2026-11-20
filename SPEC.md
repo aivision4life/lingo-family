@@ -508,7 +508,10 @@ About **210 characters of TTS per question** (question line + four options + the
   mới tải cả file ở nền. Nếu dòng 206 đó đứt giữa chừng thì thẻ audio nhận một file ngắn **mà
   không có lỗi nào**: phát hết phần có rồi chờ phần còn lại mãi mãi (đọc một đáp án rồi im). Nay
   `/api/media/audio/*` (file TTS, vài chục KB) đi qua route riêng **không có `RangeRequestsPlugin`**:
-  yêu cầu dựng lại từ URL nên header Range không ra tới mạng, cache-first, và trả **200 trọn file**.
+  yêu cầu dựng lại từ URL nên header Range không ra tới mạng, cache-first, và trả **200 trọn file**. Route này dùng **cache riêng** (`audio-v1`): khoá là hash
+  nội dung nên không bao giờ đổi, mà `media-v1` có thể đang giữ một bản lưu dở do route cũ ghi —
+  cache-first sẽ trả đúng bản đó suốt 60 ngày. Tên cache mới bắt đầu rỗng, giá phải trả là tải lại
+  vài chục KB mỗi file.
   Băng gốc của đề (`/api/media/topik/audio/*`, ~30 MB, phát từng lát 30 giây) **giữ nguyên** đường
   range.
 - **Đoạn đang phát mà vị trí không nhúc nhích trong 8 giây là "đứng hình".** Đây là kiểu hỏng không

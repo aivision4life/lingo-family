@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUDIO_CACHE,
   isApiRequest,
   isCacheableStatus,
   isFontRequest,
   isMediaRequest,
   isNavigationRequest,
   isWholeFileMedia,
+  MEDIA_CACHE,
   MEDIA_MAX_AGE_SECONDS,
   MEDIA_MAX_ENTRIES,
   NAVIGATION_TIMEOUT_SECONDS,
@@ -32,6 +34,12 @@ describe("service worker routes", () => {
     expect(isWholeFileMedia(req("/api/media/images/ai/abc.png"))).toBe(false);
     expect(isWholeFileMedia(req("/api/media/audio/ko/v/a.mp3", "https://evil.example"))).toBe(false);
     expect(isWholeFileMedia(req("/api/words"))).toBe(false);
+  });
+
+  it("keeps the spoken files in a cache of their own", () => {
+    // Sharing `media-v1` would mean a whole-file, cache-first route handing back whatever the old
+    // ranged route left under these same URLs — for sixty days, since the key never changes.
+    expect(AUDIO_CACHE).not.toBe(MEDIA_CACHE);
   });
 
   it("api: every /api route except media is network-only", () => {

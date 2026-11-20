@@ -3,6 +3,16 @@
 
 /** Media files (images + audio) are content-addressed: a key's bytes never change. */
 export const MEDIA_CACHE = "media-v1";
+
+/**
+ * The spoken files live in their own cache, apart from the ranged one.
+ *
+ * Not tidiness: `media-v1` may hold entries the old ranged route wrote for these same URLs, and a
+ * cache-first route with a content-addressed key would hand such an entry back for sixty days —
+ * the key never changes, so a bad copy could never be outgrown. A new name starts empty, and the
+ * worst that costs is one download of a few tens of kilobytes per file.
+ */
+export const AUDIO_CACHE = "audio-v1";
 export const MEDIA_MAX_ENTRIES = 800;
 export const MEDIA_MAX_AGE_SECONDS = 60 * 24 * 60 * 60; // 60 days
 

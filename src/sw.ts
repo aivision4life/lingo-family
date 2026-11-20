@@ -21,6 +21,7 @@ import { registerRoute } from "workbox-routing";
 import { CacheFirst, NetworkOnly } from "workbox-strategies";
 import {
   ASSET_CACHE,
+  AUDIO_CACHE,
   ASSET_MAX_ENTRIES,
   FONT_CACHE,
   FONT_MAX_AGE_SECONDS,
@@ -110,7 +111,7 @@ async function warmAssets(): Promise<void> {
 }
 
 /** The caches this worker uses; anything else was left by an older version. */
-const OWN_CACHES = [SHELL_CACHE, ASSET_CACHE, MEDIA_CACHE, FONT_CACHE];
+const OWN_CACHES = [SHELL_CACHE, ASSET_CACHE, MEDIA_CACHE, AUDIO_CACHE, FONT_CACHE];
 
 // Both handlers swallow everything. `catch` as well as `allSettled`: even failing to open a cache
 // (private mode, no quota left) must not reject, or the install fails and the old worker stays.
@@ -146,12 +147,15 @@ const media = new CacheFirst({
  * 206 stream is cut short, the element gets a short file with no error at all, plays what there
  * is and waits for the rest for ever (one option of four, then silence).
  *
+ * Its own cache (`AUDIO_CACHE`), not the ranged one: whatever the old route left in `media-v1`
+ * under these URLs is never consulted again, so a bad copy there cannot outlive this fix.
+ *
  * The request is rebuilt from the URL so the Range header can reach neither the network nor the
  * cache key. If the whole file cannot be had, the plain network answer is better than nothing —
  * the tape has its own way of giving up on a file that will not play.
  */
 const wholeFileMedia = new CacheFirst({
-  cacheName: MEDIA_CACHE,
+  cacheName: AUDIO_CACHE,
   plugins: [only200(), new ExpirationPlugin({ maxEntries: MEDIA_MAX_ENTRIES, maxAgeSeconds: MEDIA_MAX_AGE_SECONDS, purgeOnQuotaError: true })],
 });
 registerRoute(
