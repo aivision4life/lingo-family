@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMixedTape, elementSlots, type TapeEvent, type TapeTrack } from "./mixedTape";
+import { podcastTtsRate } from "./podcastRate";
 
 /**
  * A stand-in for `<audio>` that only does what the tape actually depends on: a source, a
@@ -18,6 +19,9 @@ class FakeAudio {
   currentTime = 0;
   readyState = 0;
   playCalls = 0;
+  playbackRate = 1;
+  defaultPlaybackRate = 1;
+  preservesPitch = false;
   // Keyed by the function the caller passed, so `removeEventListener(type, fn)` takes a `once`
   // listener off by that same reference — which is what a real element does, and what the tape
   // relies on to abandon a load.
@@ -596,5 +600,69 @@ describe("a track's listeners die with the track", () => {
     expect(elements[1]!.listenerCount("loadedmetadata")).toBe(0);
     expect(elements[1]!.listenerCount("canplay")).toBe(0);
     expect(elements[1]!.listenerCount("error")).toBe(0);
+  });
+});
+
+/**
+ * The machine voice's speed (SPEC F13). It is the browser's `playbackRate`, so nothing is
+ * regenerated — but the two elements are shared between the TTS files and the exam's own
+ * recording, so the speed has to be set per track and not once per element.
+ */
+describe("the speed the machine voice reads at", () => {
+  const file = (audio_key: string): TapeTrack => ({ kind: "file", audio_key });
+  const clipTrack: TapeTrack = { kind: "clip", audio_key: "exam.mp3", start_ms: 0, speech_end_ms: 20_000, end_ms: 25_000 };
+
+  afterEach(() => podcastTtsRate.set(0.8));
+
+  async function started(tracks: readonly TapeTrack[]) {
+    const tape = createMixedTape(tracks);
+    const run = tape.start();
+    await settle();
+    elements[0]!.arrive();
+    await run;
+    await settle();
+    return tape;
+  }
+
+  it("reads a TTS file at the chosen speed, with the pitch kept", async () => {
+    podcastTtsRate.set(0.8);
+    await started([file("options.mp3")]);
+    expect(elements[0]!.playbackRate).toBe(0.8);
+    // Both, or the next file loaded on this element would play at full speed again.
+    expect(elements[0]!.defaultPlaybackRate).toBe(0.8);
+    expect(elements[0]!.preservesPitch).toBe(true);
+  });
+
+  it("plays the exam's own recording in real time on the very same element", async () => {
+    podcastTtsRate.set(0.8);
+    const tracks = [file("line.mp3"), clipTrack];
+    // Element 0 has just read a TTS file at 0.8×; the clip is the third audio track, so it comes
+    // back to element 0 and must not inherit that speed.
+    const tape = await started([...tracks, file("options.mp3")]);
+    expect(elements[0]!.playbackRate).toBe(0.8);
+    elements[1]!.arrive();
+    await settle();
+    elements[0]!.fire("ended");
+    await settle();
+    expect(tape.getState().index).toBe(1);
+    expect(elements[1]!.playbackRate).toBe(1);
+    expect(elements[1]!.defaultPlaybackRate).toBe(1);
+  });
+
+  it("changes the speed of the sentence being read, not only of the next one", async () => {
+    podcastTtsRate.set(1);
+    await started([file("options.mp3")]);
+    expect(elements[0]!.playbackRate).toBe(1);
+
+    podcastTtsRate.set(0.8);
+    expect(elements[0]!.playbackRate).toBe(0.8);
+    expect(elements[0]!.defaultPlaybackRate).toBe(0.8);
+  });
+
+  it("does not touch the exam's recording when the voice speed is changed mid-clip", async () => {
+    podcastTtsRate.set(1);
+    await started([clipTrack]);
+    podcastTtsRate.set(0.8);
+    expect(elements[0]!.playbackRate).toBe(1);
   });
 });

@@ -945,6 +945,8 @@
       "next": "Next question",
       "change": "Change selection",
       "finished": "End of the podcast.",
+      "voiceRate": "Reading speed",
+      "voiceRateOption": "Reading speed {{rate}}×",
       "step": {
         "number": "Reading the question number",
         "question": "Reading the question line",

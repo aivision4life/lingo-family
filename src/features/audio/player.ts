@@ -1,20 +1,13 @@
 // One shared <audio> element for the whole app: starting a sound stops the previous one.
 // Speed uses the browser's playbackRate (no extra files) and is remembered per device.
 import { useSyncExternalStore } from "react";
+import { applyRate, createRateSetting } from "./rateSetting";
 
 export const PLAYBACK_RATES = [1, 0.75] as const;
 export type PlaybackRate = (typeof PLAYBACK_RATES)[number];
 
-const RATE_KEY = "audio_rate";
-
-function readRate(): PlaybackRate {
-  try {
-    const stored = Number(localStorage.getItem(RATE_KEY));
-    return PLAYBACK_RATES.find((r) => r === stored) ?? 1;
-  } catch {
-    return 1;
-  }
-}
+/** The app-wide speed, remembered per device. The podcast's machine voice has its own. */
+const rateSetting = createRateSetting("audio_rate", PLAYBACK_RATES, 1);
 
 /**
  * The clip currently playing through `playSegment`, with where the playing head is (M7.2): the
@@ -33,7 +26,7 @@ type State = {
   errorKey: string | null;
 };
 
-let state: State = { rate: readRate(), playingKey: null, clip: null, loadingKey: null, errorKey: null };
+let state: State = { rate: rateSetting.get(), playingKey: null, clip: null, loadingKey: null, errorKey: null };
 
 /**
  * What a play button should show. "Not playing" used to cover three different situations — nothing
@@ -178,9 +171,7 @@ export function playAudio(key: string) {
   dropClip(); // a whole file has no stop point: no clip's watcher may outlive into it
   const request = ask({ key, clip: null });
   el.src = mediaUrl(key);
-  // Loading a new source resets playbackRate to defaultPlaybackRate, so set both.
-  el.defaultPlaybackRate = state.rate;
-  el.playbackRate = state.rate;
+  applyRate(el, state.rate);
   // A refused play() (no gesture yet) is not a failure: back to idle, the button offers "play".
   el.play().catch(onPlayRejected(request));
 }
@@ -218,8 +209,7 @@ export function playSegment(key: string, startMs: number, endMs: number, fromMs 
   el.pause();
   dropClip(); // the PREVIOUS clip's listeners; see `detachClip`
   const request = ask({ key, clip: { key, startMs, endMs } });
-  el.defaultPlaybackRate = state.rate;
-  el.playbackRate = state.rate;
+  applyRate(el, state.rate);
   el.addEventListener("timeupdate", watch);
   detachClip = () => {
     el.removeEventListener("timeupdate", watch);
@@ -248,15 +238,8 @@ export function onAudioEnded(listener: () => void) {
 }
 
 export function setPlaybackRate(rate: PlaybackRate) {
-  try {
-    localStorage.setItem(RATE_KEY, String(rate));
-  } catch {
-    // Ignore: the choice just won't persist.
-  }
-  if (audio) {
-    audio.defaultPlaybackRate = rate;
-    audio.playbackRate = rate;
-  }
+  rateSetting.set(rate);
+  if (audio) applyRate(audio, rate);
   setState({ rate });
 }
 

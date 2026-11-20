@@ -945,6 +945,8 @@
       "next": "Câu tiếp",
       "change": "Chọn lại",
       "finished": "Hết podcast.",
+      "voiceRate": "Tốc độ giọng đọc",
+      "voiceRateOption": "Tốc độ giọng đọc {{rate}}×",
       "step": {
         "number": "Đang đọc số câu",
         "question": "Đang đọc dòng hỏi",

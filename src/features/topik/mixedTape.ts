@@ -28,7 +28,9 @@
 //    have to be regenerated the day its length changes (M8.3 makes it adjustable).
 import type { TopikClip } from "@shared/topik";
 import { mediaUrl } from "@/features/audio/player";
+import { applyRate } from "@/features/audio/rateSetting";
 import { positionOnTimeline } from "./mixedTimeline";
+import { podcastTtsRate, rateForTrack } from "./podcastRate";
 import { elementSlots, type TapeTrack } from "./tapeTracks";
 
 export { clipTracks, elementSlots, type TapeTrack } from "./tapeTracks";
@@ -124,6 +126,13 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     }
     loading.clear();
   };
+
+  // A new speed applies to what is being read now, not only to the next track.
+  const unsubscribeRate = podcastTtsRate.subscribe(() => {
+    const track = tracks[state.index];
+    if (!track || track.kind === "silence") return;
+    applyRate(elementFor(state.index), rateForTrack(track.kind, podcastTtsRate.get()));
+  });
 
   const set = (patch: Partial<TapeState>) => {
     state = { ...state, ...patch };
@@ -236,6 +245,9 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     if (disposed || gen !== generation) return;
 
     const el = elementFor(i);
+    // Per track, every time: a TTS file reads at the machine voice's own speed while the exam's
+    // recording stays in real time, and the two share these two elements.
+    applyRate(el, rateForTrack(track.kind, podcastTtsRate.get()));
     const startMs = track.kind === "clip" ? track.start_ms : 0;
     const within = track.kind === "clip" ? Math.max(0, Math.min(withinMs, track.end_ms - track.start_ms)) : 0;
     el.currentTime = (startMs + within) / 1000;
@@ -430,6 +442,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
 
     dispose(): void {
       disposed = true;
+      unsubscribeRate();
       clearGap();
       dropWatch();
       dropLoads();

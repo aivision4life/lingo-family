@@ -945,6 +945,8 @@
       "next": "다음 문항",
       "change": "다시 고르기",
       "finished": "팟캐스트가 끝났습니다.",
+      "voiceRate": "낭독 속도",
+      "voiceRateOption": "낭독 속도 {{rate}}×",
       "step": {
         "number": "문항 번호를 읽는 중",
         "question": "질문을 읽는 중",

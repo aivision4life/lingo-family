@@ -496,6 +496,16 @@ About **210 characters of TTS per question** (question line + four options + the
   TTS trọn vẹn — không ai biết dài bao nhiêu trước khi tải, nên chuyển tại sự kiện `ended`) và
   `silence` (khoảng nghỉ, chỉ là một hẹn giờ). Không có player thứ hai. Khoảng nghỉ **không** phải
   audio: nếu nó là file thì ngày M8.3 cho đổi 3/5/8 giây sẽ phải sinh lại toàn bộ.
+- **Tốc độ giọng máy là tốc độ phát, không sinh lại audio.** Giọng TTS đọc quá nhanh so với người
+  học, nên podcast có thiết lập riêng "Tốc độ giọng đọc" 1× / 0,9× / 0,8×, **mặc định 0,8×**, nhớ
+  theo thiết bị (`podcast_tts_rate`) và giữ cao độ (`preservesPitch`). Chỉ áp cho đoạn `file`
+  (số câu, dòng hỏi, bốn đáp án, đáp án đúng); **băng gốc của đề luôn phát đúng tốc độ thật**, vì
+  một lượt thi thật phát nó như vậy — hai loại đoạn dùng chung hai thẻ `<audio>` nên tốc độ phải đặt
+  theo từng đoạn, không đặt một lần cho mỗi thẻ. Cùng một cơ chế với nút tốc độ chung của ứng dụng
+  (`src/features/audio/rateSetting.ts`, dùng bởi cả `player.ts` và podcast), và **không** thêm 0,8
+  vào `PLAYBACK_RATES` chung: đây là thiết lập của riêng giọng máy. Đổi tốc độ ăn ngay vào câu đang
+  đọc. Đổi SSML để Azure đọc chậm sẽ phải sinh lại cả 850 file (khoá R2 là hash của câu chữ, không
+  có tốc độ trong đó), nên hướng đó không dùng.
 - **Hai thẻ `<audio>` luân phiên theo các đoạn CÓ tiếng, không theo chỉ số đoạn.** Một câu podcast
   là sáu đoạn, trong đó đoạn nghỉ không sở hữu thẻ nào; đếm bằng `i % 2` làm đoạn nghỉ chiếm một
   chỗ, nên bốn đáp án (đoạn 3) và công bố đáp án (đoạn 5) rơi vào **cùng một thẻ** và việc nạp

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Pause, Play, SkipForward } from "lucide-react";
 import type { PodcastPlaylist } from "@shared/podcast";
 import { Button } from "@/components/ui/button";
+import { PodcastRatePicker } from "./PodcastRatePicker";
 import { useMixedTape } from "./useMixedTape";
 import { buildPodcastTape, nextQuestionStart, podcastPositionAt } from "./podcastTape";
 
@@ -68,6 +69,8 @@ export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist
           {t("topik.podcast.change")}
         </Button>
       </div>
+
+      <PodcastRatePicker />
 
       {player.finished && <p className="text-sm">{t("topik.podcast.finished")}</p>}
     </section>
