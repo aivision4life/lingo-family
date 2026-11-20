@@ -5,7 +5,7 @@
 import { createRateSetting } from "@/features/audio/rateSetting";
 
 /** 0.8× by default: the voice reads a question line faster than a learner can follow it. */
-export const PODCAST_TTS_RATES = [1, 0.9, 0.8] as const;
+export const PODCAST_TTS_RATES = [1, 0.9, 0.8, 0.7] as const;
 export type PodcastTtsRate = (typeof PODCAST_TTS_RATES)[number];
 
 export const podcastTtsRate = createRateSetting("podcast_tts_rate", PODCAST_TTS_RATES, 0.8);

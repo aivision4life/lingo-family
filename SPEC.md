@@ -496,8 +496,22 @@ About **210 characters of TTS per question** (question line + four options + the
   TTS trọn vẹn — không ai biết dài bao nhiêu trước khi tải, nên chuyển tại sự kiện `ended`) và
   `silence` (khoảng nghỉ, chỉ là một hẹn giờ). Không có player thứ hai. Khoảng nghỉ **không** phải
   audio: nếu nó là file thì ngày M8.3 cho đổi 3/5/8 giây sẽ phải sinh lại toàn bộ.
+- **Băng gốc trong podcast dừng sau tiếng nói, không chạy hết khoảng trả lời.** `end_ms` của đề là
+  cuối khoảng im lặng để thí sinh trả lời (36회 câu 4: 17 giây) **và cũng là chỗ băng xướng số câu
+  kế tiếp**, nên phát tới đó rồi chuyển đoạn bằng `timeupdate` (trễ tới ~0,25 s) làm lọt tiếng
+  "오", "칠". Podcast đã có khoảng nghỉ riêng nên cắt tại
+  `min(speech_end_ms + PODCAST_CLIP_TAIL_MS, end_ms)` (`podcastClipEnd` trong `shared/podcast.ts`,
+  tail 800 ms), dựng sẵn trong playlist ở `tracksFor`. Luật của cặp câu từ 21 trở đi **không đổi**:
+  `speech_end_ms` do người đặt và đã gồm lời xướng câu thứ hai.
+- **Một file không tải được chỉ mất file đó, không mất cả buổi nghe.** `play()` trên thẻ `<audio>`
+  không có dữ liệu **không bao giờ bắn `ended`**, mà `ended` là thứ duy nhất chuyển đoạn `file`, nên
+  băng đứng im vĩnh viễn (tìm ra trong trình duyệt với 36회 câu 4–6: hết băng gốc là im, bốn đáp án
+  không bao giờ đọc). Nay `prepare` trả về "có dữ liệu để phát không"; tới lượt đoạn đó thì **thử
+  tải lại đúng một lần** (lượt nạp trước bắt đầu từ đầu đoạn trước, mà đoạn trước dài 44 giây thì
+  hạn 20 giây của nó đã trôi qua — không nói lên điều gì về lúc này), rồi nếu vẫn hỏng thì báo lỗi
+  và **chuyển sang đoạn kế tiếp**.
 - **Tốc độ giọng máy là tốc độ phát, không sinh lại audio.** Giọng TTS đọc quá nhanh so với người
-  học, nên podcast có thiết lập riêng "Tốc độ giọng đọc" 1× / 0,9× / 0,8×, **mặc định 0,8×**, nhớ
+  học, nên podcast có thiết lập riêng "Tốc độ giọng đọc" 1× / 0,9× / 0,8× / 0,7×, **mặc định 0,8×**, nhớ
   theo thiết bị (`podcast_tts_rate`) và giữ cao độ (`preservesPitch`). Chỉ áp cho đoạn `file`
   (số câu, dòng hỏi, bốn đáp án, đáp án đúng); **băng gốc của đề luôn phát đúng tốc độ thật**, vì
   một lượt thi thật phát nó như vậy — hai loại đoạn dùng chung hai thẻ `<audio>` nên tốc độ phải đặt

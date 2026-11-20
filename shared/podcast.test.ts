@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   podcastAnswerText,
+  podcastClipEnd,
   podcastOptionsText,
   podcastQuestionLineText,
   podcastSpeech,
@@ -61,5 +62,28 @@ describe("podcastSpeech", () => {
   it("is null when any part cannot be spoken, so the question is left out whole", () => {
     expect(podcastSpeech({ ...q, instruction: null })).toBeNull();
     expect(podcastSpeech({ ...q, options: [{ text: "가" }, { text: null }, { text: "다" }, { text: "라" }] })).toBeNull();
+  });
+});
+
+describe("podcastClipEnd", () => {
+  it("stops a breath after the last word, not at the end of the answering silence", () => {
+    // 36회 question 4: the speech ends at 235.288 s and the paper's clip runs to 252.747 s, which
+    // is exactly where the tape says "5번" — the podcast must be long gone by then.
+    expect(podcastClipEnd({ start_ms: 208_461, speech_end_ms: 235_288, end_ms: 252_747 })).toBe(236_088);
+  });
+
+  it("never plays past the paper's own end, however short the silence", () => {
+    expect(podcastClipEnd({ start_ms: 0, speech_end_ms: 9_900, end_ms: 10_000 })).toBe(10_000);
+    expect(podcastClipEnd({ start_ms: 0, speech_end_ms: 10_000, end_ms: 10_000 })).toBe(10_000);
+  });
+
+  it("keeps exactly the tail when there is room for it", () => {
+    expect(podcastClipEnd({ start_ms: 0, speech_end_ms: 9_200, end_ms: 10_000 })).toBe(10_000);
+    expect(podcastClipEnd({ start_ms: 0, speech_end_ms: 9_199, end_ms: 10_000 })).toBe(9_999);
+    expect(podcastClipEnd({ start_ms: 0, speech_end_ms: 5_000, end_ms: 30_000 })).toBe(5_800);
+  });
+
+  it("cannot end before the clip starts, whatever the data says", () => {
+    expect(podcastClipEnd({ start_ms: 5_000, speech_end_ms: 1_000, end_ms: 2_000 })).toBe(5_000);
   });
 });

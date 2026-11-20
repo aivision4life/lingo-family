@@ -79,7 +79,8 @@ export type MixedTape = ReturnType<typeof createMixedTape>;
 export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: TapeEvent) => void) {
   const els = [new Audio(), new Audio()];
   for (const el of els) el.preload = "auto";
-  const prepared = new Map<number, Promise<void>>();
+  /** Track → whether its file has data to play. A failed load is dropped, so its turn retries. */
+  const prepared = new Map<number, Promise<boolean>>();
   const listeners = new Set<() => void>();
   let state: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false };
   let pausedAt: number | null = null;
@@ -152,17 +153,23 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     gapTimer = null;
   };
 
-  /** Loads track `i` into the element it will play on, seeked to its start and left paused. */
-  function prepare(i: number): Promise<void> {
+  /**
+   * Loads track `i` into the element it will play on, seeked to its start and left paused.
+   *
+   * Resolves with whether there is anything to play, and the answer is remembered — including a
+   * failure, so that one failed load is not turned into an endless row of them by everything that
+   * asks. `playFrom` is the one place that tries a failed file again, once, when its turn comes.
+   */
+  function prepare(i: number): Promise<boolean> {
     const track = tracks[i];
-    if (!track || track.kind === "silence") return Promise.resolve();
+    if (!track || track.kind === "silence") return Promise.resolve(true);
     const existing = prepared.get(i);
     if (existing) return existing;
 
     const el = elementFor(i);
     const url = mediaUrl(track.audio_key);
     emit({ kind: "preloading", index: i, src: label(track) });
-    const promise = new Promise<void>((resolve) => {
+    const promise = new Promise<boolean>((resolve) => {
       let done = false;
       const finish = (why: "ready" | "error" | "timeout") => {
         if (done) return;
@@ -176,7 +183,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
         loading.delete(i);
         if (why === "ready") emit({ kind: "ready", index: i });
         else emit({ kind: "error", message: `clip ${i + 1}: ${why === "error" ? "không tải được" : "quá hạn tải"}` });
-        resolve();
+        resolve(why === "ready");
       };
       // Resolved on failure too, never left pending: a clip that cannot load must let the tape
       // move on, not freeze the sitting on a silent screen.
@@ -199,7 +206,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
         el.removeEventListener("canplay", settle);
         el.removeEventListener("loadedmetadata", seek);
         // Resolved, not left pending: whoever is awaiting this load must not wait for ever.
-        resolve();
+        resolve(false);
       });
       if (el.src.endsWith(url) && el.readyState > 0) seek();
       else {
@@ -240,9 +247,25 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       return;
     }
 
-    await prepare(i);
+    let playable = await prepare(i);
+    if (!playable) {
+      // One more try, now that it is this track's turn. A file is preloaded at the start of the
+      // track before it, and when that one is a 44-second clip the preload's own 20-second
+      // timeout passes while it plays — a load that gave up that long ago says nothing about
+      // whether the file can be fetched now.
+      prepared.delete(i);
+      playable = await prepare(i);
+    }
     // A skip while this track's file was loading has already started another one.
     if (disposed || gen !== generation) return;
+    if (!playable) {
+      // `play()` on an element with no data never fires `ended`, and `ended` is the only thing
+      // that hands a file over — playing it would stop the podcast here for good. So this piece
+      // is lost and the next one starts: a file nobody can hear costs that file, not the rest.
+      emit({ kind: "error", message: `đoạn ${i + 1}: bỏ qua, không phát được` });
+      await handOver(i);
+      return;
+    }
 
     const el = elementFor(i);
     // Per track, every time: a TTS file reads at the machine voice's own speed while the exam's

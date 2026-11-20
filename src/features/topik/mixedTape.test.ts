@@ -40,13 +40,20 @@ class FakeAudio {
     this.listeners.get(type)?.delete(fn);
   }
   fire(type: string) {
+    // A real element throws away what it had loaded when a load fails (readyState back to
+    // HAVE_NOTHING). Keeping 4 here made a failed file look loaded to the next attempt.
+    if (type === "error") this.readyState = 0;
     for (const fn of [...(this.listeners.get(type) ?? []).values()]) fn();
   }
   /** How many listeners of `type` are still attached: a leak is a listener nobody took off. */
   listenerCount(type: string) {
     return this.listeners.get(type)?.size ?? 0;
   }
-  load() {}
+  /** Set to make every load fail by itself, the way a 404 does. */
+  failOnLoad = false;
+  load() {
+    if (this.failOnLoad) void Promise.resolve().then(() => this.fire("error"));
+  }
   removeAttribute() {
     this.src = "";
   }
@@ -664,5 +671,97 @@ describe("the speed the machine voice reads at", () => {
     await started([clipTrack]);
     podcastTtsRate.set(0.8);
     expect(elements[0]!.playbackRate).toBe(1);
+  });
+});
+
+/**
+ * A file that cannot be played must not stop the tape.
+ *
+ * Found in the browser (36회, questions 4-6): after the clip the podcast went silent for ever and
+ * the four options were never read. The options file had failed to load, and the tape played it
+ * anyway — `play()` on an element with no data never fires `ended`, so the hand-over that only
+ * `ended` can start never came and the tape sat there. The point of these tests is that the
+ * podcast carries on: a piece nobody can hear costs that piece, not the rest of the listening.
+ */
+describe("a file that will not load", () => {
+  const file = (audio_key: string): TapeTrack => ({ kind: "file", audio_key });
+
+  async function started(tracks: readonly TapeTrack[]) {
+    const events: TapeEvent[] = [];
+    const tape = createMixedTape(tracks, (e) => events.push(e));
+    const run = tape.start();
+    await settle();
+    elements[0]!.arrive();
+    await run;
+    await settle();
+    const played = () => events.filter((e) => e.kind === "playing").map((e) => (e.kind === "playing" ? e.index : -1));
+    return { tape, events, played };
+  }
+
+  it("hands over to the next track instead of waiting for an `ended` that cannot come", async () => {
+    const { tape, events, played } = await started([file("a.mp3"), file("broken.mp3"), file("c.mp3")]);
+    // The broken file fails while the first track is still playing, exactly as in the browser:
+    // the element reports an error and never reaches readyState 3.
+    elements[1]!.fire("error");
+    await settle();
+
+    elements[0]!.fire("ended");
+    await settle();
+    // Its turn comes and it is asked for once more; a missing file fails the second time too.
+    elements[1]!.fire("error");
+    await settle();
+    // The track after it loads normally, on the other element.
+    elements[0]!.arrive();
+    await settle();
+
+    // It is not read — nothing can read it — but the tape has moved on to the track after it.
+    expect(played()).toEqual([0, 2]);
+    expect(events.some((e) => e.kind === "error")).toBe(true);
+    expect(tape.getState().index).toBe(2);
+    expect(tape.getState().playing).toBe(true);
+  });
+
+  it("tries the file again when its turn comes, rather than trusting a load that timed out", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: TapeEvent[] = [];
+      const tape = createMixedTape([file("long-clip.mp3"), file("options.mp3")], (e) => events.push(e));
+      const run = tape.start();
+      await vi.advanceTimersByTimeAsync(0);
+      elements[0]!.arrive();
+      await run;
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The second file is preloaded at the start of a track that lasts longer than the load
+      // timeout — a 44-second clip, in the browser — and that load gives up while the first
+      // track is still playing.
+      await vi.advanceTimersByTimeAsync(21_000);
+      expect(events.some((e) => e.kind === "error")).toBe(true);
+
+      // Its turn comes, and the file is asked for again: a load that gave up 20 seconds ago is no
+      // reason never to read the options.
+      elements[0]!.fire("ended");
+      await vi.advanceTimersByTimeAsync(0);
+      elements[1]!.arrive();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(tape.getState()).toMatchObject({ index: 1, playing: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reaches the end of the tape even if every file is broken", async () => {
+    const { tape } = await started([file("a.mp3"), file("b.mp3"), file("c.mp3")]);
+    // From here nothing will ever load, the retries included. The tape must still reach the end
+    // rather than stop on one of them — and it must not spin for ever trying.
+    for (const el of elements) el.failOnLoad = true;
+    elements[1]!.fire("error"); // the preload that was already in flight
+    await settle();
+
+    elements[0]!.fire("ended");
+    // Each skip is a failed retry, then the next track's failed load: several turns of the chain.
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(tape.getState().finished).toBe(true);
+    expect(tape.getState().waiting).toBe(false);
   });
 });

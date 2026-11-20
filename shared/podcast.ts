@@ -19,6 +19,29 @@ import { topikClipSchema } from "./topik";
 export const PODCAST_GAP_MS = 5_000;
 
 /**
+ * How much of a clip is kept after the last word: enough not to clip the speech, and nothing more.
+ *
+ * A paper's clip ends at `end_ms`, the end of the **answering silence** a real sitting leaves — on
+ * 36회 that is 17 seconds of nothing, and `end_ms` is also where the tape announces the *next*
+ * question. A podcast has its own gap and does not need the paper's, so playing to `end_ms` only
+ * meant the hand-over, which happens on a `timeupdate` up to a quarter of a second late, let the
+ * next question's number be heard ("오", "칠"). Stopping a breath after the last word puts that
+ * quarter of a second in silence, where nobody can hear it.
+ */
+export const PODCAST_CLIP_TAIL_MS = 800;
+
+/**
+ * Where a podcast stops a clip: a breath after the speech, never past the paper's own end.
+ *
+ * `speech_end_ms` is given by a human (M7.11) and for a pair sharing one clip (21 and up) it
+ * already covers the second question's announcement — that rule is unchanged here; this only
+ * drops the answering silence that follows it.
+ */
+export function podcastClipEnd(clip: { start_ms: number; speech_end_ms: number; end_ms: number }): number {
+  return Math.max(clip.start_ms, Math.min(clip.speech_end_ms + PODCAST_CLIP_TAIL_MS, clip.end_ms));
+}
+
+/**
  * Questions 1-3 of every paper answer with four pictures, so there is nothing to read out and
  * they cannot be in a podcast at all. The picker says so out loud — quietly returning 47 of 50
  * is the failure this project keeps finding (SPEC §11 M7.3).

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PODCAST_GAP_MS, podcastSpeech, type PodcastPlaylist } from "../../shared/podcast";
+import { PODCAST_CLIP_TAIL_MS, PODCAST_GAP_MS, podcastSpeech, type PodcastPlaylist } from "../../shared/podcast";
 import type { TopikQuestionInput } from "../../shared/topik";
 import { createTestEnv } from "../test/testEnv";
 import { audioKey } from "../services/tts";
@@ -107,9 +107,18 @@ describe("podcast playlist", () => {
     expect(q!.number).toBe(4);
     expect(q!.tracks.map((tr) => tr.kind)).toEqual(["file", "file", "clip", "file", "silence", "file"]);
 
-    // The clip is the exam's own recording, at the exam's own timestamps — never TTS (F13).
+    // The clip is the exam's own recording, at the exam's own timestamps — never TTS (F13) — but
+    // it stops a breath after the speech (140_000 + 800) instead of at the paper's own end
+    // (146_000): the rest is the answering silence, and `end_ms` is where the next question is
+    // announced, so playing to it let that announcement be heard.
     const clip = q!.tracks[2]!;
-    expect(clip).toMatchObject({ kind: "clip", audio_key: `topik/audio/${"a".repeat(40)}.mp3`, start_ms: 120_000, end_ms: 146_000 });
+    expect(clip).toMatchObject({
+      kind: "clip",
+      audio_key: `topik/audio/${"a".repeat(40)}.mp3`,
+      start_ms: 120_000,
+      speech_end_ms: 140_000,
+      end_ms: 140_000 + PODCAST_CLIP_TAIL_MS,
+    });
     expect(q!.tracks[4]).toEqual({ kind: "silence", ms: PODCAST_GAP_MS });
     expect(body.gap_ms).toBe(PODCAST_GAP_MS);
     expect(body.skipped).toEqual({ picture_options: 0, no_clip: 0, reserved_for_tests: 0, no_tts: 0 });

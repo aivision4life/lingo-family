@@ -10,6 +10,7 @@
  */
 import {
   PODCAST_GAP_MS,
+  podcastClipEnd,
   podcastSpeech,
   type PodcastPlaylist,
   type PodcastQuestion,
@@ -82,7 +83,9 @@ function tracksFor(keys: Record<keyof PodcastSpeech, string>, clip: TopikClip): 
   return [
     { kind: "file", audio_key: keys.number },
     { kind: "file", audio_key: keys.questionLine },
-    { kind: "clip", ...clip },
+    // The paper's own answering silence is dropped: the podcast has a gap of its own, and
+    // `end_ms` is where the tape announces the next question (see `podcastClipEnd`).
+    { kind: "clip", ...clip, end_ms: podcastClipEnd(clip) },
     { kind: "file", audio_key: keys.options },
     { kind: "silence", ms: PODCAST_GAP_MS },
     { kind: "file", audio_key: keys.answer },
