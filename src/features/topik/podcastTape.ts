@@ -45,3 +45,12 @@ export function nextQuestionStart(tape: PodcastTape, index: number): number | nu
   const { question } = podcastPositionAt(tape, index);
   return tape.starts[question + 1] ?? null;
 }
+
+/**
+ * The first track of the question being played — where "replay this question" goes.
+ *
+ * F13's rule for Previous, and the reason it is a lookup and not `index - 1`: in a car the only
+ * thing ever wanted is this question again from the top.
+ */
+export const podcastQuestionStart = (tape: PodcastTape, index: number): number =>
+  tape.starts[podcastPositionAt(tape, index).question] ?? 0;

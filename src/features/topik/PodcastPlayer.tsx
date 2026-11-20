@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pause, Play, SkipForward, TriangleAlert } from "lucide-react";
+import { Pause, Play, RotateCcw, SkipForward, TriangleAlert } from "lucide-react";
 import type { PodcastPlaylist } from "@shared/podcast";
 import { Button } from "@/components/ui/button";
 import { PodcastRatePicker } from "./PodcastRatePicker";
 import { addSkip, describeSkip, type PodcastSkip } from "./podcastSkips";
 import { useMixedTape } from "./useMixedTape";
-import { buildPodcastTape, nextQuestionStart, podcastPositionAt } from "./podcastTape";
+import { buildPodcastTape, nextQuestionStart, podcastPositionAt, podcastQuestionStart } from "./podcastTape";
+import { usePodcastMediaSession } from "./usePodcastMediaSession";
 
 /**
  * The podcast itself (SPEC F13, M8.1): the same two-element tape the mixed sitting uses, with a
  * different playlist and different labels — F13 says not to write a second player, so this is the
  * screen around the one there is.
  *
- * Plain on purpose. M8.1 proves the shape; the lock screen, the car and offline are M8.2, and
- * until those exist this screen is something to look at once and then put in a pocket.
+ * M8.2 is what makes it usable for its purpose: the lock screen and the car's head unit carry
+ * the question and the transport controls (`usePodcastMediaSession`), the thinking gap plays real
+ * silence so the screen can go off, and an interruption — a call, a navigation instruction — holds
+ * the place and reads the interrupted piece again from its start. Offline download is still to
+ * come. None of the three can be proved anywhere but on a real phone, which is why every decision
+ * they rest on is a pure function with a test.
  */
 export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist; onLeave: () => void }) {
   const { t } = useTranslation();
@@ -27,6 +32,15 @@ export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist
   const position = podcastPositionAt(tape, player.index);
   const question = playlist.questions[position.question];
   const next = nextQuestionStart(tape, player.index);
+  const again = podcastQuestionStart(tape, player.index);
+
+  // The lock screen and the car. Previous there is "read this question again", not one back (F13).
+  usePodcastMediaSession(
+    tape,
+    playlist.questions,
+    { started, playing: player.playing, finished: player.finished, index: player.index },
+    { toggle: player.toggle, jumpTo: player.jumpTo, stop: player.stop },
+  );
 
   // Leaving the screen stops the sound; the hook disposes the tape, this stops it being heard
   // for the fraction of a second before that happens on a slow phone.
@@ -46,6 +60,7 @@ export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist
         </p>
         <p className="text-sm text-muted-foreground">{t(`topik.podcast.step.${position.step}`)}</p>
         {player.waiting && <p className="text-sm text-amber-700 dark:text-amber-500">{t("topik.podcast.buffering")}</p>}
+        {player.interrupted && <p className="text-sm text-amber-700 dark:text-amber-500">{t("topik.podcast.interrupted")}</p>}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -68,6 +83,10 @@ export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist
         >
           {started && player.playing ? <Pause /> : <Play />}
           {started && player.playing ? t("topik.podcast.pause") : started ? t("topik.podcast.resume") : t("topik.podcast.play")}
+        </Button>
+        <Button type="button" size="lg" variant="outline" disabled={!started} onClick={() => player.jumpTo(again)}>
+          <RotateCcw />
+          {t("topik.podcast.again")}
         </Button>
         <Button type="button" size="lg" variant="outline" disabled={!started || next === null} onClick={() => next !== null && player.jumpTo(next)}>
           <SkipForward />

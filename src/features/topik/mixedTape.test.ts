@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMixedTape, elementSlots, STALL_SECONDS, type TapeEvent, type TapeTrack } from "./mixedTape";
 import { podcastTtsRate } from "./podcastRate";
+import { GAP_SILENCE_SRC } from "./tapeSilence";
 
 /**
  * A stand-in for `<audio>` that only does what the tape actually depends on: a source, a
@@ -15,6 +16,7 @@ class FakeAudio {
   src = "";
   preload = "";
   muted = false;
+  loop = false;
   paused = true;
   currentTime = 0;
   readyState = 0;
@@ -137,7 +139,9 @@ describe("mixed tape", () => {
   it("unlocks both elements inside the starting call", async () => {
     const { events } = await tapeOnTwoClips();
     expect(events[0]).toEqual({ kind: "unlocked", blocked: 0 });
-    expect(elements).toHaveLength(2);
+    // Three, not two: the gap's looping silence is an element as well, and it has to be blessed
+    // by the same gesture or the first gap with the screen off is the last thing heard (M8.2).
+    expect(elements).toHaveLength(3);
     expect(elements.every((el) => el.playCalls > 0)).toBe(true);
   });
 
@@ -304,8 +308,9 @@ describe("podcast tracks", () => {
 
       await vi.advanceTimersByTimeAsync(1_500);
       expect(tape.getState().index).toBe(2);
-      // The gap plays on neither element: still just the two.
-      expect(elements).toHaveLength(2);
+      // The gap plays on neither of the two speaking elements; its silence has one of its own.
+      expect(elements).toHaveLength(3);
+      expect(elements[2]!.src).toBe(GAP_SILENCE_SRC);
     } finally {
       vi.useRealTimers();
     }
@@ -334,6 +339,76 @@ describe("podcast tracks", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps real silence playing through the gap, and stops it when the gap ends", async () => {
+    vi.useFakeTimers();
+    try {
+      const tape = createMixedTape([file("options.mp3"), { kind: "silence", ms: 5_000 }, file("answer.mp3")]);
+      const run = tape.start();
+      await vi.advanceTimersByTimeAsync(0);
+      elements[0]!.arrive();
+      await run;
+      const gapEl = elements[2]!;
+      // Unlocked and left paused: nothing is playing while the options are being read.
+      expect(gapEl.paused).toBe(true);
+
+      elements[0]!.fire("ended");
+      await vi.advanceTimersByTimeAsync(0);
+      elements[1]!.arrive();
+      // In the gap something is playing, which is what stops the browser calling the session over
+      // and throttling the timer that ends the gap.
+      expect(tape.getState().index).toBe(1);
+      expect(gapEl.paused).toBe(false);
+      expect(gapEl.loop).toBe(true);
+
+      // Pausing inside the gap stops the silence too: a paused podcast holds no audio open.
+      tape.toggle();
+      expect(gapEl.paused).toBe(true);
+      tape.toggle();
+      expect(gapEl.paused).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(5_100);
+      expect(tape.getState().index).toBe(2);
+      expect(gapEl.paused).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("notices the browser taking the sound away, and replays the piece from its start", async () => {
+    const { tape } = await tapeOn([file("options.mp3"), file("answer.mp3")]);
+    elements[0]!.currentTime = 6;
+
+    // A phone call: the element is paused by the browser, not by the tape.
+    elements[0]!.paused = true;
+    elements[0]!.fire("pause");
+    await settle();
+    expect(tape.getState()).toMatchObject({ playing: false, interrupted: true, index: 0 });
+
+    const before = elements[0]!.playCalls;
+    tape.toggle();
+    await settle();
+    // Not carried on from six seconds in: the option that was talked over is read again whole.
+    expect(elements[0]!.currentTime).toBe(0);
+    expect(elements[0]!.playCalls).toBe(before + 1);
+    expect(tape.getState()).toMatchObject({ playing: true, interrupted: false, index: 0 });
+  });
+
+  it("does not call the tape's own pauses an interruption", async () => {
+    const { tape } = await tapeOn([file("options.mp3"), file("answer.mp3")]);
+    tape.toggle();
+    // A real element fires `pause` for the tape's own pause exactly as it does for a phone call.
+    elements[0]!.fire("pause");
+    await settle();
+    expect(tape.getState()).toMatchObject({ playing: false, interrupted: false });
+
+    elements[0]!.currentTime = 4;
+    tape.toggle();
+    await settle();
+    // An ordinary pause carries on where it stopped; only an interruption starts the piece again.
+    expect(elements[0]!.currentTime).toBe(4);
+    expect(tape.getState()).toMatchObject({ playing: true, interrupted: false });
   });
 
   it("jumps to a later track, which is how the next question is reached", async () => {
@@ -834,8 +909,9 @@ describe("saying which piece was lost, and why", () => {
   async function skipTheSecondTrack(code: number | null) {
     const events: TapeEvent[] = [];
     const tape = createMixedTape([file("a.mp3"), file("broken.mp3"), file("c.mp3")], (e) => events.push(e));
-    // Each tape makes its own pair of elements, and this helper runs more than once per test.
-    const [first, second] = elements.slice(-2) as [FakeAudio, FakeAudio];
+    // Each tape makes its own three elements (two speaking, one for the gap's silence), and this
+    // helper runs more than once per test: the last three are this tape's.
+    const [first, second] = elements.slice(-3) as [FakeAudio, FakeAudio, FakeAudio];
     const run = tape.start();
     await settle();
     first.arrive();

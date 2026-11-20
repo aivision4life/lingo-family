@@ -570,6 +570,37 @@ About **210 characters of TTS per question** (question line + four options + the
   giờ vốn đã mất, không phải một nhánh của màn chọn đề TOPIK. Hồ sơ trẻ em bị chặn như mọi màn
   TOPIK II khác.
 
+#### Quyết định bổ sung khi làm M8.2 (phần 1: màn khoá, xe, bị ngắt — chưa có tải offline)
+
+- **Khoảng nghỉ phát im lặng thật, nhưng vẫn do hẹn giờ quyết định dài bao nhiêu.** Khoảng nghỉ
+  không có audio (M8.1) là đúng cho ngày M8.3 cho đổi 3/5/8 giây, nhưng khi màn hình tắt, một trang
+  không phát gì là trang trình duyệt được phép hãm hẹn giờ và coi phiên phát là đã xong: nút trên
+  màn khoá biến mất và podcast không bao giờ ra khỏi khoảng nghỉ. Nay khoảng nghỉ **giữ hẹn giờ**
+  và song song đó một file im lặng 1 giây (`public/silence-1s.wav`, 8 KB, 8 kHz mono) **lặp** trên
+  một thẻ `<audio>` thứ ba (`tapeSilence.ts`) nên lúc nào cũng có âm thanh đang phát. Độ dài khoảng
+  nghỉ không nằm trong file, nên 3/5/8 giây vẫn chỉ là đổi một con số. Thẻ thứ ba được **mở khoá
+  trong cùng cú bấm** như hai thẻ kia. File im lặng phát lỗi thì chỉ mất phần màn-hình-tắt, không
+  mất khoảng nghỉ: hẹn giờ vẫn chạy.
+- **Media Session: quyết định nằm trong hàm thuần.** `podcastMediaSession.ts` nói nút nào làm gì
+  (`podcastCommandFor`), trạng thái nào báo cho hệ thống (`podcastPlaybackState`) và màn khoá hiện
+  gì (`podcastNowPlaying`); `usePodcastMediaSession.ts` chỉ nối dây. Không có cách nào thử màn hình
+  xe trong test, nên phần suy nghĩ phải ở chỗ test được.
+  - **Previous = đọc lại CÂU NÀY từ đoạn đầu**, không lùi một câu (F13), kể cả ở câu đầu tiên. Màn
+    hình cũng có nút "Đọc lại câu này" để thử được mà không cần khoá máy.
+  - **`play` và `pause` là hai hành động riêng trong khi băng chỉ có một `toggle`**: mỗi cái chỉ
+    được trả lời khi băng đang ở trạng thái kia, nếu không một đầu phát gửi `play` cho thứ đang
+    phát sẽ **tạm dừng** nó.
+  - **Khoảng nghỉ là `playing`.** Báo `paused` thì đầu phát vẽ một podcast đã dừng và có thể giao
+    audio cho thứ khác.
+- **Bị ngắt (cuộc gọi, chỉ đường đọc to) không phải tạm dừng.** Sự kiện `pause` là dấu duy nhất
+  trình duyệt cho biết nó đã lấy audio đi, mà chính băng tạm dừng cũng sinh ra sự kiện đó: nên mọi
+  lần băng tự tạm dừng được **đếm trước** (`quietPauses`) và bộ đếm nuốt sự kiện ấy; cái còn lại là
+  bị ngắt. Khi bị ngắt: giữ vị trí, `interrupted: true`, màn hình nói một dòng; lần phát sau **đọc
+  lại đoạn đang dở từ đầu đoạn** (`resumeCurrent`), chứ không tiếp từ giữa — nửa đáp án còn tệ hơn
+  không có, và F13 nói thứ duy nhất người trong xe muốn là "đọc lại giùm". Tạm dừng thường vẫn tiếp
+  từ đúng chỗ đã dừng.
+- **Chưa làm: tải offline.** Phần còn lại của M8.2.
+
 #### Phases
 
 - **M8.1 — core, online, fixed gap.** The sequence above, selection by range and by paper, a plain screen with play/pause/next. Proves the shape; no Media Session, no offline, no explanation.
@@ -791,7 +822,7 @@ Free-tier limits change, so check the providers' current pricing pages before re
 | M7.29 | Lịch sử thi thử | `/topik/tests/history`: mọi lượt đã nộp của hồ sơ, mới nhất trên cùng, lọc theo Nghe/Đọc, bấm một dòng mở lại màn kết quả; biểu đồ % theo thời gian cho từng phần, đề gốc và đề trộn hai màu, vẽ bằng SVG tay (không thêm thư viện); không bảng mới, không migration | [x] |
 | M7.19 | A practice session survives being interrupted | Place, answers and marked words kept on the device; restored only onto the same block within 3 hours, and a finished session with words still waiting reopens its results screen | [x] |
 | M8.1 | TOPIK listening podcast: core | F13 — question number → question line → clip → options → gap → answer in Korean, spoken twice; selection by range/paper + "chỉ câu đã thuộc" (M6.11) laid over them; online, fixed gap 5 s; câu chưa làm vẫn để dành cho thi thử (M7.27); TTS sinh trước bằng `npm run topik-podcast-tts` | [x] |
-| M8.2 | TOPIK listening podcast: hands-free | Media Session (lock screen + car Bluetooth), audio focus, Previous = replay this question, offline download | [ ] |
+| M8.2 | TOPIK listening podcast: hands-free | Media Session (lock screen + car Bluetooth), audio focus, Previous = replay this question, offline download | [~] Media Session, khoảng nghỉ phát im lặng thật, bị ngắt thì đọc lại đoạn — còn tải offline |
 | M8.3 | TOPIK listening podcast: smart selection | By duration (30/60 min), "câu tôi hay sai" from `topik_attempts`, Vietnamese explanation, longer gap for questions 21-50 | [ ] |
 
 ---

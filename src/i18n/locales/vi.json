@@ -948,6 +948,7 @@
       "pause": "Tạm dừng",
       "resume": "Phát tiếp",
       "next": "Câu tiếp",
+      "again": "Đọc lại câu này",
       "change": "Chọn lại",
       "finished": "Hết podcast.",
       "voiceRate": "Tốc độ giọng đọc",
@@ -975,7 +976,9 @@
         "options": "Đang đọc bốn đáp án",
         "gap": "Khoảng nghỉ để suy nghĩ",
         "answer": "Đang đọc đáp án đúng"
-      }
+      },
+      "interrupted": "Bị ngắt giữa đoạn. Bấm Phát tiếp để đọc lại đoạn này từ đầu.",
+      "nowPlaying": "Câu {{n}} · {{exam}}"
     }
   }
 }

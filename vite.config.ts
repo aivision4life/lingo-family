@@ -96,7 +96,7 @@ export default defineConfig(({ command, mode }) => ({
       },
       injectManifest: {
         // App shell only. The Noto Sans KR pieces (~500 files) are cached when first used.
-        globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,wav,webmanifest}"],
         globIgnores: ["**/*.woff", "**/*.woff2"],
       },
       devOptions: { enabled: false },

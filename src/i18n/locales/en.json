@@ -948,6 +948,7 @@
       "pause": "Pause",
       "resume": "Resume",
       "next": "Next question",
+      "again": "Read this question again",
       "change": "Change selection",
       "finished": "End of the podcast.",
       "voiceRate": "Reading speed",
@@ -975,7 +976,9 @@
         "options": "Reading the four options",
         "gap": "A gap to think",
         "answer": "Reading the correct answer"
-      }
+      },
+      "interrupted": "Interrupted part way. Resume reads this piece again from its start.",
+      "nowPlaying": "Question {{n}} · {{exam}}"
     }
   }
 }

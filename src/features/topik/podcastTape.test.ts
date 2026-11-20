@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PODCAST_GAP_MS, type PodcastQuestion } from "@shared/podcast";
-import { buildPodcastTape, nextQuestionStart, podcastPositionAt } from "./podcastTape";
+import { buildPodcastTape, nextQuestionStart, podcastPositionAt, podcastQuestionStart } from "./podcastTape";
 
 const question = (number: number): PodcastQuestion => ({
   id: `q${number}`,
@@ -44,5 +44,16 @@ describe("buildPodcastTape", () => {
     expect(empty.tracks).toEqual([]);
     expect(podcastPositionAt(empty, 0)).toEqual({ question: 0, step: "number" });
     expect(nextQuestionStart(empty, 0)).toBeNull();
+  });
+});
+
+describe("podcastQuestionStart", () => {
+  const tape = buildPodcastTape({ questions: [question(4), question(5)] });
+
+  it("is the first track of the question being played, whichever piece is on", () => {
+    // F13's Previous: the answer of question 5 (track 11) replays from track 6, not track 10.
+    expect(podcastQuestionStart(tape, 11)).toBe(6);
+    expect(podcastQuestionStart(tape, 6)).toBe(6);
+    expect(podcastQuestionStart(tape, 4)).toBe(0);
   });
 });

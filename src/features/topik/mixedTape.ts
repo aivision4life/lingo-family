@@ -31,6 +31,7 @@ import { mediaUrl } from "@/features/audio/player";
 import { applyRate } from "@/features/audio/rateSetting";
 import { positionOnTimeline } from "./mixedTimeline";
 import { podcastTtsRate, rateForTrack } from "./podcastRate";
+import { createTapeSilence } from "./tapeSilence";
 import { elementSlots, type TapeTrack } from "./tapeTracks";
 
 export { clipTracks, elementSlots, type TapeTrack } from "./tapeTracks";
@@ -80,6 +81,13 @@ export type TapeState = {
   pauseCount: number;
   pausedMs: number;
   finished: boolean;
+  /**
+   * True when the browser took the sound away rather than the listener asking for it: a phone
+   * call, or the navigation voice on a car's head unit. Kept apart from an ordinary pause because
+   * resuming is not the same thing — the words lost under the interruption have to be read again,
+   * so play after this starts the current piece from its beginning (SPEC F13).
+   */
+  interrupted: boolean;
 };
 
 /** `HAVE_FUTURE_DATA`: enough buffered to start without stalling immediately. */
@@ -111,7 +119,17 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
   /** Tracks already given a second go after standing still: the second time, they are skipped. */
   const stallRetried = new Set<number>();
   const listeners = new Set<() => void>();
-  let state: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false };
+  let state: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false, interrupted: false };
+  /** Real silence looping through the gap, so the screen can go off without the session ending. */
+  const silence = createTapeSilence();
+  /**
+   * Pauses the tape itself is responsible for, waiting for their `pause` event.
+   *
+   * The event is the only sign a browser gives that it has taken the audio away, and the tape's
+   * own pauses raise exactly the same one. So every pause made here is counted first and the
+   * counter swallows that event; anything left over is an interruption.
+   */
+  let quietPauses = 0;
   let pausedAt: number | null = null;
   let disposed = false;
   /** The running gap's timer, so pausing or skipping inside a gap does not leave it ticking. */
@@ -164,11 +182,42 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     applyRate(elementFor(state.index), rateForTrack(track.kind, podcastTtsRate.get()));
   });
 
+  /**
+   * An interruption: the sound stopped and the tape did not ask for it.
+   *
+   * Everything a pause does, plus a note of why, and no attempt to carry on by itself — a call
+   * that lasts two minutes must not leave the podcast reading answers into the earpiece. The
+   * place is kept, and the next play starts this piece again from the top.
+   */
+  const onInterrupted = () => {
+    dropWatch();
+    clearGap();
+    silence.stop();
+    pausedAt = Date.now();
+    set({ playing: false, interrupted: true, pauseCount: state.pauseCount + 1 });
+  };
+  for (const el of els) {
+    el.addEventListener("pause", () => {
+      if (quietPauses > 0) {
+        quietPauses -= 1;
+        return;
+      }
+      // Not playing: nothing was taken away, so there is nothing to notice.
+      if (!state.playing || disposed) return;
+      onInterrupted();
+    });
+  }
+
   const set = (patch: Partial<TapeState>) => {
     state = { ...state, ...patch };
     listeners.forEach((l) => l());
   };
   const emit = (e: TapeEvent) => onEvent?.(e);
+  /** Pauses an element without that pause being read as the browser interrupting us. */
+  const pauseQuietly = (el: HTMLAudioElement) => {
+    if (!el.paused) quietPauses += 1;
+    el.pause();
+  };
   // Worked out once, over the tracks that have audio: see `elementSlots`. A gap's slot is `null`
   // and every caller below has already ruled a gap out, so the fallback is never reached.
   const slots = elementSlots(tracks);
@@ -180,6 +229,15 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     if (gapTimer === null) return;
     clearTimeout(gapTimer);
     gapTimer = null;
+  };
+  /** Starts the gap's timer, and the silence that keeps the browser believing we are playing. */
+  const startGap = (index: number, ms: number) => {
+    silence.start();
+    gapTimer = setTimeout(() => {
+      gapTimer = null;
+      silence.stop();
+      void handOver(index);
+    }, ms);
   };
 
   /**
@@ -271,13 +329,10 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
 
     // A gap plays nothing: the tape simply stays quiet for as long as the gap says.
     if (track.kind === "silence") {
-      set({ index: i, positionMs: 0, playing: true });
+      set({ index: i, positionMs: 0, playing: true, interrupted: false });
       emit({ kind: "playing", index: i, src: label(track) });
       void prepare(i + 1);
-      gapTimer = setTimeout(() => {
-        gapTimer = null;
-        void handOver(i);
-      }, track.ms);
+      startGap(i, track.ms);
       return;
     }
 
@@ -308,7 +363,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     const startMs = track.kind === "clip" ? track.start_ms : 0;
     const within = track.kind === "clip" ? Math.max(0, Math.min(withinMs, track.end_ms - track.start_ms)) : 0;
     el.currentTime = (startMs + within) / 1000;
-    set({ index: i, positionMs: within, playing: true });
+    set({ index: i, positionMs: within, playing: true, interrupted: false });
     emit({ kind: "playing", index: i, src: label(track) });
     void el.play().catch((e: Error) => emit({ kind: "error", message: e.message }));
 
@@ -361,7 +416,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       set({ positionMs: el.currentTime * 1000 - startMs });
       if (el.currentTime * 1000 < clipEnd) return;
       dropWatch();
-      el.pause();
+      pauseQuietly(el);
       void handOver(i);
     };
     el.addEventListener("timeupdate", watch);
@@ -409,7 +464,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     if (disposed) return;
     const gen = generation;
     dropWatch();
-    elementFor(i).pause();
+    pauseQuietly(elementFor(i));
     if (!stallRetried.has(i)) {
       stallRetried.add(i);
       prepared.delete(i);
@@ -451,6 +506,27 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     await playFrom(next);
   }
 
+  /**
+   * Play again after the browser interrupted us: the current piece from its own beginning.
+   *
+   * Not where the interruption happened. Half of an option read out is worse than none, and the
+   * listener has their hands on a steering wheel — F13 says the one thing wanted is "say that
+   * again", so that is what resuming does.
+   */
+  async function resumeCurrent(): Promise<void> {
+    if (disposed) return;
+    if (pausedAt !== null) set({ pausedMs: state.pausedMs + (Date.now() - pausedAt) });
+    pausedAt = null;
+    clearGap();
+    // The same abandoning a skip does: whatever was loading was loading for the interrupted turn.
+    generation += 1;
+    dropWatch();
+    dropLoads();
+    for (const el of els) pauseQuietly(el);
+    set({ interrupted: false });
+    await playFrom(state.index);
+  }
+
   return {
     subscribe(listener: () => void) {
       listeners.add(listener);
@@ -477,7 +553,10 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
           })
           .catch(() => false);
       });
-      const results = await Promise.all(attempts);
+      // The gap's element is unlocked in the same gesture and for the same reason: nothing the
+      // listener ever started may be asked to play later on a phone.
+      const gapAttempt = silence.unlock();
+      const results = await Promise.all([...attempts, gapAttempt]);
       for (const el of els) el.muted = false;
       emit({ kind: "unlocked", blocked: results.filter((ok) => !ok).length });
       // Reopening a sitting resumes where the exam clock says the tape is, not at the beginning:
@@ -494,22 +573,25 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     },
 
     toggle(): void {
+      // Play after an interruption is not "carry on": the piece that was talked over starts again
+      // from its beginning, which is the only way the words lost under it are heard (F13).
+      if (state.interrupted) {
+        void resumeCurrent();
+        return;
+      }
       const track = tracks[state.index];
       // Pausing inside a gap is pausing: its timer stops with it and starts again in full when
       // play resumes — a few seconds either way, and never a tape that moves on while paused.
       if (track?.kind === "silence") {
         if (gapTimer !== null) {
           clearGap();
+          silence.stop();
           pausedAt = Date.now();
           set({ pauseCount: state.pauseCount + 1, playing: false });
         } else {
           if (pausedAt !== null) set({ pausedMs: state.pausedMs + (Date.now() - pausedAt) });
           pausedAt = null;
-          const index = state.index;
-          gapTimer = setTimeout(() => {
-            gapTimer = null;
-            void handOver(index);
-          }, track.ms);
+          startGap(state.index, track.ms);
           set({ playing: true });
         }
         return;
@@ -523,7 +605,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
         attachWatch(state.index);
         set({ playing: true });
       } else {
-        el.pause();
+        pauseQuietly(el);
         // Nothing is playing, so nothing may be listening: a paused track's `ended` or
         // `timeupdate` must not be left on an element that a skip could hand to another track.
         dropWatch();
@@ -542,14 +624,16 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       // element back to the start of a track nobody is going to hear.
       dropWatch();
       dropLoads();
-      for (const el of els) el.pause();
+      silence.stop();
+      for (const el of els) pauseQuietly(el);
       await playFrom(index);
     },
 
     stop(): void {
       clearGap();
       dropWatch();
-      for (const el of els) el.pause();
+      silence.stop();
+      for (const el of els) pauseQuietly(el);
       set({ playing: false });
     },
 
@@ -559,8 +643,9 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       clearGap();
       dropWatch();
       dropLoads();
+      silence.dispose();
       for (const el of els) {
-        el.pause();
+        pauseQuietly(el);
         el.removeAttribute("src");
       }
       prepared.clear();
@@ -613,5 +698,5 @@ export function subscribeMixedTape(listener: () => void): () => void {
   return () => void holders.delete(listener);
 }
 
-export const IDLE_TAPE: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false };
+export const IDLE_TAPE: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false, interrupted: false };
 export const mixedTapeState = (): TapeState => current?.getState() ?? IDLE_TAPE;
