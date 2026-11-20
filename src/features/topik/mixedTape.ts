@@ -202,6 +202,25 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     pausedAt = Date.now();
     set({ playing: false, interrupted: true, pauseCount: state.pauseCount + 1 });
   };
+  /**
+   * Whether this element is the one the tape is actually listening to right now.
+   *
+   * Three things have to hold, and each one rules out a false alarm seen on a real phone:
+   * the element is the current track's own element (the other one is idle or preloading, and
+   * `load()` on it raises a `pause` of its own); its source really is that track's file (the
+   * unlock plays a tiny silent sample on both elements and pauses them, and that `pause` arrives
+   * a task later, by which time the first track is already playing); and the file has not simply
+   * run out — the natural end of a file raises `pause` with `ended` already true, immediately
+   * before `ended` itself, and that pause is the tape finishing a piece, not a call taking the
+   * audio away.
+   */
+  const isCurrentSound = (el: HTMLAudioElement) => {
+    const track = tracks[state.index];
+    if (track === undefined || track.kind === "silence") return false;
+    if (elementFor(state.index) !== el) return false;
+    if (el.ended) return false;
+    return el.src.endsWith(mediaUrl(track.audio_key));
+  };
   for (const el of els) {
     el.addEventListener("pause", () => {
       const owed = quietPauses.get(el) ?? 0;
@@ -211,6 +230,8 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       }
       // Not playing: nothing was taken away, so there is nothing to notice.
       if (!state.playing || disposed) return;
+      // A pause from anything but the sound being listened to is the tape's own machinery.
+      if (!isCurrentSound(el)) return;
       onInterrupted();
     });
   }

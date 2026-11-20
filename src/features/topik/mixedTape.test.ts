@@ -18,6 +18,7 @@ class FakeAudio {
   muted = false;
   loop = false;
   paused = true;
+  ended = false;
   currentTime = 0;
   readyState = 0;
   playCalls = 0;
@@ -64,10 +65,23 @@ class FakeAudio {
   play() {
     this.playCalls += 1;
     this.paused = false;
+    this.ended = false;
     return Promise.resolve();
   }
   pause() {
     this.paused = true;
+  }
+
+  /**
+   * The file running out by itself, in the order and the state a real element gives it: `pause`
+   * first with `ended` already true, then `ended`. Chrome and Safari both raise that `pause`, and
+   * reading it as a phone call is the fault this shape of fake exists to catch.
+   */
+  finish() {
+    this.paused = true;
+    this.ended = true;
+    this.fire("pause");
+    this.fire("ended");
   }
 
   /** Metadata arrives, the file is buffered enough to play: what a loaded clip looks like. */
@@ -393,6 +407,21 @@ describe("podcast tracks", () => {
     expect(elements[0]!.currentTime).toBe(0);
     expect(elements[0]!.playCalls).toBe(before + 1);
     expect(tape.getState()).toMatchObject({ playing: true, interrupted: false, index: 0 });
+  });
+
+  it("does not call a file running out by itself an interruption", async () => {
+    // The fault that blocked the podcast on the phone: the natural end of a file raises `pause`
+    // with `ended` already true, immediately before `ended`. Read as a phone call, it stopped the
+    // tape on the very first piece — and took the `ended` listener off with it, so the question
+    // could never hand over, whatever the listener pressed.
+    const { tape } = await tapeOn([file("number.mp3"), file("question.mp3")]);
+    elements[0]!.currentTime = 2;
+    elements[0]!.finish();
+    await settle();
+    elements[1]!.arrive();
+    await settle();
+
+    expect(tape.getState()).toMatchObject({ interrupted: false, pauseCount: 0, index: 1, playing: true });
   });
 
   it("does not call the tape's own pauses an interruption", async () => {
