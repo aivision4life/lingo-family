@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMixedTape, elementSlots, type TapeEvent, type TapeTrack } from "./mixedTape";
+import { createMixedTape, elementSlots, STALL_SECONDS, type TapeEvent, type TapeTrack } from "./mixedTape";
 import { podcastTtsRate } from "./podcastRate";
 
 /**
@@ -100,6 +100,18 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
+
+/**
+ * Fake-timer playback: a real element's `currentTime` moves while it plays, and the tape now
+ * watches that to spot a track that has run out of data. A test that advances the clock without
+ * moving the head is testing a frozen element, not a playing one.
+ */
+async function playFor(el: FakeAudio, seconds: number) {
+  for (let i = 0; i < seconds; i += 1) {
+    el.currentTime += 1;
+    await vi.advanceTimersByTimeAsync(1_000);
+  }
+}
 
 /** Lets every already-resolved promise in the tape's chain run. */
 const settle = async () => {
@@ -794,7 +806,7 @@ describe("a long track with the next file already loaded", () => {
       expect(events.some((e) => e.kind === "ready" && e.index === 1)).toBe(true);
 
       // The clip plays on, well past the twenty seconds the load was given.
-      await vi.advanceTimersByTimeAsync(43_000);
+      await playFor(elements[0]!, 43);
       expect(events.some((e) => e.kind === "error")).toBe(false);
 
       elements[0]!.currentTime = 44;
@@ -861,7 +873,7 @@ describe("saying which piece was lost, and why", () => {
       elements[0]!.arrive();
       await run;
       // Nothing ever arrives on the second element, and nothing errors either.
-      await vi.advanceTimersByTimeAsync(21_000);
+      await playFor(elements[0]!, 21);
       elements[0]!.fire("ended");
       await vi.advanceTimersByTimeAsync(21_000);
       expect(events.find((e) => e.kind === "skipped")).toMatchObject({ index: 1, reason: "timeout" });
@@ -869,5 +881,101 @@ describe("saying which piece was lost, and why", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * A track that starts playing and then runs out of data (SPEC F13).
+ *
+ * This is the failure with no event at all: the element has part of the file, plays it, and waits
+ * for the rest for ever. No `error`, no `ended`. The only sign is the playing head standing still
+ * while the tape believes it is playing — the podcast read one option of four and went quiet.
+ */
+describe("a track that stops moving", () => {
+  const file = (audio_key: string): TapeTrack => ({ kind: "file", audio_key });
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** The tape saying a track stood still — not the next file's own load giving up. */
+  const froze = (events: readonly TapeEvent[]) => events.some((e) => e.kind === "error" && e.message.includes("đứng hình"));
+
+  async function playing(tracks: readonly TapeTrack[]) {
+    const events: TapeEvent[] = [];
+    const tape = createMixedTape(tracks, (e) => events.push(e));
+    const run = tape.start();
+    await vi.advanceTimersByTimeAsync(0);
+    elements[0]!.arrive();
+    await run;
+    await vi.advanceTimersByTimeAsync(0);
+    return { tape, events };
+  }
+
+  it("gives a frozen track one more go from the top", async () => {
+    const { tape, events } = await playing([file("options.mp3"), file("answer.mp3")]);
+    await playFor(elements[0]!, 3); // three seconds of it played: one option of four
+
+    // And then nothing moves, though nothing has errored and the element is not paused.
+    await vi.advanceTimersByTimeAsync(STALL_SECONDS * 1_000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Same track, loaded again and started again — not skipped on the first sign of trouble.
+    expect(tape.getState().index).toBe(0);
+    expect(events.some((e) => e.kind === "error")).toBe(true);
+    expect(events.filter((e) => e.kind === "playing" && e.index === 0)).toHaveLength(2);
+    expect(events.some((e) => e.kind === "skipped")).toBe(false);
+  });
+
+  it("skips it, saying it froze, when the second go freezes too", async () => {
+    const { tape, events } = await playing([file("options.mp3"), file("answer.mp3")]);
+    await vi.advanceTimersByTimeAsync(STALL_SECONDS * 1_000);
+    await vi.advanceTimersByTimeAsync(0);
+    elements[0]!.arrive();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(STALL_SECONDS * 1_000);
+    await vi.advanceTimersByTimeAsync(0);
+    elements[1]!.arrive();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(events.find((e) => e.kind === "skipped")).toEqual({ kind: "skipped", index: 0, reason: "stalled" });
+    expect(tape.getState().index).toBe(1);
+  });
+
+  it("leaves a track alone while it is still playing", async () => {
+    const { tape, events } = await playing([file("long.mp3"), file("next.mp3")]);
+    // Twenty-five seconds of real playing: far longer than the stall window, and never still.
+    await playFor(elements[0]!, 25);
+    expect(events.some((e) => e.kind === "skipped")).toBe(false);
+    expect(froze(events)).toBe(false);
+    // Played once, not started again behind its own back.
+    expect(events.filter((e) => e.kind === "playing" && e.index === 0)).toHaveLength(1);
+    expect(tape.getState().index).toBe(0);
+  });
+
+  it("does not call a paused tape frozen", async () => {
+    const { tape, events } = await playing([file("options.mp3"), file("answer.mp3")]);
+    tape.toggle();
+    // Paused for a minute at the traffic lights: nothing is wrong with the file.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(events.some((e) => e.kind === "skipped")).toBe(false);
+    expect(froze(events)).toBe(false);
+
+    tape.toggle();
+    await playFor(elements[0]!, 3);
+    expect(tape.getState()).toMatchObject({ index: 0, playing: true });
+  });
+
+  it("stops watching a track it has left", async () => {
+    const { tape, events } = await playing([file("a.mp3"), file("b.mp3")]);
+    elements[1]!.arrive();
+    await vi.advanceTimersByTimeAsync(0);
+    elements[0]!.fire("ended");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tape.getState().index).toBe(1);
+
+    // Element 0 is standing still because its track is over, not because anything is wrong.
+    await playFor(elements[1]!, STALL_SECONDS + 2);
+    expect(events.some((e) => e.kind === "skipped")).toBe(false);
   });
 });

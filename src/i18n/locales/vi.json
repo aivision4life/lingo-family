@@ -960,7 +960,8 @@
         "timeout": "quá hạn tải",
         "network": "lỗi mạng",
         "decode": "lỗi giải mã",
-        "unsupported": "không mở được file"
+        "unsupported": "không mở được file",
+        "stalled": "đứng hình"
       },
       "step": {
         "number": "Đang đọc số câu",

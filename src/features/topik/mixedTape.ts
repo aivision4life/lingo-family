@@ -42,7 +42,18 @@ export { clipTracks, elementSlots, type TapeTrack } from "./tapeTracks";
  * it is holding the phone: the podcast screen shows the piece that was lost and this reason, and
  * a photograph of that line is the whole bug report.
  */
-export type TapeFailure = "timeout" | "network" | "decode" | "unsupported";
+export type TapeFailure = "timeout" | "network" | "decode" | "unsupported" | "stalled";
+
+/**
+ * How long a track may play without the playing head moving before it counts as stuck.
+ *
+ * The failure this exists for makes no noise at all: the element has some of the file, plays it,
+ * and then waits for bytes that never come — no `error`, no `ended`, nothing to listen for. The
+ * only evidence is `currentTime` standing still while the tape believes it is playing. Eight
+ * seconds is far longer than any buffering a 100 KB file can need, and short enough that a
+ * listener in a car notices the podcast moving on rather than wondering if it is over.
+ */
+export const STALL_SECONDS = 8;
 
 /** `MediaError.code` as a reason; anything unknown reads as a network problem. */
 export const failureFromMediaError = (code: number | undefined): TapeFailure =>
@@ -97,6 +108,8 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
   const prepared = new Map<number, Promise<boolean>>();
   /** Why a track's last load failed, so a skip can say which kind of failure it was. */
   const failures = new Map<number, TapeFailure>();
+  /** Tracks already given a second go after standing still: the second time, they are skipped. */
+  const stallRetried = new Set<number>();
   const listeners = new Set<() => void>();
   let state: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false };
   let pausedAt: number | null = null;
@@ -322,6 +335,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
     // Holds the invariant itself rather than trusting the caller: at most one watcher, ever.
     dropWatch();
     const el = elementFor(i);
+    const stopStallCheck = watchForStall(i, el);
 
     if (track.kind === "file") {
       const tick = () => set({ positionMs: el.currentTime * 1000 });
@@ -334,6 +348,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       el.addEventListener("ended", onEnded);
       el.addEventListener("timeupdate", tick);
       detachWatch = () => {
+        stopStallCheck();
         el.removeEventListener("ended", onEnded);
         el.removeEventListener("timeupdate", tick);
       };
@@ -350,7 +365,61 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       void handOver(i);
     };
     el.addEventListener("timeupdate", watch);
-    detachWatch = () => el.removeEventListener("timeupdate", watch);
+    detachWatch = () => {
+      stopStallCheck();
+      el.removeEventListener("timeupdate", watch);
+    };
+  }
+
+  /**
+   * Watches the playing head rather than the element's events, because a track that runs out of
+   * data raises none: no `error`, no `ended`, no `stalled` worth trusting. A second of no movement
+   * while the tape believes it is playing is normal; `STALL_SECONDS` of it is not.
+   *
+   * Returns how to stop watching. Pausing is not standing still — the clock starts again from the
+   * moment play resumes.
+   */
+  function watchForStall(i: number, el: HTMLAudioElement): () => void {
+    let last = el.currentTime;
+    let still = 0;
+    const timer = setInterval(() => {
+      if (el.paused || !state.playing) {
+        still = 0;
+        last = el.currentTime;
+        return;
+      }
+      if (el.currentTime !== last) {
+        still = 0;
+        last = el.currentTime;
+        return;
+      }
+      still += 1;
+      if (still < STALL_SECONDS) return;
+      clearInterval(timer);
+      void onStalled(i);
+    }, 1_000);
+    return () => clearInterval(timer);
+  }
+
+  /**
+   * A track that stopped moving: one more go from the top with a fresh load, and if it stands
+   * still again, it is lost and the podcast carries on without it.
+   */
+  async function onStalled(i: number): Promise<void> {
+    if (disposed) return;
+    const gen = generation;
+    dropWatch();
+    elementFor(i).pause();
+    if (!stallRetried.has(i)) {
+      stallRetried.add(i);
+      prepared.delete(i);
+      emit({ kind: "error", message: `đoạn ${i + 1}: đứng hình, thử lại` });
+      await playFrom(i);
+      return;
+    }
+    if (disposed || gen !== generation) return;
+    emit({ kind: "skipped", index: i, reason: "stalled" });
+    await handOver(i);
   }
 
   /** At the end of one track: start the next, or wait in that silence until it loads. */

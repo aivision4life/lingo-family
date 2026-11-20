@@ -38,6 +38,21 @@ type Req = { url: URL; origin: string };
 
 export const isMediaRequest = ({ url, origin }: Req) => url.origin === origin && url.pathname.startsWith("/api/media/");
 
+/**
+ * Media that is small enough to be worth keeping, and serving, in one piece: the spoken files the
+ * podcast is made of (`/api/media/audio/...`), tens of kilobytes each.
+ *
+ * `<audio>` asks for byte ranges, always on iOS, and a ranged request that misses the cache is
+ * answered straight from the network as a 206 — a stream that can be cut short without the element
+ * ever seeing an error. It then plays what arrived and waits for the rest for ever: the podcast
+ * read one option of four and went silent. For these files the worker fetches and caches the whole
+ * file instead, and answers from that.
+ *
+ * A TOPIK paper's own recording (`/api/media/topik/audio/...`) is ~30 MB and is played in
+ * thirty-second slices, so it keeps the ranged path: whole-file is for what is small.
+ */
+export const isWholeFileMedia = ({ url, origin }: Req) => url.origin === origin && url.pathname.startsWith("/api/media/audio/");
+
 /** Every other /api request: never cached (data, auth, quota counters). */
 export const isApiRequest = ({ url, origin }: Req) => url.origin === origin && url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/media/");
 

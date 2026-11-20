@@ -4,7 +4,8 @@
 //
 //  - app shell (index.html + icons): copied at install, so the app opens without a network;
 //  - /assets/*     (hashed CSS/JS): cached when first used, kept (the name holds the hash);
-//  - /api/media/*  (images + audio, content-addressed, immutable): cache-first, limited, 60 days;
+//  - /api/media/audio/* (the podcast's spoken files): cache-first, **whole file**, never a range;
+//  - /api/media/*  (images + the papers' own recordings): cache-first, ranged, limited, 60 days;
 //  - other /api/*  : never cached (network only);
 //  - page loads    : network first (the shell is never served from the cache while the device is
 //                    online and answering). A redirect (e.g. Cloudflare Access login after the session
@@ -28,6 +29,7 @@ import {
   isHashedAsset,
   isFontRequest,
   isMediaRequest,
+  isWholeFileMedia,
   isNavigationRequest,
   isShellPath,
   MEDIA_CACHE,
@@ -134,6 +136,36 @@ const media = new CacheFirst({
     new ExpirationPlugin({ maxEntries: MEDIA_MAX_ENTRIES, maxAgeSeconds: MEDIA_MAX_AGE_SECONDS, purgeOnQuotaError: true }),
   ],
 });
+/**
+ * The spoken files: whole file, every time.
+ *
+ * No `RangeRequestsPlugin` and no ranged request ever leaves here. `<audio>` asks for a range and
+ * is given the complete 200 instead, which a server is allowed to do and every browser accepts —
+ * and it is the only way to be sure the element has the whole file. The ranged path answers a
+ * cache miss with the network's own 206 while fetching the whole file in the background: if that
+ * 206 stream is cut short, the element gets a short file with no error at all, plays what there
+ * is and waits for the rest for ever (one option of four, then silence).
+ *
+ * The request is rebuilt from the URL so the Range header can reach neither the network nor the
+ * cache key. If the whole file cannot be had, the plain network answer is better than nothing —
+ * the tape has its own way of giving up on a file that will not play.
+ */
+const wholeFileMedia = new CacheFirst({
+  cacheName: MEDIA_CACHE,
+  plugins: [only200(), new ExpirationPlugin({ maxEntries: MEDIA_MAX_ENTRIES, maxAgeSeconds: MEDIA_MAX_AGE_SECONDS, purgeOnQuotaError: true })],
+});
+registerRoute(
+  ({ url }) => isWholeFileMedia({ url, origin }),
+  async (ctx) => {
+    const whole = new Request(ctx.url.href, { credentials: "same-origin" });
+    try {
+      return await wholeFileMedia.handle({ ...ctx, request: whole });
+    } catch {
+      return fetch(ctx.request);
+    }
+  },
+);
+
 registerRoute(
   ({ url }) => isMediaRequest({ url, origin }),
   async (ctx) => {

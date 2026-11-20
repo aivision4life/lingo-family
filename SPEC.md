@@ -503,6 +503,19 @@ About **210 characters of TTS per question** (question line + four options + the
   `min(speech_end_ms + PODCAST_CLIP_TAIL_MS, end_ms)` (`podcastClipEnd` trong `shared/podcast.ts`,
   tail 800 ms), dựng sẵn trong playlist ở `tracksFor`. Luật của cặp câu từ 21 trở đi **không đổi**:
   `speech_end_ms` do người đặt và đã gồm lời xướng câu thứ hai.
+- **File giọng đọc đi qua service worker nguyên vẹn, không theo byte range.** `<audio>` luôn hỏi
+  byte range (trên iOS thì luôn luôn), và đường cũ trả thẳng **206 từ mạng** khi cache trượt, rồi
+  mới tải cả file ở nền. Nếu dòng 206 đó đứt giữa chừng thì thẻ audio nhận một file ngắn **mà
+  không có lỗi nào**: phát hết phần có rồi chờ phần còn lại mãi mãi (đọc một đáp án rồi im). Nay
+  `/api/media/audio/*` (file TTS, vài chục KB) đi qua route riêng **không có `RangeRequestsPlugin`**:
+  yêu cầu dựng lại từ URL nên header Range không ra tới mạng, cache-first, và trả **200 trọn file**.
+  Băng gốc của đề (`/api/media/topik/audio/*`, ~30 MB, phát từng lát 30 giây) **giữ nguyên** đường
+  range.
+- **Đoạn đang phát mà vị trí không nhúc nhích trong 8 giây là "đứng hình".** Đây là kiểu hỏng không
+  phát ra sự kiện nào — không `error`, không `ended`, không gì để nghe — nên băng theo dõi chính
+  `currentTime`: `STALL_SECONDS` = 8 (dài hơn mọi lần đệm mà một file 100 KB cần, ngắn hơn mức người
+  nghe trong xe kịp tưởng là hết bài). Đứng hình lần đầu: tải lại và **phát lại đoạn đó từ đầu**;
+  đứng hình lần hai: bỏ qua với lý do "đứng hình" và đi tiếp. Tạm dừng **không phải** đứng hình.
 - **Một file không tải được chỉ mất file đó, không mất cả buổi nghe.** `play()` trên thẻ `<audio>`
   không có dữ liệu **không bao giờ bắn `ended`**, mà `ended` là thứ duy nhất chuyển đoạn `file`, nên
   băng đứng im vĩnh viễn (tìm ra trong trình duyệt với 36회 câu 4–6: hết băng gốc là im, bốn đáp án

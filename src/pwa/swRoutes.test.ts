@@ -5,6 +5,7 @@ import {
   isFontRequest,
   isMediaRequest,
   isNavigationRequest,
+  isWholeFileMedia,
   MEDIA_MAX_AGE_SECONDS,
   MEDIA_MAX_ENTRIES,
   NAVIGATION_TIMEOUT_SECONDS,
@@ -21,6 +22,16 @@ describe("service worker routes", () => {
     expect(isMediaRequest(req("/api/media/x", "https://evil.example"))).toBe(false);
     expect(isMediaRequest(req("/api/words"))).toBe(false);
     expect(isMediaRequest(req("/media/x"))).toBe(false);
+  });
+
+  it("whole-file media: the spoken files, never the paper's own recording", () => {
+    // Tens of kilobytes, played start to finish: worth one fetch and one cache entry.
+    expect(isWholeFileMedia(req("/api/media/audio/ko/ko-KR-SunHiNeural/abc.mp3"))).toBe(true);
+    // ~30 MB, played in thirty-second slices: this one has to stay ranged.
+    expect(isWholeFileMedia(req("/api/media/topik/audio/abc.mp3"))).toBe(false);
+    expect(isWholeFileMedia(req("/api/media/images/ai/abc.png"))).toBe(false);
+    expect(isWholeFileMedia(req("/api/media/audio/ko/v/a.mp3", "https://evil.example"))).toBe(false);
+    expect(isWholeFileMedia(req("/api/words"))).toBe(false);
   });
 
   it("api: every /api route except media is network-only", () => {

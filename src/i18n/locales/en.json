@@ -960,7 +960,8 @@
         "timeout": "load timed out",
         "network": "network error",
         "decode": "decoding error",
-        "unsupported": "file could not be opened"
+        "unsupported": "file could not be opened",
+        "stalled": "playback froze"
       },
       "step": {
         "number": "Reading the question number",
