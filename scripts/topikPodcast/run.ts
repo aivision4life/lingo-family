@@ -24,7 +24,16 @@ import { getPlatformProxy } from "wrangler";
 import { PODCAST_MANIFEST_KEY, type PodcastManifest } from "../../shared/podcast";
 import type { TopikOptions } from "../../shared/topik";
 import { audioKey, createTtsClient, voiceFor } from "../../worker/services/tts";
-import { planSpeech, totalCharacters, charactersPerQuestion, type PodcastRow } from "./plan";
+import {
+  charactersPerQuestion,
+  F0_MIN_INTERVAL_MS,
+  isRateLimited,
+  planSpeech,
+  RATE_LIMIT_ATTEMPTS,
+  rateLimitDelayMs,
+  totalCharacters,
+  type PodcastRow,
+} from "./plan";
 
 type Stmt = { bind(...values: unknown[]): Stmt; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null>; run(): Promise<unknown> };
 type D1Like = { prepare(sql: string): Stmt };
@@ -132,21 +141,67 @@ async function main() {
       return;
     }
 
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    /**
+     * One file, paced and retried.
+     *
+     * A 429 is the tier saying "too fast" and is worth waiting out (10 s, 20 s, 40 s, 80 s); any
+     * other failure is this one file's problem and is left for the next run. Returns how it went
+     * so the caller can decide whether the batch may continue at all.
+     */
+    async function synthesise(text: string): Promise<{ ok: true; audio: ArrayBuffer } | { ok: false; rateLimited: boolean; message: string }> {
+      let message = "";
+      for (let attempt = 1; attempt <= RATE_LIMIT_ATTEMPTS; attempt++) {
+        try {
+          return { ok: true, audio: await tts!.synthesize(text, "ko", voice) };
+        } catch (e) {
+          message = e instanceof Error ? e.message : String(e);
+          if (!isRateLimited(message)) return { ok: false, rateLimited: false, message };
+          if (attempt === RATE_LIMIT_ATTEMPTS) break;
+          const wait = rateLimitDelayMs(attempt);
+          console.log(`  [429] rate limited, waiting ${wait / 1000}s before retry ${attempt + 1}/${RATE_LIMIT_ATTEMPTS}…`);
+          await sleep(wait);
+        }
+      }
+      return { ok: false, rateLimited: true, message };
+    }
+
     let done = 0;
     let failed = 0;
+    let characters = 0;
+    let stoppedBy: string | null = null;
+    let lastCallAt = 0;
+
     for (const item of todo) {
-      // One file's failure must not lose the rest of the batch: it is logged and left missing, so
-      // running the same command again picks it up.
-      try {
-        const audio = await tts!.synthesize(item.text, "ko", voice);
-        await bucket.put(item.key, audio, { httpMetadata: { contentType: "audio/mpeg" } });
-        present.add(item.key);
-        done++;
-        console.log(`  [${done}/${todo.length}] ${item.text.slice(0, 40)}${item.text.length > 40 ? "…" : ""}`);
-      } catch (e) {
-        failed++;
-        console.error(`  [skip] ${item.text.slice(0, 40)}: ${e instanceof Error ? e.message : String(e)}`);
+      // Paced at F0's own limit (20 requests a minute) instead of discovering it with a 429.
+      const since = Date.now() - lastCallAt;
+      if (lastCallAt > 0 && since < F0_MIN_INTERVAL_MS) await sleep(F0_MIN_INTERVAL_MS - since);
+      lastCallAt = Date.now();
+
+      const result = await synthesise(item.text);
+      if (!result.ok && result.rateLimited) {
+        // Still refused after backing off four times: stop the whole run rather than hammer a
+        // limit that is clearly not going to lift, and say so loudly at the end.
+        stoppedBy = `Azure kept answering 429 after ${RATE_LIMIT_ATTEMPTS} attempts (${result.message}).`;
+        break;
       }
+      if (!result.ok) {
+        // One file's own failure must not lose the batch: logged, left missing, picked up next run.
+        failed++;
+        console.error(`  [skip] ${item.text.slice(0, 40)}: ${result.message}`);
+        if (failed >= 10) {
+          stoppedBy = "10 files failed for reasons other than rate limiting; something else is wrong.";
+          break;
+        }
+        continue;
+      }
+
+      await bucket.put(item.key, result.audio, { httpMetadata: { contentType: "audio/mpeg" } });
+      present.add(item.key);
+      done++;
+      characters += item.text.length;
+      console.log(`  [${done}/${todo.length}] ${item.text.slice(0, 40)}${item.text.length > 40 ? "…" : ""}`);
     }
 
     // The manifest is what the app reads: everything that exists now, not only what this run made.
@@ -158,8 +213,15 @@ async function main() {
     await bucket.put(PODCAST_MANIFEST_KEY, JSON.stringify(manifest), { httpMetadata: { contentType: "application/json" } });
 
     const playable = rows.length - skipped.length;
-    console.log(`\nGenerated ${done} file(s)${failed ? `, ${failed} failed (still missing; run again)` : ""}.`);
+    console.log(`
+Generated ${done} file(s), ${characters.toLocaleString("en-US")} character(s) actually sent to Azure${failed ? `, ${failed} failed (still missing; run again)` : ""}.`);
     console.log(`Manifest written with ${manifest.keys.length} key(s); the podcast can now play the questions whose four files are all there (of ${playable}).`);
+    if (stoppedBy) {
+      console.error(`
+STOPPED EARLY: ${stoppedBy}`);
+      console.error(`${keyed.length - manifest.keys.length} file(s) are still missing. Nothing already made was lost — run the same command again later and it will skip everything that exists.`);
+      process.exitCode = 1;
+    }
   } finally {
     await proxy.dispose();
   }

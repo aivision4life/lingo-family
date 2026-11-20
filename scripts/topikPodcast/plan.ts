@@ -60,3 +60,25 @@ export const charactersPerQuestion = (rows: readonly PodcastRow[]) =>
     const speech = podcastSpeech(row);
     return speech ? n + podcastSpeechLength(speech) : n;
   }, 0);
+
+// --- pacing Azure ------------------------------------------------------------------------------
+
+/**
+ * Azure's free F0 tier allows **20 neural-voice requests a minute**, so the batch paces itself at
+ * one call every 3.2 seconds rather than finding the limit by hitting it. 850 files take about
+ * three quarters of an hour, which is fine for something run once.
+ */
+export const F0_MIN_INTERVAL_MS = 3_200;
+
+/** A 429 from Azure: the one failure that means "slow down", not "this will never work". */
+export const isRateLimited = (message: string) => message.includes("429");
+
+/**
+ * How long to wait before attempt `n` (1-based) of the same file: 10 s, 20 s, 40 s, 80 s.
+ *
+ * Doubling, and capped at four tries — a tier that is still refusing after two and a half minutes
+ * of backing off is not going to be talked round by a fifth attempt, and the run stops there so
+ * the owner can see it instead of a log that scrolled past hours ago.
+ */
+export const RATE_LIMIT_ATTEMPTS = 4;
+export const rateLimitDelayMs = (attempt: number) => 10_000 * 2 ** Math.max(0, attempt - 1);

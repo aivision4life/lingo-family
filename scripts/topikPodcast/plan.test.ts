@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { charactersPerQuestion, planSpeech, totalCharacters, type PodcastRow } from "./plan";
+import { charactersPerQuestion, isRateLimited, planSpeech, rateLimitDelayMs, totalCharacters, type PodcastRow } from "./plan";
 
 const row = (number: number, over: Partial<PodcastRow> = {}): PodcastRow => ({
   id: `q${number}`,
@@ -53,5 +53,17 @@ describe("planSpeech", () => {
     const [, o2, o3, o4] = row(9).options;
     const picture = planSpeech([row(9, { options: [{ text: null, image_key: "k" }, o2, o3, o4] })]);
     expect(picture.items).toHaveLength(0);
+  });
+});
+
+describe("pacing Azure", () => {
+  it("knows a 429 from a failure that waiting will not fix", () => {
+    expect(isRateLimited("Azure TTS HTTP 429: Too many requests")).toBe(true);
+    expect(isRateLimited("Azure TTS HTTP 401: Unauthorized")).toBe(false);
+    expect(isRateLimited("Azure TTS request failed: TimeoutError")).toBe(false);
+  });
+
+  it("backs off by doubling, starting at ten seconds", () => {
+    expect([1, 2, 3].map(rateLimitDelayMs)).toEqual([10_000, 20_000, 40_000]);
   });
 });
