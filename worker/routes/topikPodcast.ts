@@ -21,7 +21,7 @@ import { expandToGroups } from "../../shared/topikRange";
 import { topik_questions } from "../../db/schema";
 import { getDb, type AppEnv } from "../env";
 import { zv } from "../lib/validate";
-import { answeredQuestionIds } from "../services/topikAnswered";
+import { answeredQuestionIds, masteredQuestionIds } from "../services/topikAnswered";
 import { buildPodcastPlaylist, readPodcastManifest, type PodcastRow } from "../services/topikPodcast";
 import { voiceFor } from "../services/tts";
 import { clipsBySegment, practisable } from "./topik";
@@ -54,7 +54,7 @@ export function topikPodcastRoutes() {
        * since the counts and the tape have to come from the same decision or they will disagree.
        */
       .get("/topik/podcast", zv("query", podcastQuerySchema), async (c) => {
-        const { profile_id, exam, from, to } = c.req.valid("query");
+        const { profile_id, exam, from, to, mastered_only } = c.req.valid("query");
         const db = getDb(c.env);
 
         // The range is widened to whole groups first (M7.24), seen through a window wide enough to
@@ -89,6 +89,9 @@ export function topikPodcastRoutes() {
             ? new Set(splitReservedForTests(inRange, await answeredQuestionIds(db, profile_id, "listening")).reserved.map((q) => q.id))
             : new Set<string>();
 
+        // "Thuộc" is M6.11's one definition, asked of the database rather than restated here.
+        const mastered = mastered_only ? await masteredQuestionIds(db, profile_id, "listening") : null;
+
         const [clips, generated] = await Promise.all([
           clipsBySegment(
             db,
@@ -101,6 +104,7 @@ export function topikPodcastRoutes() {
           rows: inRange as PodcastRow[],
           clips,
           reserved,
+          mastered,
           generated,
           voice: voiceFor(c.env, "ko"),
         });

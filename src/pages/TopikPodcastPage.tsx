@@ -6,6 +6,7 @@ import { PageShell } from "@/components/PageShell";
 import { canManageProfiles, useActiveProfile } from "@/features/profiles/activeProfile";
 import { PodcastPlayer } from "@/features/topik/PodcastPlayer";
 import { RangeInputs } from "@/features/topik/RangeInputs";
+import { podcastMasteredOnly } from "@/features/topik/podcastMasteredOnly";
 import { usePodcastPapers, usePodcastPlaylist } from "@/features/topik/podcastApi";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +30,9 @@ export function TopikPodcastPage() {
   const maxNumber = Math.max(1, papers.data?.max_number ?? 50);
   const [range, setRange] = useState({ from: 4, to: 50, valid: true });
   const [playing, setPlaying] = useState<PodcastPlaylist | null>(null);
-  const preview = usePodcastPlaylist(profileId, exam, range.from, range.to, range.valid);
+  // Laid over the paper and the range, not instead of them; remembered by the device.
+  const masteredOnly = podcastMasteredOnly.use();
+  const preview = usePodcastPlaylist(profileId, exam, range.from, range.to, masteredOnly, range.valid);
   const playlist = preview.data ?? null;
 
   if (!profile) return null;
@@ -65,6 +68,19 @@ export function TopikPodcastPage() {
       </section>
 
       <section className="flex flex-col gap-3 rounded-lg border p-4">
+        <h2 className="font-semibold">{t("topik.podcast.masteredTitle")}</h2>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant={masteredOnly ? "outline" : "default"} onClick={() => podcastMasteredOnly.set(false)}>
+            {t("topik.podcast.masteredAll")}
+          </Button>
+          <Button type="button" variant={masteredOnly ? "default" : "outline"} onClick={() => podcastMasteredOnly.set(true)}>
+            {t("topik.podcast.masteredOnly")}
+          </Button>
+        </div>
+        <p className="text-sm text-muted-foreground">{t("topik.podcast.masteredHint")}</p>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-lg border p-4">
         <div>
           <h2 className="font-semibold">{t("topik.picker.rangeTitle")}</h2>
           <p className="text-sm text-muted-foreground">{t("topik.podcast.rangeHint")}</p>
@@ -91,6 +107,9 @@ export function TopikPodcastPage() {
             </p>
             {/* Every question the selection covered but the tape leaves out, and why. */}
             {skipped && skipped.picture_options > 0 && <p className="text-muted-foreground">{t("topik.podcast.skippedPictures", { count: skipped.picture_options })}</p>}
+            {skipped && skipped.not_mastered > 0 && (
+              <p className="text-muted-foreground">{t("topik.podcast.skippedNotMastered", { count: skipped.not_mastered })}</p>
+            )}
             {skipped && skipped.no_clip > 0 && <p className="text-muted-foreground">{t("topik.podcast.skippedNoClip", { count: skipped.no_clip })}</p>}
             {skipped && skipped.reserved_for_tests > 0 && (
               <p className="text-muted-foreground">{t("topik.podcast.skippedReserved", { count: skipped.reserved_for_tests })}</p>

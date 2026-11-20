@@ -49,7 +49,7 @@ export function podcastClipEnd(clip: { start_ms: number; speech_end_ms: number; 
 export const PODCAST_FIRST_SPEAKABLE_NUMBER = 4;
 
 /** Why a question the selection covered is not in the playlist. Every one of these is shown. */
-export const PODCAST_SKIP_REASONS = ["picture_options", "no_clip", "reserved_for_tests", "no_tts"] as const;
+export const PODCAST_SKIP_REASONS = ["picture_options", "not_mastered", "no_clip", "reserved_for_tests", "no_tts"] as const;
 export type PodcastSkipReason = (typeof PODCAST_SKIP_REASONS)[number];
 
 // --- what is spoken ----------------------------------------------------------------------------
@@ -143,6 +143,7 @@ export const podcastPlaylistSchema = z.object({
   /** How many questions the selection covered but the playlist leaves out, and why. */
   skipped: z.object({
     picture_options: z.number().int().nonnegative(),
+    not_mastered: z.number().int().nonnegative(),
     no_clip: z.number().int().nonnegative(),
     reserved_for_tests: z.number().int().nonnegative(),
     no_tts: z.number().int().nonnegative(),
@@ -161,6 +162,14 @@ export const podcastQuerySchema = z.object({
   exam: z.string().min(1).optional(),
   from: z.coerce.number().int().positive(),
   to: z.coerce.number().int().positive(),
+  /**
+   * Keep only the questions this profile has already mastered (M6.11), on top of the paper and
+   * range chosen. Sent as "1"/"0" rather than coerced: `z.coerce.boolean()` reads "false" as true.
+   */
+  mastered_only: z
+    .union([z.literal("1"), z.literal("0")])
+    .optional()
+    .transform((v) => v === "1"),
 });
 export type PodcastQuery = z.infer<typeof podcastQuerySchema>;
 

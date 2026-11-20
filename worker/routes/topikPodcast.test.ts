@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PODCAST_CLIP_TAIL_MS, PODCAST_GAP_MS, podcastSpeech, type PodcastPlaylist } from "../../shared/podcast";
 import type { TopikQuestionInput } from "../../shared/topik";
+import { MASTERED_CARD_STATE } from "../../shared/topikMastery";
 import { createTestEnv } from "../test/testEnv";
 import { audioKey } from "../services/tts";
 import { PODCAST_MANIFEST_KEY } from "../../shared/podcast";
@@ -86,6 +87,18 @@ async function generateTts(numbers: readonly number[], over: Partial<TopikQuesti
   );
 }
 
+/** Marks a question as "thuộc" (M6.11): a card of this profile's that has reached Review. */
+async function master(questionId: string) {
+  const now = Date.now();
+  await t.env.DB.prepare(
+    `INSERT INTO topik_cards (id, profile_id, question_id, due, stability, difficulty, elapsed_days,
+       scheduled_days, learning_steps, reps, lapses, state, last_review, updated_at)
+     VALUES (?, ?, ?, ?, 10, 5, 1, 10, 0, 3, 0, ?, ?, ?)`,
+  )
+    .bind(crypto.randomUUID(), adult, questionId, now + 86_400_000, MASTERED_CARD_STATE, now, now)
+    .run();
+}
+
 const podcast = async (query: string) => (await t.api("GET", `/topik/podcast?profile_id=${adult}&${query}`)).body as PodcastPlaylist;
 
 beforeEach(async () => {
@@ -121,7 +134,7 @@ describe("podcast playlist", () => {
     });
     expect(q!.tracks[4]).toEqual({ kind: "silence", ms: PODCAST_GAP_MS });
     expect(body.gap_ms).toBe(PODCAST_GAP_MS);
-    expect(body.skipped).toEqual({ picture_options: 0, no_clip: 0, reserved_for_tests: 0, no_tts: 0 });
+    expect(body.skipped).toEqual({ picture_options: 0, not_mastered: 0, no_clip: 0, reserved_for_tests: 0, no_tts: 0 });
   });
 
   it("leaves out questions 1-3 and says how many, instead of quietly returning fewer", async () => {
@@ -169,6 +182,30 @@ describe("podcast playlist", () => {
     const paper = await podcast("exam=Listen-60%ED%9A%8C&from=4&to=5");
     expect(paper.questions.map((q) => q.number)).toEqual([4, 5]);
     expect(paper.skipped.reserved_for_tests).toBe(0);
+  });
+
+  /**
+   * M8.1's "chỉ câu đã thuộc": laid over the paper and the range already chosen, and counted
+   * like every other reason a question is left out.
+   */
+  it("keeps only mastered questions when asked, and says how many it dropped", async () => {
+    const known = await addQuestion(4);
+    await addQuestion(5);
+    await generateTts([4, 5]);
+    await master(known);
+
+    const only = await podcast("exam=Listen-60%ED%9A%8C&from=4&to=5&mastered_only=1");
+    expect(only.questions.map((q) => q.number)).toEqual([4]);
+    expect(only.skipped.not_mastered).toBe(1);
+
+    // Off is unchanged, and the filter is never applied by accident.
+    const all = await podcast("exam=Listen-60%ED%9A%8C&from=4&to=5");
+    expect(all.questions.map((q) => q.number)).toEqual([4, 5]);
+    expect(all.skipped.not_mastered).toBe(0);
+
+    // mastered_only=0 is the same as off, not "nothing is mastered".
+    const zero = await podcast("exam=Listen-60%ED%9A%8C&from=4&to=5&mastered_only=0");
+    expect(zero.questions.map((q) => q.number)).toEqual([4, 5]);
   });
 
   it("widens the range to whole groups, like practice does", async () => {

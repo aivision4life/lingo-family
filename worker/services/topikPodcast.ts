@@ -66,6 +66,12 @@ export type PodcastBuild = {
   clips: ReadonlyMap<string, TopikClip>;
   /** Question ids held back for a mock test (M7.27), already decided by the caller. */
   reserved: ReadonlySet<string>;
+  /**
+   * When the listener asked for mastered questions only: the ids this profile has mastered, the
+   * one definition in `shared/topikMastery.ts`. `null` means the filter is off — an empty set
+   * means it is on and nothing qualifies, which are different answers and are counted as such.
+   */
+  mastered: ReadonlySet<string> | null;
   /** Keys `readPodcastManifest` found. */
   generated: ReadonlySet<string>;
   voice: string;
@@ -100,8 +106,8 @@ function tracksFor(keys: Record<keyof PodcastSpeech, string>, clip: TopikClip): 
  * Order: by question number, then by paper. Across every paper the point of a range is drilling
  * one *kind* of question, so hearing every paper's question 16 together is what was asked for.
  */
-export async function buildPodcastPlaylist({ rows, clips, reserved, generated, voice }: PodcastBuild): Promise<Omit<PodcastPlaylist, "from" | "to" | "expanded">> {
-  const skipped = { picture_options: 0, no_clip: 0, reserved_for_tests: 0, no_tts: 0 };
+export async function buildPodcastPlaylist({ rows, clips, reserved, mastered, generated, voice }: PodcastBuild): Promise<Omit<PodcastPlaylist, "from" | "to" | "expanded">> {
+  const skipped = { picture_options: 0, not_mastered: 0, no_clip: 0, reserved_for_tests: 0, no_tts: 0 };
   const ordered = [...rows].sort((a, b) => a.number - b.number || a.exam.localeCompare(b.exam));
   const questions: PodcastQuestion[] = [];
 
@@ -109,6 +115,12 @@ export async function buildPodcastPlaylist({ rows, clips, reserved, generated, v
     // Questions 1-3 answer with four pictures: there is nothing to read out, ever.
     if (row.number < PODCAST_FIRST_SPEAKABLE_NUMBER) {
       skipped.picture_options += 1;
+      continue;
+    }
+    // Asked before the mock-test rule on purpose: a question nobody has answered is also one
+    // nobody has mastered, and "not learnt yet" is the reason that answers the listener's question.
+    if (mastered !== null && !mastered.has(row.id)) {
+      skipped.not_mastered += 1;
       continue;
     }
     if (reserved.has(row.id)) {
