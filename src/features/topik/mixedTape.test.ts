@@ -765,3 +765,47 @@ describe("a file that will not load", () => {
     expect(tape.getState().waiting).toBe(false);
   });
 });
+
+/**
+ * The preload for the next track starts when the current one starts playing, and a podcast clip
+ * can be far longer than the load timeout — 36회 question 6 is a 44-second clip against a
+ * 20-second deadline. The deadline must only ever be about a load that has not arrived.
+ */
+describe("a long track with the next file already loaded", () => {
+  const file = (audio_key: string): TapeTrack => ({ kind: "file", audio_key });
+  const longClip: TapeTrack = { kind: "clip", audio_key: "exam.mp3", start_ms: 0, speech_end_ms: 40_000, end_ms: 44_000 };
+
+  it("does not give up on a file that loaded long before the clip ended", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: TapeEvent[] = [];
+      const tape = createMixedTape([longClip, file("options.mp3")], (e) => events.push(e));
+      const run = tape.start();
+      await vi.advanceTimersByTimeAsync(0);
+      elements[0]!.arrive();
+      await run;
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The options arrive at once, a second into a clip that runs for forty-four.
+      elements[1]!.arrive();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(events.some((e) => e.kind === "ready" && e.index === 1)).toBe(true);
+
+      // The clip plays on, well past the twenty seconds the load was given.
+      await vi.advanceTimersByTimeAsync(43_000);
+      expect(events.some((e) => e.kind === "error")).toBe(false);
+
+      elements[0]!.currentTime = 44;
+      elements[0]!.fire("timeupdate");
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Straight into the options: no error, no waiting, and no second load of a file that has
+      // been sitting ready on the other element for forty-three seconds.
+      expect(tape.getState()).toMatchObject({ index: 1, playing: true, waiting: false });
+      expect(events.some((e) => e.kind === "error")).toBe(false);
+      expect(events.filter((e) => e.kind === "preloading" && e.index === 1)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
