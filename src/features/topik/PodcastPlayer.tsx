@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pause, Play, SkipForward } from "lucide-react";
+import { Pause, Play, SkipForward, TriangleAlert } from "lucide-react";
 import type { PodcastPlaylist } from "@shared/podcast";
 import { Button } from "@/components/ui/button";
 import { PodcastRatePicker } from "./PodcastRatePicker";
+import { addSkip, describeSkip, type PodcastSkip } from "./podcastSkips";
 import { useMixedTape } from "./useMixedTape";
 import { buildPodcastTape, nextQuestionStart, podcastPositionAt } from "./podcastTape";
 
@@ -20,6 +21,9 @@ export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist
   const tape = useMemo(() => buildPodcastTape(playlist), [playlist]);
   const player = useMixedTape();
   const [started, setStarted] = useState(false);
+  // Kept for the rest of the sitting, not flashed and lost: a piece that could not be played is
+  // the one thing the owner has to be able to photograph and send.
+  const [skips, setSkips] = useState<PodcastSkip[]>([]);
   const position = podcastPositionAt(tape, player.index);
   const question = playlist.questions[position.question];
   const next = nextQuestionStart(tape, player.index);
@@ -52,7 +56,11 @@ export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist
           onClick={() => {
             if (!started) {
               setStarted(true);
-              void player.start(tape.tracks);
+              void player.start(tape.tracks, (e) => {
+                if (e.kind !== "skipped") return;
+                const skip = describeSkip(tape, playlist.questions, e);
+                if (skip) setSkips((s) => addSkip(s, skip));
+              });
             } else {
               player.toggle();
             }
@@ -69,6 +77,23 @@ export function PodcastPlayer({ playlist, onLeave }: { playlist: PodcastPlaylist
           {t("topik.podcast.change")}
         </Button>
       </div>
+
+      {skips.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {skips.map((skip) => (
+            <li key={skip.index} className="flex items-start gap-1 text-sm text-amber-700 dark:text-amber-500">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>
+                {t("topik.podcast.skippedTrack", {
+                  what: t(`topik.podcast.part.${skip.step}`),
+                  n: skip.number,
+                  reason: t(`topik.podcast.reason.${skip.reason}`),
+                })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <PodcastRatePicker />
 

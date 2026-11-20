@@ -51,6 +51,8 @@ class FakeAudio {
   }
   /** Set to make every load fail by itself, the way a 404 does. */
   failOnLoad = false;
+  /** What the browser would say went wrong: 2 network, 3 decode, 4 cannot open this file. */
+  error: { code: number } | null = null;
   load() {
     if (this.failOnLoad) void Promise.resolve().then(() => this.fire("error"));
   }
@@ -804,6 +806,66 @@ describe("a long track with the next file already loaded", () => {
       expect(tape.getState()).toMatchObject({ index: 1, playing: true, waiting: false });
       expect(events.some((e) => e.kind === "error")).toBe(false);
       expect(events.filter((e) => e.kind === "preloading" && e.index === 1)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * What the screen is told when a piece is lost. The owner reads this line and photographs it, so
+ * it has to carry the browser's own reason rather than one word for everything.
+ */
+describe("saying which piece was lost, and why", () => {
+  const file = (audio_key: string): TapeTrack => ({ kind: "file", audio_key });
+
+  async function skipTheSecondTrack(code: number | null) {
+    const events: TapeEvent[] = [];
+    const tape = createMixedTape([file("a.mp3"), file("broken.mp3"), file("c.mp3")], (e) => events.push(e));
+    // Each tape makes its own pair of elements, and this helper runs more than once per test.
+    const [first, second] = elements.slice(-2) as [FakeAudio, FakeAudio];
+    const run = tape.start();
+    await settle();
+    first.arrive();
+    await run;
+    await settle();
+
+    second.error = code === null ? null : { code };
+    second.failOnLoad = true;
+    second.fire("error");
+    await settle();
+    first.fire("ended");
+    await settle();
+    first.arrive();
+    await settle();
+    return events.find((e) => e.kind === "skipped");
+  }
+
+  it("names the track and the browser's reason", async () => {
+    expect(await skipTheSecondTrack(4)).toEqual({ kind: "skipped", index: 1, reason: "unsupported" });
+    expect(await skipTheSecondTrack(3)).toMatchObject({ reason: "decode" });
+    expect(await skipTheSecondTrack(2)).toMatchObject({ reason: "network" });
+  });
+
+  it("calls it a network problem when the browser says nothing useful", async () => {
+    expect(await skipTheSecondTrack(null)).toMatchObject({ kind: "skipped", index: 1, reason: "network" });
+  });
+
+  it("calls it a timeout when the load simply never arrived", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: TapeEvent[] = [];
+      const tape = createMixedTape([file("a.mp3"), file("slow.mp3")], (e) => events.push(e));
+      const run = tape.start();
+      await vi.advanceTimersByTimeAsync(0);
+      elements[0]!.arrive();
+      await run;
+      // Nothing ever arrives on the second element, and nothing errors either.
+      await vi.advanceTimersByTimeAsync(21_000);
+      elements[0]!.fire("ended");
+      await vi.advanceTimersByTimeAsync(21_000);
+      expect(events.find((e) => e.kind === "skipped")).toMatchObject({ index: 1, reason: "timeout" });
+      expect(tape.getState().finished).toBe(true);
     } finally {
       vi.useRealTimers();
     }

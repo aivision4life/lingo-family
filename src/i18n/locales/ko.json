@@ -947,6 +947,21 @@
       "finished": "팟캐스트가 끝났습니다.",
       "voiceRate": "낭독 속도",
       "voiceRateOption": "낭독 속도 {{rate}}×",
+      "skippedTrack": "{{n}}번 {{what}} 건너뜀: {{reason}}",
+      "part": {
+        "number": "문항 번호",
+        "question": "질문 문장",
+        "clip": "원음",
+        "options": "선택지 4개",
+        "gap": "생각 시간",
+        "answer": "정답"
+      },
+      "reason": {
+        "timeout": "불러오기 시간 초과",
+        "network": "네트워크 오류",
+        "decode": "디코딩 오류",
+        "unsupported": "파일을 열 수 없음"
+      },
       "step": {
         "number": "문항 번호를 읽는 중",
         "question": "질문을 읽는 중",

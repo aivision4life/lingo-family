@@ -947,6 +947,21 @@
       "finished": "Hết podcast.",
       "voiceRate": "Tốc độ giọng đọc",
       "voiceRateOption": "Tốc độ giọng đọc {{rate}}×",
+      "skippedTrack": "Bỏ qua {{what}} câu {{n}}: {{reason}}",
+      "part": {
+        "number": "số câu",
+        "question": "dòng hỏi",
+        "clip": "băng gốc",
+        "options": "4 đáp án",
+        "gap": "khoảng nghỉ",
+        "answer": "đáp án đúng"
+      },
+      "reason": {
+        "timeout": "quá hạn tải",
+        "network": "lỗi mạng",
+        "decode": "lỗi giải mã",
+        "unsupported": "không mở được file"
+      },
       "step": {
         "number": "Đang đọc số câu",
         "question": "Đang đọc dòng hỏi",

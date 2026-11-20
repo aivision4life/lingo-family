@@ -24,6 +24,8 @@ export function describeTapeEvent(e: TapeEvent): string {
       return `chuyển ${e.from + 1} → ${e.to + 1}${e.waitedMs > 0 ? `, đã chờ ${e.waitedMs}ms` : ", không phải chờ"}`;
     case "finished":
       return "HẾT BĂNG";
+    case "skipped":
+      return `BỎ QUA đoạn ${e.index + 1} (${e.reason})`;
     case "error":
       return `LỖI: ${e.message}`;
   }

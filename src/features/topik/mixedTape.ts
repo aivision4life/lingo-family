@@ -35,8 +35,22 @@ import { elementSlots, type TapeTrack } from "./tapeTracks";
 
 export { clipTracks, elementSlots, type TapeTrack } from "./tapeTracks";
 
+/**
+ * Why a file could not be played, in the words the browser gives.
+ *
+ * Carried out of the tape rather than written into a message here, because the person who needs
+ * it is holding the phone: the podcast screen shows the piece that was lost and this reason, and
+ * a photograph of that line is the whole bug report.
+ */
+export type TapeFailure = "timeout" | "network" | "decode" | "unsupported";
+
+/** `MediaError.code` as a reason; anything unknown reads as a network problem. */
+export const failureFromMediaError = (code: number | undefined): TapeFailure =>
+  code === 3 ? "decode" : code === 4 ? "unsupported" : "network";
+
 export type TapeEvent =
   | { kind: "unlocked"; blocked: number }
+  | { kind: "skipped"; index: number; reason: TapeFailure }
   | { kind: "preloading"; index: number; src: string }
   | { kind: "ready"; index: number }
   | { kind: "playing"; index: number; src: string }
@@ -81,6 +95,8 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
   for (const el of els) el.preload = "auto";
   /** Track → whether its file has data to play. A failed load is dropped, so its turn retries. */
   const prepared = new Map<number, Promise<boolean>>();
+  /** Why a track's last load failed, so a skip can say which kind of failure it was. */
+  const failures = new Map<number, TapeFailure>();
   const listeners = new Set<() => void>();
   let state: TapeState = { index: 0, positionMs: 0, playing: false, waiting: false, pauseCount: 0, pausedMs: 0, finished: false };
   let pausedAt: number | null = null;
@@ -181,8 +197,13 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
         el.removeEventListener("canplay", settle);
         el.removeEventListener("loadedmetadata", seek);
         loading.delete(i);
-        if (why === "ready") emit({ kind: "ready", index: i });
-        else emit({ kind: "error", message: `clip ${i + 1}: ${why === "error" ? "không tải được" : "quá hạn tải"}` });
+        if (why === "ready") {
+          failures.delete(i);
+          emit({ kind: "ready", index: i });
+        } else {
+          failures.set(i, why === "timeout" ? "timeout" : failureFromMediaError(el.error?.code));
+          emit({ kind: "error", message: `clip ${i + 1}: ${why === "error" ? "không tải được" : "quá hạn tải"}` });
+        }
         resolve(why === "ready");
       };
       // Resolved on failure too, never left pending: a clip that cannot load must let the tape
@@ -262,7 +283,7 @@ export function createMixedTape(tracks: readonly TapeTrack[], onEvent?: (e: Tape
       // `play()` on an element with no data never fires `ended`, and `ended` is the only thing
       // that hands a file over — playing it would stop the podcast here for good. So this piece
       // is lost and the next one starts: a file nobody can hear costs that file, not the rest.
-      emit({ kind: "error", message: `đoạn ${i + 1}: bỏ qua, không phát được` });
+      emit({ kind: "skipped", index: i, reason: failures.get(i) ?? "network" });
       await handOver(i);
       return;
     }

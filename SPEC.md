@@ -509,7 +509,11 @@ About **210 characters of TTS per question** (question line + four options + the
   không bao giờ đọc). Nay `prepare` trả về "có dữ liệu để phát không"; tới lượt đoạn đó thì **thử
   tải lại đúng một lần** (lượt nạp trước bắt đầu từ đầu đoạn trước, mà đoạn trước dài 44 giây thì
   hạn 20 giây của nó đã trôi qua — không nói lên điều gì về lúc này), rồi nếu vẫn hỏng thì báo lỗi
-  và **chuyển sang đoạn kế tiếp**.
+  và **chuyển sang đoạn kế tiếp**. Màn podcast hiện một dòng nhỏ cho mỗi đoạn bị bỏ — "Bỏ qua 4 đáp
+  án câu 6: quá hạn tải / lỗi mạng / lỗi giải mã / không mở được file" — **giữ tới hết phiên** và
+  không chặn việc phát tiếp, vì người cần con số đó là người đang cầm máy: chụp màn hình là xong
+  báo lỗi. Lý do lấy từ `MediaError.code` của trình duyệt (3 giải mã, 4 không mở được, còn lại
+  mạng), không phải một chữ chung cho mọi thứ.
 - **Tốc độ giọng máy là tốc độ phát, không sinh lại audio.** Giọng TTS đọc quá nhanh so với người
   học, nên podcast có thiết lập riêng "Tốc độ giọng đọc" 1× / 0,9× / 0,8× / 0,7×, **mặc định 0,8×**, nhớ
   theo thiết bị (`podcast_tts_rate`) và giữ cao độ (`preservesPitch`). Chỉ áp cho đoạn `file`

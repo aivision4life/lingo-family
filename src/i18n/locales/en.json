@@ -947,6 +947,21 @@
       "finished": "End of the podcast.",
       "voiceRate": "Reading speed",
       "voiceRateOption": "Reading speed {{rate}}×",
+      "skippedTrack": "Skipped the {{what}} of question {{n}}: {{reason}}",
+      "part": {
+        "number": "question number",
+        "question": "question line",
+        "clip": "original recording",
+        "options": "four options",
+        "gap": "thinking gap",
+        "answer": "answer"
+      },
+      "reason": {
+        "timeout": "load timed out",
+        "network": "network error",
+        "decode": "decoding error",
+        "unsupported": "file could not be opened"
+      },
       "step": {
         "number": "Reading the question number",
         "question": "Reading the question line",
